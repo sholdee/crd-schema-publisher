@@ -343,6 +343,7 @@ metadata:
       statGroups.textContent = visible + ' / ' + totalGroups;
       statSchemas.textContent = visibleSchemas + ' / ' + totalSchemas;
     }
+    history.replaceState(null, '', q ? '#q=' + encodeURIComponent(q) : location.pathname);
   });
 
   input.addEventListener('keydown', function(e){
@@ -385,6 +386,14 @@ metadata:
     });
     toggleAll.textContent = allExpanded ? 'Collapse all' : 'Expand all';
   });
+
+  (function(){
+    var hash = location.hash;
+    if (hash.indexOf('#q=') === 0) {
+      input.value = decodeURIComponent(hash.slice(3));
+      input.dispatchEvent(new Event('input'));
+    }
+  })();
 })();
 
 function toggleTheme(){

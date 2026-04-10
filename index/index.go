@@ -416,6 +416,10 @@ metadata:
   btt.addEventListener('click', function(){
     window.scrollTo({top: 0, behavior: 'smooth'});
   });
+
+  document.querySelectorAll('.usage-content code').forEach(function(el){
+    el.textContent = el.textContent.replace(/https:\/\/YOUR_DOMAIN/g, location.origin);
+  });
 })();
 
 function toggleTheme(){

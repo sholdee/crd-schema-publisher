@@ -49,6 +49,7 @@ func TestGenerate_CreatesIndexHTML(t *testing.T) {
 		{"copied-toast", "copy toast element"},
 		{"id=\"stat-groups\"", "group stat ID for JS update"},
 		{"id=\"stat-schemas\"", "schema stat ID for JS update"},
+		{"id=\"toggle-all\"", "expand/collapse all button"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(html, c.substr) {

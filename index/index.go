@@ -142,6 +142,15 @@ const indexTemplate = `<!DOCTYPE html>
   }
   .search-box::placeholder { color: var(--fg-muted); }
   .search-box:focus { border-color: var(--accent); }
+  .toolbar {
+    display: flex; justify-content: flex-end; margin-bottom: 0.75rem;
+  }
+  .toolbar button {
+    background: none; border: none; color: var(--fg-muted); cursor: pointer;
+    font-size: 0.8rem; padding: 0.2rem 0;
+    transition: color 0.15s;
+  }
+  .toolbar button:hover { color: var(--accent); }
   .no-results {
     text-align: center; color: var(--fg-muted); padding: 3rem 1rem;
     font-size: 0.95rem; display: none;
@@ -261,6 +270,7 @@ metadata:
 </details>
 </div>
 <input type="search" class="search-box" placeholder="Search groups and schemas…" id="search" autocomplete="off" spellcheck="false">
+<div class="toolbar"><button id="toggle-all">Expand all</button></div>
 <div id="groups">
 {{range .Groups}}
 <details class="group" data-group="{{.Name}}">
@@ -362,6 +372,18 @@ metadata:
       toast.classList.add('show');
       toastTimer = setTimeout(function(){ toast.classList.remove('show'); }, 1500);
     });
+  });
+
+  var toggleAll = document.getElementById('toggle-all');
+  var allExpanded = false;
+  toggleAll.addEventListener('click', function(){
+    allExpanded = !allExpanded;
+    groups.forEach(function(g){
+      if (g.style.display === 'none') return;
+      if (allExpanded) g.setAttribute('open','');
+      else g.removeAttribute('open');
+    });
+    toggleAll.textContent = allExpanded ? 'Collapse all' : 'Expand all';
   });
 })();
 

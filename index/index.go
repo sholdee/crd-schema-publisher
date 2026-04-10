@@ -233,8 +233,8 @@ const indexTemplate = `<!DOCTYPE html>
   </div>
   <p class="subtitle">JSON schemas extracted from live CRD definitions</p>
   <div class="stats">
-    <div class="stat"><strong>{{.GroupCount}}</strong> API groups</div>
-    <div class="stat"><strong>{{.TotalCount}}</strong> schemas</div>
+    <div class="stat"><strong id="stat-groups">{{.GroupCount}}</strong> API groups</div>
+    <div class="stat"><strong id="stat-schemas">{{.TotalCount}}</strong> schemas</div>
     <div class="stat">Updated <strong>{{.UpdatedAt}}</strong></div>
   </div>
 </header>
@@ -281,6 +281,10 @@ metadata:
   var input = document.getElementById('search');
   var groups = document.querySelectorAll('.group');
   var noResults = document.getElementById('no-results');
+  var statGroups = document.getElementById('stat-groups');
+  var statSchemas = document.getElementById('stat-schemas');
+  var totalGroups = groups.length;
+  var totalSchemas = document.querySelectorAll('.schemas a').length;
 
   input.addEventListener('input', function(){
     var q = this.value.toLowerCase().trim();
@@ -315,6 +319,20 @@ metadata:
       }
     });
     noResults.style.display = visible ? 'none' : 'block';
+    if (!q) {
+      statGroups.textContent = totalGroups;
+      statSchemas.textContent = totalSchemas;
+    } else {
+      var visibleSchemas = 0;
+      groups.forEach(function(g){
+        if (g.style.display === 'none') return;
+        g.querySelectorAll('.schemas a').forEach(function(a){
+          if (a.style.display !== 'none') visibleSchemas++;
+        });
+      });
+      statGroups.textContent = visible + ' / ' + totalGroups;
+      statSchemas.textContent = visibleSchemas + ' / ' + totalSchemas;
+    }
   });
 
   input.addEventListener('keydown', function(e){

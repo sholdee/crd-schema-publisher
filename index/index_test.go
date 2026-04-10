@@ -47,6 +47,8 @@ func TestGenerate_CreatesIndexHTML(t *testing.T) {
 		{"data-url=\"/", "copy URL data attribute"},
 		{"copy-hint", "copy hint span"},
 		{"copied-toast", "copy toast element"},
+		{"id=\"stat-groups\"", "group stat ID for JS update"},
+		{"id=\"stat-schemas\"", "schema stat ID for JS update"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(html, c.substr) {

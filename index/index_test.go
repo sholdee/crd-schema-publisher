@@ -51,6 +51,7 @@ func TestGenerate_CreatesIndexHTML(t *testing.T) {
 		{"id=\"stat-schemas\"", "schema stat ID for JS update"},
 		{"id=\"toggle-all\"", "expand/collapse all button"},
 		{"#q=", "URL hash deep-link support"},
+		{"id=\"back-to-top\"", "back to top button"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(html, c.substr) {

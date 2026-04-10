@@ -193,6 +193,8 @@ const indexTemplate = `<!DOCTYPE html>
   .group summary::before { content: "▸"; color: var(--fg-muted); font-size: 0.75rem; transition: transform 0.15s; }
   .group[open] summary::before { content: "▾"; color: var(--accent); }
   .group summary:hover { background: var(--bg-hover); }
+  .group summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
+  .usage-section summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
   .group-name { flex: 1; }
   .badge {
     background: var(--accent-dim); color: var(--accent);

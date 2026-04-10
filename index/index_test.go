@@ -52,6 +52,7 @@ func TestGenerate_CreatesIndexHTML(t *testing.T) {
 		{"id=\"toggle-all\"", "expand/collapse all button"},
 		{"#q=", "URL hash deep-link support"},
 		{"id=\"back-to-top\"", "back to top button"},
+		{"focus-visible", "keyboard focus outlines"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(html, c.substr) {

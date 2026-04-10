@@ -209,11 +209,11 @@ const indexTemplate = `<!DOCTYPE html>
     display: block; padding: 0.2rem 0; color: var(--accent);
     text-decoration: none; font-size: 0.82rem;
     font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
-    break-inside: avoid; position: relative;
+    break-inside: avoid;
   }
   .schemas a:hover { text-decoration: underline; }
   .schemas a .copy-hint {
-    display: none; position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+    display: none; margin-left: 0.5rem;
     font-size: 0.65rem; color: var(--fg-muted); font-family: inherit;
   }
   .schemas a:hover .copy-hint { display: inline; }
@@ -282,7 +282,7 @@ metadata:
 </div>
 </details>
 </div>
-<input type="search" class="search-box" placeholder="Search groups and schemas…" id="search" autocomplete="off" spellcheck="false">
+<input type="search" class="search-box" placeholder="Search groups and schemas…  ( / to focus, Esc to clear )" id="search" autocomplete="off" spellcheck="false">
 <div class="toolbar"><button id="toggle-all">Expand all</button></div>
 <div id="groups">
 {{range .Groups}}
@@ -378,9 +378,9 @@ metadata:
   var toast = document.getElementById('toast');
   var toastTimer;
   document.getElementById('groups').addEventListener('click', function(e){
-    var link = e.target.closest('.schemas a');
-    if (!link) return;
+    if (!e.target.classList.contains('copy-hint')) return;
     e.preventDefault();
+    var link = e.target.closest('.schemas a');
     var url = location.origin + link.dataset.url;
     navigator.clipboard.writeText(url).then(function(){
       clearTimeout(toastTimer);

@@ -44,6 +44,9 @@ func TestGenerate_CreatesIndexHTML(t *testing.T) {
 		{`class="flare"`, "flare div"},
 		{"body::before", "starfield CSS"},
 		{"yaml-language-server", "usage section"},
+		{"data-url=\"/", "copy URL data attribute"},
+		{"copy-hint", "copy hint span"},
+		{"copied-toast", "copy toast element"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(html, c.substr) {

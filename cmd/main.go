@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
@@ -43,8 +45,13 @@ func main() {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
+	case "preview":
+		if err := runPreview(); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\nusage: crd-schema-publisher [run|extract|upload|watch]\n", cmd)
+		fmt.Fprintf(os.Stderr, "unknown command: %s\nusage: crd-schema-publisher [run|extract|upload|watch|preview]\n", cmd)
 		os.Exit(1)
 	}
 }
@@ -183,6 +190,84 @@ func runWatch() error {
 		PodName:    podName,
 		HealthPort: healthPort,
 	})
+}
+
+func runPreview() error {
+	dir := getEnv("OUTPUT_DIR", "")
+	isTempDir := false
+	if dir == "" {
+		var err error
+		dir, err = os.MkdirTemp("", "crd-preview-*")
+		if err != nil {
+			return fmt.Errorf("creating temp dir: %w", err)
+		}
+		isTempDir = true
+		if err := scaffoldSampleData(dir); err != nil {
+			os.RemoveAll(dir)
+			return fmt.Errorf("scaffolding sample data: %w", err)
+		}
+		fmt.Printf("Using sample data in %s\n", dir)
+	} else {
+		fmt.Printf("Using existing output at %s\n", dir)
+	}
+
+	fmt.Println("Generating index.html...")
+	if err := index.Generate(dir); err != nil {
+		if isTempDir {
+			os.RemoveAll(dir)
+		}
+		return fmt.Errorf("generating index: %w", err)
+	}
+
+	addr := getEnv("PREVIEW_ADDR", "127.0.0.1:8989")
+	srv := &http.Server{Addr: addr, Handler: http.FileServer(http.Dir(dir))}
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer cancel()
+
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer shutdownCancel()
+		srv.Shutdown(shutdownCtx)
+	}()
+
+	fmt.Printf("Serving at http://%s (Ctrl+C to stop)\n", addr)
+	err := srv.ListenAndServe()
+	if isTempDir {
+		os.RemoveAll(dir)
+	}
+	if err == http.ErrServerClosed {
+		return nil
+	}
+	return err
+}
+
+func scaffoldSampleData(dir string) error {
+	sampleGroups := map[string][]string{
+		"cert-manager.io":             {"certificate_v1.json", "clusterissuer_v1.json", "issuer_v1.json"},
+		"monitoring.coreos.com":       {"alertmanager_v1.json", "podmonitor_v1.json", "prometheus_v1.json", "servicemonitor_v1.json"},
+		"helm.toolkit.fluxcd.io":      {"helmrelease_v2.json", "helmrelease_v2beta1.json"},
+		"source.toolkit.fluxcd.io":    {"gitrepository_v1.json", "helmchart_v1.json", "helmrepository_v1.json", "ocirepository_v1beta2.json"},
+		"kustomize.toolkit.fluxcd.io": {"kustomization_v1.json"},
+		"cilium.io":                   {"ciliumnetworkpolicy_v2.json", "ciliumclusterwidenetworkpolicy_v2.json", "ciliumendpoint_v2.json"},
+		"traefik.io":                  {"ingressroute_v1alpha1.json", "middleware_v1alpha1.json", "tlsoption_v1alpha1.json"},
+		"external-secrets.io":         {"externalsecret_v1beta1.json", "clustersecretstore_v1beta1.json", "secretstore_v1beta1.json"},
+		"metallb.io":                  {"ipaddresspool_v1beta1.json", "l2advertisement_v1beta1.json"},
+		"volsync.backube":             {"replicationsource_v1alpha1.json", "replicationdestination_v1alpha1.json"},
+	}
+	for group, files := range sampleGroups {
+		groupDir := filepath.Join(dir, group)
+		if err := os.MkdirAll(groupDir, 0o755); err != nil {
+			return fmt.Errorf("creating group dir %s: %w", group, err)
+		}
+		for _, f := range files {
+			if err := os.WriteFile(filepath.Join(groupDir, f), []byte(`{"type":"object"}`), 0o644); err != nil {
+				return fmt.Errorf("writing %s/%s: %w", group, f, err)
+			}
+		}
+	}
+	return nil
 }
 
 func runAll() error {

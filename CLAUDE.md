@@ -7,10 +7,10 @@ A statically-compiled Go binary that extracts CRD JSON schemas from a Kubernetes
 ## Repository Layout
 
 ```text
-cmd/            Entrypoint and subcommand dispatch (run/extract/upload/watch)
+cmd/            Entrypoint and subcommand dispatch (run/extract/upload/watch/preview)
 converter/      OpenAPI v3 -> JSON Schema transforms (ported from openapi2jsonschema.py)
 extractor/      client-go CRD listing, schema extraction, file writing, config builder
-index/          Static index.html generation
+index/          HTML index generation (deepspace theme, client-side search, starfield/flare effects)
 publisher/      Cloudflare Pages direct upload API client + BLAKE3 hashing
 watcher/        CRD informer watch loop, debounce, leader election, health server
 ```
@@ -30,6 +30,9 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o crd-schema-pu
 
 # Local extract (requires kubeconfig)
 KUBECTL_CONTEXT=my-context OUTPUT_DIR=./output go run ./cmd/ extract
+
+# Preview index UI locally (no cluster needed)
+go run ./cmd/ preview
 ```
 
 ## Architecture
@@ -40,6 +43,7 @@ KUBECTL_CONTEXT=my-context OUTPUT_DIR=./output go run ./cmd/ extract
 - `extract` — extract CRDs and write JSON schemas + index.html to OUTPUT_DIR
 - `upload` — upload OUTPUT_DIR contents to Cloudflare Pages
 - `watch` — long-lived process: informer watches CRDs, debounces events, runs extract+publish cycles. Leader election for multi-replica safety.
+- `preview` — generate index with sample data (or real schemas via OUTPUT_DIR) and serve on localhost. No cluster or credentials needed. Handles signal cleanup of temp directories.
 
 ### Configuration (env vars)
 
@@ -55,6 +59,7 @@ KUBECTL_CONTEXT=my-context OUTPUT_DIR=./output go run ./cmd/ extract
 | `POD_NAMESPACE` | Yes (watch) | — | Namespace for leader lease (set via downward API) |
 | `LEASE_NAME` | No | `crd-schema-publisher` | Name of the Lease resource (watch mode) |
 | `HEALTH_PORT` | No | `8080` | Port for liveness/readiness probes (watch mode) |
+| `PREVIEW_ADDR` | No | `127.0.0.1:8989` | Listen address (preview mode) |
 
 ### Key Design Decisions
 
@@ -94,3 +99,5 @@ Kubernetes manifests live in the `home-ops` repo under `apps/kubernetes-schemas/
 - Adding CGO dependencies — breaks static compilation and distroless compatibility
 - Modifying the CF Pages upload flow without checking current wrangler source — the API is undocumented and may change
 - Forgetting to update both output directory formats (primary + master-standalone) when changing schema file naming
+- The index template uses a deepspace-inspired theme (starfield via coprime-tiled radial gradients, light flare via stripe/rainbow interference). Both effects are pure CSS, dark-mode only, hidden in light mode via `.light body::before, .light .flare { display: none }` (`.light` class is on `<html>`, set in a `<head>` script to prevent FOUC)
+- The flare uses `filter: opacity(50%)` AND `opacity: 0.25` intentionally — these multiply to ~12.5% effective opacity. Do not "simplify" by removing one.

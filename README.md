@@ -6,7 +6,7 @@ Extracts CRD JSON schemas from a Kubernetes cluster and publishes them to a Clou
 
 - Extracts OpenAPI v3 schemas from all CustomResourceDefinitions in a cluster
 - Converts to standard JSON Schema (ports [openapi2jsonschema.py](https://github.com/yannh/kubeconform/blob/master/scripts/openapi2jsonschema.py) transforms)
-- Generates a browsable HTML index page with dark/light mode support
+- Generates a browsable HTML index page with search, dark/light mode, and visual effects inspired by the Scalar deepspace theme
 - Uploads directly to Cloudflare Pages using the direct upload API
 - Creates the CF Pages project automatically if it doesn't exist
 - Produces kubeval-compatible output in `master-standalone/` directory
@@ -22,6 +22,7 @@ Commands:
   extract   Extract schemas and generate index to OUTPUT_DIR
   upload    Upload OUTPUT_DIR contents to Cloudflare Pages
   watch     Watch for CRD changes and publish on each change (long-lived)
+  preview   Generate index with sample data and serve locally for UI development
 ```
 
 ### Environment Variables
@@ -38,6 +39,7 @@ Commands:
 | `POD_NAMESPACE` | Yes (watch) | — | Namespace for leader lease (set via downward API) |
 | `LEASE_NAME` | No | `crd-schema-publisher` | Name of the Lease resource (watch mode) |
 | `HEALTH_PORT` | No | `8080` | Port for liveness/readiness probes (watch mode) |
+| `PREVIEW_ADDR` | No | `127.0.0.1:8989` | Listen address for preview server (preview mode) |
 
 ### Run in Kubernetes
 
@@ -61,6 +63,18 @@ Both modes include:
 - Hardened security context (nonroot, read-only rootfs, dropped capabilities)
 
 If Cloudflare credentials are omitted, both modes run extract-only (schemas written to `OUTPUT_DIR` but not uploaded).
+
+### Preview the Index UI
+
+No cluster or credentials required — serves sample data on localhost:
+
+```bash
+go run ./cmd/ preview
+# open http://127.0.0.1:8989
+
+# Or preview with real extracted schemas
+OUTPUT_DIR=./output go run ./cmd/ preview
+```
 
 ### Run Locally
 
@@ -118,7 +132,7 @@ docker buildx build --platform linux/amd64,linux/arm64 -t crd-schema-publisher .
    - Replaces `int-or-string` format with `oneOf [string, integer]`
    - Allows null for optional fields
 4. Writes schemas to both primary and kubeval-compatible directory formats
-5. Generates an HTML index grouped by API group
+5. Generates an HTML index grouped by API group with client-side search, stats, and yaml-language-server usage examples
 6. Uploads to Cloudflare Pages via the direct upload API (BLAKE3 content hashing, batched uploads with retry)
 
 ## License

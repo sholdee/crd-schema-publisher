@@ -10,34 +10,61 @@
   packageRules: [
     {
       description: 'Automerge minor/patch GitHub Actions updates',
-      matchManagers: ['github-actions'],
-      matchUpdateTypes: ['minor', 'patch', 'digest'],
+      matchManagers: [
+        'github-actions',
+      ],
+      matchUpdateTypes: [
+        'minor',
+        'patch',
+        'digest',
+      ],
       automerge: true,
     },
     {
       description: 'Automerge minor/patch Docker image updates',
-      matchDatasources: ['docker'],
-      matchUpdateTypes: ['minor', 'patch', 'digest'],
+      matchDatasources: [
+        'docker',
+      ],
+      matchUpdateTypes: [
+        'minor',
+        'patch',
+        'digest',
+      ],
       automerge: true,
     },
     {
       description: 'Automerge minor/patch Go module updates',
-      matchManagers: ['gomod'],
-      matchUpdateTypes: ['minor', 'patch'],
+      matchManagers: [
+        'gomod',
+      ],
+      matchUpdateTypes: [
+        'minor',
+        'patch',
+      ],
       automerge: true,
     },
     {
       description: 'Automerge minor/patch CI tool updates',
-      matchPackageNames: ['rhysd/actionlint', 'markdownlint-cli2'],
-      matchUpdateTypes: ['minor', 'patch'],
+      matchPackageNames: [
+        'rhysd/actionlint',
+        'markdownlint-cli2',
+      ],
+      matchUpdateTypes: [
+        'minor',
+        'patch',
+      ],
       automerge: true,
     },
   ],
   customManagers: [
     {
       customType: 'regex',
-      description: ['Process go install versions in CI workflows'],
-      fileMatch: ['\\.github/workflows/.*\\.ya?ml$'],
+      description: [
+        'Process go install versions in CI workflows',
+      ],
+      managerFilePatterns: [
+        '/\\.github/workflows/.*\\.ya?ml$/',
+      ],
       matchStrings: [
         'go install github\\.com/(?<depName>[\\w-]+/[\\w-]+)/.+@v(?<currentValue>[\\d.]+)',
       ],
@@ -46,8 +73,12 @@
     },
     {
       customType: 'regex',
-      description: ['Process npx tool versions in CI workflows'],
-      fileMatch: ['\\.github/workflows/.*\\.ya?ml$'],
+      description: [
+        'Process npx tool versions in CI workflows',
+      ],
+      managerFilePatterns: [
+        '/\\.github/workflows/.*\\.ya?ml$/',
+      ],
       matchStrings: [
         'npx --yes (?<depName>[\\w-]+)@(?<currentValue>[\\d.]+)',
       ],

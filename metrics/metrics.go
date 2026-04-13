@@ -19,6 +19,7 @@ type Metrics struct {
 	crdsDiscovered      atomic.Int64
 	schemasWritten      atomic.Int64
 	lastSuccessTime     atomic.Int64 // Unix epoch seconds
+	watchdogTime        atomic.Int64 // Unix epoch seconds, updated every debounce tick
 	leader              atomic.Int64 // 0 or 1
 }
 
@@ -58,6 +59,15 @@ func (m *Metrics) RecordSkip() {
 	m.publishSkipped.Add(1)
 }
 
+// Heartbeat updates the watchdog timestamp to the current time.
+// Call on every debounce loop iteration to prove the watcher is alive.
+func (m *Metrics) Heartbeat() {
+	if m == nil {
+		return
+	}
+	m.watchdogTime.Store(time.Now().Unix())
+}
+
 // SetLeader sets the leader gauge to 1 (true) or 0 (false).
 func (m *Metrics) SetLeader(isLeader bool) {
 	if m == nil {
@@ -82,6 +92,7 @@ func (m *Metrics) Handler() http.Handler {
 		crds := m.crdsDiscovered.Load()
 		schemas := m.schemasWritten.Load()
 		lastSuccess := m.lastSuccessTime.Load()
+		watchdog := m.watchdogTime.Load()
 		leader := m.leader.Load()
 
 		_, _ = fmt.Fprintf(w, "# HELP crdpublisher_publish_cycle_duration_seconds Duration of the most recent publish cycle.\n")
@@ -104,6 +115,10 @@ func (m *Metrics) Handler() http.Handler {
 		_, _ = fmt.Fprintf(w, "# HELP crdpublisher_last_successful_publish_timestamp Unix timestamp of the last successful publish cycle.\n")
 		_, _ = fmt.Fprintf(w, "# TYPE crdpublisher_last_successful_publish_timestamp gauge\n")
 		_, _ = fmt.Fprintf(w, "crdpublisher_last_successful_publish_timestamp %d\n", lastSuccess)
+
+		_, _ = fmt.Fprintf(w, "# HELP crdpublisher_watchdog_timestamp Unix timestamp of the last debounce loop tick.\n")
+		_, _ = fmt.Fprintf(w, "# TYPE crdpublisher_watchdog_timestamp gauge\n")
+		_, _ = fmt.Fprintf(w, "crdpublisher_watchdog_timestamp %d\n", watchdog)
 
 		_, _ = fmt.Fprintf(w, "# HELP crdpublisher_publish_skipped_total Total debounce skips due to publish already in progress.\n")
 		_, _ = fmt.Fprintf(w, "# TYPE crdpublisher_publish_skipped_total counter\n")

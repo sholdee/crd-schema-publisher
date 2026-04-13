@@ -92,10 +92,11 @@ In watch mode, the health server exposes a `/metrics` endpoint on `HEALTH_PORT` 
 | `crdpublisher_crds_discovered` | gauge | CRDs found in the most recent cycle |
 | `crdpublisher_schemas_written` | gauge | Schemas written in the most recent cycle |
 | `crdpublisher_last_successful_publish_timestamp` | gauge | Unix epoch of the last successful publish |
+| `crdpublisher_watchdog_timestamp` | gauge | Unix epoch of the last debounce loop tick |
 | `crdpublisher_publish_skipped_total` | counter | Debounce skips (publish already in progress) |
 | `crdpublisher_leader` | gauge | Whether this pod is the current leader |
 
-The timestamp metric enables dead man's switch alerting — if `time() - crdpublisher_last_successful_publish_timestamp` exceeds your threshold, the process may be stuck.
+The watchdog timestamp enables dead man's switch alerting — it updates on every debounce loop tick (regardless of whether a publish occurs), so `time() - crdpublisher_watchdog_timestamp` staying fresh proves the watcher is alive. The publish timestamp separately tracks when content was last pushed.
 
 To scrape with [Prometheus Operator](https://github.com/prometheus-operator/prometheus-operator), create a PodMonitor:
 

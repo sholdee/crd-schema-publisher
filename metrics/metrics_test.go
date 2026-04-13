@@ -85,6 +85,23 @@ func TestNilReceiver(t *testing.T) {
 	m.RecordDiscovery(1, 1)
 	m.RecordSkip()
 	m.SetLeader(true)
+	m.Heartbeat()
+}
+
+func TestHeartbeat(t *testing.T) {
+	m := New()
+	if got := m.watchdogTime.Load(); got != 0 {
+		t.Fatalf("expected watchdog=0 initially, got %d", got)
+	}
+
+	before := time.Now().Unix()
+	m.Heartbeat()
+	after := time.Now().Unix()
+
+	got := m.watchdogTime.Load()
+	if got < before || got > after {
+		t.Fatalf("expected watchdog between %d and %d, got %d", before, after, got)
+	}
 }
 
 func TestHandler_PrometheusFormat(t *testing.T) {
@@ -94,6 +111,7 @@ func TestHandler_PrometheusFormat(t *testing.T) {
 	m.RecordDiscovery(10, 25)
 	m.RecordSkip()
 	m.SetLeader(true)
+	m.Heartbeat()
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/metrics", nil)
@@ -116,6 +134,7 @@ func TestHandler_PrometheusFormat(t *testing.T) {
 		"# TYPE crdpublisher_schemas_written gauge",
 		"crdpublisher_schemas_written 25",
 		"# TYPE crdpublisher_last_successful_publish_timestamp gauge",
+		"# TYPE crdpublisher_watchdog_timestamp gauge",
 		"# TYPE crdpublisher_publish_skipped_total counter",
 		"crdpublisher_publish_skipped_total 1",
 		"# TYPE crdpublisher_leader gauge",
@@ -150,6 +169,7 @@ func TestHandler_ZeroValues(t *testing.T) {
 		"crdpublisher_crds_discovered 0",
 		"crdpublisher_schemas_written 0",
 		"crdpublisher_last_successful_publish_timestamp 0",
+		"crdpublisher_watchdog_timestamp 0",
 		"crdpublisher_publish_skipped_total 0",
 		"crdpublisher_leader 0",
 	}
@@ -190,6 +210,7 @@ func TestConcurrentRecording(t *testing.T) {
 		for range n {
 			m.RecordDiscovery(1, 2)
 			m.SetLeader(true)
+			m.Heartbeat()
 		}
 	}()
 

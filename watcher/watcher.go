@@ -185,6 +185,9 @@ func debounceLoop(trigger <-chan struct{}, duration time.Duration, publish func(
 	var timerC <-chan time.Time
 	var publishing atomic.Bool
 	var wg sync.WaitGroup
+	heartbeat := time.NewTicker(30 * time.Second)
+	defer heartbeat.Stop()
+	m.Heartbeat() // initial heartbeat on loop entry
 
 	for {
 		select {
@@ -205,6 +208,7 @@ func debounceLoop(trigger <-chan struct{}, duration time.Duration, publish func(
 			}
 			return
 		case <-trigger:
+			m.Heartbeat()
 			if timer == nil {
 				timer = time.NewTimer(duration)
 				timerC = timer.C
@@ -217,7 +221,10 @@ func debounceLoop(trigger <-chan struct{}, duration time.Duration, publish func(
 				}
 				timer.Reset(duration)
 			}
+		case <-heartbeat.C:
+			m.Heartbeat()
 		case <-timerC:
+			m.Heartbeat()
 			timer = nil
 			timerC = nil
 			if !publishing.CompareAndSwap(false, true) {

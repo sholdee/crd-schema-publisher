@@ -64,7 +64,7 @@ Persistent output volume (`persistence`), extra volumes/volume mounts/containers
 
 #### Examples: Alternative backends via sidecar pattern
 
-The chart's `extraContainers` and `extraObjects` values let you wire up any backend without changes to the tool. Each example runs in extract-only mode (no Cloudflare credentials) — schemas are written to a persistent volume and a sidecar handles serving or syncing.
+The chart's `extraContainers` and `extraObjects` values let you wire up any backend without changes to the tool. Each example runs in extract-only mode (no Cloudflare credentials) — schemas are written to the output directory and a sidecar handles serving or syncing. Examples that push to external storage run stateless with an emptyDir; the caddy example uses a persistent volume since it serves directly from the cluster.
 
 ```bash
 helm install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-schema-publisher \

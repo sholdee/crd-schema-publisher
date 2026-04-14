@@ -28,15 +28,17 @@
     },
     {
       description: 'Automerge minor/patch CI tool updates',
-      matchPackageNames: ['rhysd/actionlint', 'markdownlint-cli2'],
+      matchPackageNames: ['rhysd/actionlint', 'markdownlint-cli2', 'golang/vuln', 'yannh/kubeconform'],
       matchUpdateTypes: ['minor', 'patch'],
       automerge: true,
     },
     {
-      description: 'Rate-limit Renovate self-updates (multiple releases per day)',
+      description: 'Rate-limit and automerge Renovate self-updates (multiple releases per day)',
       matchPackageNames: ['renovate'],
+      matchUpdateTypes: ['minor', 'patch'],
       schedule: ['before 2am'],
       minimumReleaseAge: '1 day',
+      automerge: true,
     },
   ],
   customManagers: [

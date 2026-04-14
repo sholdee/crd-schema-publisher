@@ -2,8 +2,8 @@
 #
 # This example runs crd-schema-publisher in extract-only mode (no Cloudflare
 # credentials) with an alpine/git sidecar that periodically commits and pushes
-# schema changes to a GitHub repository. A persistent volume keeps schemas
-# available across pod restarts.
+# schema changes to a GitHub repository. No persistence is needed — the publisher
+# re-extracts on startup and the sidecar re-syncs the full set.
 #
 # This works well with GitHub Pages — set the target repo's Pages source to
 # the gh-pages branch and your schemas are automatically published as a static
@@ -38,7 +38,7 @@ extraVolumes:
     emptyDir: {}
 
 # alpine/git sidecar — commits and pushes the shared output volume to GitHub.
-# The "output" volume is created by the chart's persistence block above.
+# The "output" volume is the chart's default emptyDir.
 extraContainers:
   - name: git-push
     image: alpine/git:2.49.1

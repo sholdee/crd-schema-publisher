@@ -2,8 +2,8 @@
 #
 # This example runs crd-schema-publisher in extract-only mode (no Cloudflare
 # credentials) with an rclone sidecar that syncs schemas to an S3-compatible
-# bucket every 60 seconds. A persistent volume keeps schemas available across
-# pod restarts.
+# bucket every 60 seconds. No persistence is needed — the publisher re-extracts
+# on startup and the sidecar re-syncs the full set.
 #
 # rclone sync is one-way and DELETES files on the destination that don't exist
 # on the source. If you want additive-only behavior (never delete remote files),
@@ -38,7 +38,7 @@ extraVolumes:
     emptyDir: {}
 
 # rclone sidecar — syncs the shared output volume to S3-compatible storage.
-# The "output" volume is created by the chart's persistence block above.
+# The "output" volume is the chart's default emptyDir.
 extraContainers:
   - name: rclone
     image: ghcr.io/rclone/rclone:1.73.4

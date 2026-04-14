@@ -16,7 +16,7 @@ Most CRD schema solutions rely on static catalogs — community-maintained repos
 This tool reads schemas directly from your cluster's API server and publishes them to infrastructure you control.
 
 - **Always accurate** — schemas reflect exactly what's installed in your cluster, including custom and internal CRDs, updated automatically when CRDs change
-- **Self-hosted** — published to your own Cloudflare Pages site, removing third-party dependencies from your validation pipeline
+- **Self-hosted** — published to your own Cloudflare Pages site, or run in extract-only mode and serve schemas however you like (Caddy, nginx, S3 sync, rclone — any sidecar that reads files from a directory)
 - **Single static binary** — no runtime dependencies, no interpreters, no package managers. One binary in a distroless nonroot container with no shell
 - **Kubernetes-native** — watch mode uses the controller pattern with informers, leader election, debounced publish cycles, and health probes. It's a proper workload, not a script on a timer
 
@@ -61,6 +61,18 @@ The default remote ref points to a `crd-schema-publisher-cloudflare` key with `a
 #### Optional features
 
 Persistent output volume (`persistence`), extra volumes/volume mounts/containers (`extraVolumes`, `extraVolumeMounts`, `extraContainers`), PodMonitor, PrometheusRule, Grafana dashboard (sidecar ConfigMap), NetworkPolicy, CiliumNetworkPolicy, PodDisruptionBudget, pod anti-affinity presets, topology spread constraints, and templated extra objects. See [`values.yaml`](charts/crd-schema-publisher/values.yaml) for all options.
+
+#### Example: Local serving with a web server sidecar
+
+Serve schemas from your cluster without Cloudflare using a web server sidecar. This runs in extract-only mode — schemas are written to a persistent volume and served directly by the sidecar. The example uses Caddy but can be adapted to nginx or any web server.
+
+```bash
+helm install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-schema-publisher \
+  --namespace crd-schema-publisher --create-namespace \
+  -f examples/caddy-sidecar/values.yaml
+```
+
+The example creates a Caddy sidecar, a Service, and a Gateway API HTTPRoute. Edit the HTTPRoute's `parentRefs` and `hostnames` to match your gateway. See [`examples/caddy-sidecar/values.yaml`](examples/caddy-sidecar/values.yaml) for the full configuration.
 
 #### Verification
 

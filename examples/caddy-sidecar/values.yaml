@@ -1,0 +1,138 @@
+# Caddy sidecar example — serve CRD schemas locally without Cloudflare
+#
+# This example runs crd-schema-publisher in extract-only mode (no Cloudflare
+# credentials) with a Caddy sidecar that serves the schemas and interactive
+# documentation pages over HTTP. A persistent volume keeps schemas available
+# across pod restarts.
+#
+# Customize:
+#   - persistence.storageClass: your cluster's StorageClass (omit for default)
+#   - HTTPRoute parentRefs: your Gateway name and namespace
+#   - HTTPRoute hostnames: your desired hostname
+#
+# Install:
+#   helm install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-schema-publisher \
+#     --namespace crd-schema-publisher --create-namespace \
+#     -f values.yaml
+
+# No Cloudflare secret — extract-only mode. The publisher writes schemas to
+# the output directory and the caddy sidecar serves them.
+
+# Recreate strategy is required with ReadWriteOnce persistence — RollingUpdate
+# deadlocks because the new pod cannot mount the PVC until the old pod releases it.
+strategy:
+  type: Recreate
+
+# Persistent volume for the output directory so schemas survive pod restarts.
+persistence:
+  enabled: true
+  # storageClass: ""  # Uncomment and set for a specific StorageClass
+  size: 512Mi
+
+# Caddy configuration volume and scratch space for caddy's internal state.
+extraVolumes:
+  - name: caddy-config
+    configMap:
+      name: '{{ include "crd-schema-publisher.fullname" . }}-caddyfile'
+  - name: caddy-tmp
+    emptyDir: {}
+
+# Caddy sidecar — mounts the shared output volume as its document root.
+# The "output" volume is created by the chart's persistence block above.
+extraContainers:
+  - name: caddy
+    image: caddy:2.11.2@sha256:1e40b251ca9639ead7b5cd2cedcc8765adfbabb99450fe23f130eefabf50f4bc
+    ports:
+      - containerPort: 80
+        protocol: TCP
+        name: http
+    volumeMounts:
+      - name: output
+        mountPath: /srv
+        readOnly: true
+      - name: caddy-config
+        mountPath: /etc/caddy
+      - name: caddy-tmp
+        mountPath: /config/caddy
+        subPath: conf
+      - name: caddy-tmp
+        mountPath: /data/caddy
+        subPath: data
+    resources:
+      requests:
+        cpu: 5m
+        memory: 10Mi
+      limits:
+        memory: 50Mi
+    livenessProbe: &caddy-probe
+      httpGet:
+        path: /
+        port: http
+    readinessProbe: *caddy-probe
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: ["ALL"]
+        add: ["NET_BIND_SERVICE"]
+
+# Supporting objects: Caddyfile ConfigMap, Service for the sidecar, and an
+# HTTPRoute for ingress. All use chart template helpers for consistent naming.
+extraObjects:
+  # Caddyfile — serves the output directory with directory browsing enabled.
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: '{{ include "crd-schema-publisher.fullname" . }}-caddyfile'
+    data:
+      Caddyfile: |
+        :80 {
+            log {
+                output stdout
+                format json
+            }
+            root * /srv
+            file_server browse
+        }
+
+  # Service targeting the caddy sidecar port.
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: '{{ include "crd-schema-publisher.fullname" . }}-caddy'
+    spec:
+      selector:
+        app.kubernetes.io/name: '{{ include "crd-schema-publisher.name" . }}'
+        app.kubernetes.io/instance: '{{ .Release.Name }}'
+      ports:
+        - protocol: TCP
+          port: 80
+          name: http
+      type: ClusterIP
+
+  # HTTPRoute — adjust parentRefs and hostnames for your gateway.
+  # All fields are fully specified to prevent ArgoCD drift from server-side
+  # defaulting (group, kind, weight, matches are set explicitly).
+  - apiVersion: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    metadata:
+      name: '{{ include "crd-schema-publisher.fullname" . }}'
+    spec:
+      parentRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: my-gateway       # <-- your Gateway name
+          namespace: gateway     # <-- your Gateway namespace
+      hostnames:
+        - kube-schemas.example.com  # <-- your hostname
+      rules:
+        - matches:
+            - path:
+                type: PathPrefix
+                value: /
+          backendRefs:
+            - group: ""
+              kind: Service
+              name: '{{ include "crd-schema-publisher.fullname" . }}-caddy'
+              port: 80
+              weight: 1

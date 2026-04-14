@@ -1,0 +1,117 @@
+# rclone sidecar example — sync CRD schemas to S3-compatible storage
+#
+# This example runs crd-schema-publisher in extract-only mode (no Cloudflare
+# credentials) with an rclone sidecar that syncs schemas to an S3-compatible
+# bucket every 60 seconds. A persistent volume keeps schemas available across
+# pod restarts.
+#
+# rclone sync is one-way and DELETES files on the destination that don't exist
+# on the source. If you want additive-only behavior (never delete remote files),
+# replace `rclone sync` with `rclone copy` in the sidecar command.
+#
+# Customize:
+#   - RCLONE_CONFIG_S3_* env vars: set provider, endpoint, and auth for your backend
+#   - Secret credentials: access key and secret key for your provider
+#   - RCLONE_S3_BUCKET: your bucket name (and optional path prefix)
+#   - sync interval: adjust the sleep duration in the sidecar command
+#
+# Provider examples (set RCLONE_CONFIG_S3_PROVIDER and RCLONE_CONFIG_S3_ENDPOINT):
+#   AWS S3:        provider=AWS,        endpoint=(omit — uses default)
+#   Backblaze B2:  provider=Other,      endpoint=s3.us-west-002.backblazeb2.com
+#   MinIO:         provider=Minio,      endpoint=https://minio.example.com
+#   Cloudflare R2: provider=Cloudflare, endpoint=https://<account-id>.r2.cloudflarestorage.com
+#   GCS:           provider=GCS,        endpoint=https://storage.googleapis.com
+#
+# Install:
+#   helm install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-schema-publisher \
+#     --namespace crd-schema-publisher --create-namespace \
+#     -f values.yaml
+
+# No Cloudflare secret — extract-only mode. The publisher writes schemas to
+# the output directory and the rclone sidecar syncs them to object storage.
+# No persistence needed — the publisher re-extracts on startup and the sidecar
+# re-syncs the full set. The default emptyDir volume is sufficient.
+
+# Scratch space for rclone's internal state.
+extraVolumes:
+  - name: rclone-tmp
+    emptyDir: {}
+
+# rclone sidecar — syncs the shared output volume to S3-compatible storage.
+# The "output" volume is created by the chart's persistence block above.
+extraContainers:
+  - name: rclone
+    image: ghcr.io/rclone/rclone:1.73.4
+    command: ["/bin/sh", "-c"]
+    args:
+      - |
+        # Wait for the publisher to complete its first extraction
+        while [ ! -f /data/index.html ]; do sleep 5; done
+
+        while true; do
+          rclone sync /data s3:${RCLONE_S3_BUCKET} --checksum --verbose --transfers 4
+          sleep 60
+        done
+    env:
+      # -- rclone S3-compatible remote configuration via env vars.
+      # See provider examples in the header comment for provider/endpoint values.
+      - name: RCLONE_CONFIG_S3_TYPE
+        value: "s3"
+      - name: RCLONE_CONFIG_S3_PROVIDER
+        value: "Other"  # <-- your provider (AWS, Minio, Cloudflare, GCS, or Other)
+      - name: RCLONE_CONFIG_S3_ENDPOINT
+        value: "s3.us-west-002.backblazeb2.com"  # <-- your endpoint (omit for AWS)
+      # Suppress default config file lookup — all config is via RCLONE_CONFIG_* env vars
+      - name: RCLONE_CONFIG
+        value: ""
+      - name: RCLONE_CONFIG_S3_ACCESS_KEY_ID
+        valueFrom:
+          secretKeyRef:
+            name: '{{ include "crd-schema-publisher.fullname" . }}-rclone-s3'
+            key: access-key-id
+      - name: RCLONE_CONFIG_S3_SECRET_ACCESS_KEY
+        valueFrom:
+          secretKeyRef:
+            name: '{{ include "crd-schema-publisher.fullname" . }}-rclone-s3'
+            key: secret-access-key
+      - name: RCLONE_S3_BUCKET
+        valueFrom:
+          secretKeyRef:
+            name: '{{ include "crd-schema-publisher.fullname" . }}-rclone-s3'
+            key: bucket-name
+    volumeMounts:
+      - name: output
+        mountPath: /data
+        readOnly: true
+      - name: rclone-tmp
+        mountPath: /tmp
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 64Mi
+    securityContext:
+      runAsUser: 65534
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: ["ALL"]
+
+# Supporting objects: Secret for S3 credentials.
+# All use chart template helpers for consistent naming.
+extraObjects:
+  # S3 credentials — replace placeholder values with your actual credentials,
+  # or use your preferred secret management (ExternalSecret, SealedSecret, etc.)
+  # instead of this inline Secret. You can also reference a pre-created secret
+  # by changing the secretKeyRef names above to point to your existing secret.
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: '{{ include "crd-schema-publisher.fullname" . }}-rclone-s3'
+    type: Opaque
+    stringData:
+      access-key-id: "REPLACE_ME"
+      secret-access-key: "REPLACE_ME"
+      bucket-name: "my-crd-schemas"

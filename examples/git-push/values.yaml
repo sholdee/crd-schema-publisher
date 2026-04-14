@@ -1,0 +1,136 @@
+# git-push sidecar example — push CRD schemas to a GitHub repository
+#
+# This example runs crd-schema-publisher in extract-only mode (no Cloudflare
+# credentials) with an alpine/git sidecar that periodically commits and pushes
+# schema changes to a GitHub repository. A persistent volume keeps schemas
+# available across pod restarts.
+#
+# This works well with GitHub Pages — set the target repo's Pages source to
+# the gh-pages branch and your schemas are automatically published as a static
+# site. The sidecar handles both fresh repos (init + first push) and existing
+# repos (clone + incremental updates).
+#
+# This pattern works with any git hosting (GitLab, Gitea, Bitbucket) by
+# adjusting the remote URL format in the sidecar command.
+#
+# Customize:
+#   - Secret credentials (github-token, github-repo)
+#   - GIT_BRANCH: change from gh-pages if needed
+#   - sync interval: adjust the sleep duration in the sidecar command
+#
+# Install:
+#   helm install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-schema-publisher \
+#     --namespace crd-schema-publisher --create-namespace \
+#     -f values.yaml
+
+# No Cloudflare secret — extract-only mode. The publisher writes schemas to
+# the output directory and the git-push sidecar commits and pushes them.
+# No persistence needed — the publisher re-extracts on startup and the sidecar
+# re-syncs the full set. The default emptyDir volume is sufficient.
+
+# Scratch space for git operations.
+extraVolumes:
+  - name: git-workspace
+    emptyDir: {}
+  - name: git-home
+    emptyDir: {}
+  - name: git-tmp
+    emptyDir: {}
+
+# alpine/git sidecar — commits and pushes the shared output volume to GitHub.
+# The "output" volume is created by the chart's persistence block above.
+extraContainers:
+  - name: git-push
+    image: alpine/git:2.49.1
+    command: ["/bin/sh", "-c"]
+    args:
+      - |
+        # Configure git identity
+        # Wait for the publisher to complete its first extraction
+        while [ ! -f /data/index.html ]; do sleep 5; done
+
+        git config --global user.name "crd-schema-publisher"
+        git config --global user.email "crd-schema-publisher@users.noreply.github.com"
+        git config --global --add safe.directory /repo
+
+        # Clone or init the repo
+        if [ -z "$(ls -A /repo)" ]; then
+          git clone --branch "${GIT_BRANCH}" --single-branch \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GIT_REPO}.git" /repo || {
+            git init /repo
+            cd /repo
+            git checkout -b "${GIT_BRANCH}"
+            git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GIT_REPO}.git"
+          }
+        fi
+
+        cd /repo
+        while true; do
+          sleep 30  # Can be lowered to 15s safely; no-op cycles are near-zero cost
+          # Sync schemas from output volume to repo working copy
+          cp -r /data/. /repo/ || continue
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "update schemas $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          fi
+          # Push any unpushed commits (retries failed pushes from previous cycles)
+          git push origin "${GIT_BRANCH}" 2>/dev/null || true
+        done
+    env:
+      - name: GITHUB_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: '{{ include "crd-schema-publisher.fullname" . }}-git-push'
+            key: github-token
+      - name: GIT_REPO
+        valueFrom:
+          secretKeyRef:
+            name: '{{ include "crd-schema-publisher.fullname" . }}-git-push'
+            key: github-repo
+      - name: GIT_BRANCH
+        value: "gh-pages"  # Change if your Pages branch differs
+      - name: HOME
+        value: "/home/git"  # Writable home for .gitconfig
+    volumeMounts:
+      - name: output
+        mountPath: /data
+        readOnly: true
+      - name: git-workspace
+        mountPath: /repo
+      - name: git-home
+        mountPath: /home/git
+      - name: git-tmp
+        mountPath: /tmp
+    # Memory usage scales with CRD count — the initial git commit stages all
+    # files at once. 256Mi handles ~200 CRDs; increase for larger clusters.
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
+    securityContext:
+      runAsUser: 1000
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: ["ALL"]
+
+# Supporting objects: Secret for GitHub credentials.
+# All use chart template helpers for consistent naming.
+extraObjects:
+  # GitHub credentials — create a fine-grained personal access token (PAT) with
+  # contents:write permission scoped to the target repository. Replace placeholder
+  # values with your actual credentials, or use your preferred secret management
+  # (ExternalSecret, SealedSecret, etc.) instead of this inline Secret. You can
+  # also reference a pre-created secret by changing the secretKeyRef names above
+  # to point to your existing secret.
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: '{{ include "crd-schema-publisher.fullname" . }}-git-push'
+    type: Opaque
+    stringData:
+      github-token: "REPLACE_ME"
+      github-repo: "owner/repo"

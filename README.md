@@ -62,17 +62,23 @@ The default remote ref points to a `crd-schema-publisher-cloudflare` key with `a
 
 Persistent output volume (`persistence`), extra volumes/volume mounts/containers (`extraVolumes`, `extraVolumeMounts`, `extraContainers`), PodMonitor, PrometheusRule, Grafana dashboard (sidecar ConfigMap), NetworkPolicy, CiliumNetworkPolicy, PodDisruptionBudget, pod anti-affinity presets, topology spread constraints, and templated extra objects. See [`values.yaml`](charts/crd-schema-publisher/values.yaml) for all options.
 
-#### Example: Local serving with a web server sidecar
+#### Examples: Alternative backends via sidecar pattern
 
-Serve schemas from your cluster without Cloudflare using a web server sidecar. This runs in extract-only mode — schemas are written to a persistent volume and served directly by the sidecar. The example uses Caddy but can be adapted to nginx or any web server.
+The chart's `extraContainers` and `extraObjects` values let you wire up any backend without changes to the tool. Each example runs in extract-only mode (no Cloudflare credentials) — schemas are written to a persistent volume and a sidecar handles serving or syncing.
 
 ```bash
 helm install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-schema-publisher \
   --namespace crd-schema-publisher --create-namespace \
-  -f examples/caddy-sidecar/values.yaml
+  -f examples/<example>/values.yaml
 ```
 
-The example creates a Caddy sidecar, a Service, and a Gateway API HTTPRoute. Edit the HTTPRoute's `parentRefs` and `hostnames` to match your gateway. See [`examples/caddy-sidecar/values.yaml`](examples/caddy-sidecar/values.yaml) for the full configuration.
+| Example | Backend | Description |
+| ------- | ------- | ----------- |
+| [`caddy-sidecar`](examples/caddy-sidecar/values.yaml) | Local HTTP | Caddy serves schemas directly from the cluster with directory browsing and a Gateway API HTTPRoute. Adaptable to nginx or any web server. |
+| [`rclone-s3`](examples/rclone-s3/values.yaml) | S3-compatible storage | rclone syncs schemas to any S3-compatible provider (AWS S3, Backblaze B2, MinIO, Cloudflare R2, GCS) on a 60-second interval. Provider-specific configuration documented in the file header. |
+| [`git-push`](examples/git-push/values.yaml) | Git repository | Commits and pushes schema changes to a GitHub repository for GitHub Pages hosting. Works with any git host (GitLab, Gitea, Bitbucket) by adjusting the remote URL. |
+
+Each example is a self-contained values file — copy it, fill in your credentials, and install. See the comments in each file for what to customize.
 
 #### Verification
 

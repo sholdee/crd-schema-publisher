@@ -14,10 +14,22 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  guard:
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Verify branch
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "ERROR: Release workflow must run on main branch, got ${GITHUB_REF}"
+          exit 1
+
   test:
+    needs: [guard]
     uses: ./.github/workflows/test.yml
 
   helm-lint:
+    needs: [guard]
     uses: ./.github/workflows/helm-lint.yml
 
   build:

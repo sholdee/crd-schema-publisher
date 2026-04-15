@@ -89,7 +89,7 @@ go run ./cmd/ preview
 - **Image signing** uses cosign keyless mode via GitHub OIDC. Production images on main are signed; PR images are not. Base images (golang, distroless) are verified before every build.
 - **Supply chain hardening**: all GitHub Actions pinned by commit SHA (not version tag), Dockerfile base images pinned by digest, `go mod verify` runs in CI.
 - **Prometheus metrics** use stdlib-only text exposition format (no `prometheus/client_golang` dependency). Atomic counters and gauges in `metrics/` package, served at `/metrics` on the health server port. Metrics are always registered in watch mode — zero overhead when not scraped. Recording methods are nil-receiver safe so callers don't need nil checks. Float gauges use `math.Float64bits`/`math.Float64frombits` with `atomic.Int64` for lock-free storage.
-- **Helm chart** in `charts/crd-schema-publisher/` distributed as OCI artifact via GHCR. Two modes (`controller`/`cronjob`) with mode-isolated templates. Two-tier secret management: `existingSecret`, `externalSecret` (ESO) — or no secret at all for extract-only mode (watch gracefully degrades without Cloudflare creds). `values.schema.json` enforces secret mutual exclusivity via `if/then` (not `oneOf`, which breaks yaml-language-server with `additionalProperties: false`); template precedence in `_helpers.tpl` handles runtime resolution (`existingSecret.name` wins, else chart fullname). NetworkPolicy and CiliumNetworkPolicy are mutually exclusive (enforced via `fail` guard in `_helpers.tpl`). PrometheusRule only renders in controller mode. Chart version is CalVer SemVer: `YYYY.MDD.HMMSS` (no leading zeros on month or hour — e.g. `2026.413.65435`). On app changes, `appVersion` aligns with the new image tag. On chart-only changes, `appVersion` is fetched from the GitHub releases API so it always points to a real, pullable image (fails fast if no prior app release exists). `Chart.yaml` version/appVersion fields are placeholder `0.0.0` — both overridden by CI at package time. Dashboard embedded via `.Files.Get`. Pod anti-affinity presets in `_helpers.tpl`.
+- **Helm chart** in `charts/crd-schema-publisher/` distributed as OCI artifact via GHCR. Two modes (`controller`/`cronjob`) with mode-isolated templates. Two-tier secret management: `existingSecret`, `externalSecret` (ESO) — or no secret at all for extract-only mode (watch gracefully degrades without Cloudflare creds). `values.schema.json` enforces secret mutual exclusivity via `if/then` (not `oneOf`, which breaks yaml-language-server with `additionalProperties: false`); template precedence in `_helpers.tpl` handles runtime resolution (`existingSecret.name` wins, else chart fullname). NetworkPolicy and CiliumNetworkPolicy are mutually exclusive (enforced via `fail` guard in `_helpers.tpl`). PrometheusRule only renders in controller mode. Chart version is CalVer SemVer: `YYYY.MDD.HMMSS` (no leading zeros on month or hour — e.g. `2026.413.65435`). Image and chart are always released together with the same CalVer version — both `version` and `appVersion` match the image tag. `Chart.yaml` version/appVersion fields are placeholder `0.0.0` — both overridden by the release workflow at package time. Dashboard embedded via `.Files.Get`. Pod anti-affinity presets in `_helpers.tpl`.
 
 ### Dependencies (direct only)
 
@@ -103,28 +103,47 @@ No other external dependencies. Standard library for HTTP, JSON, HTML templates,
 
 ## CI/CD
 
-### Pipeline Architecture (`.github/workflows/ci.yaml`)
+### Pipeline Architecture
 
-Single workflow triggered on PRs to `main` and pushes to `main`, with nine conditional jobs:
+Four workflow files in `.github/workflows/`:
+
+| File | Trigger | Purpose |
+| --- | ------- | ------- |
+| `test.yml` | `workflow_call` | Reusable: actionlint, markdownlint-cli2, golangci-lint, go mod verify/tidy, go test, go vet, govulncheck |
+| `helm-lint.yml` | `workflow_call` | Reusable: `helm lint`, `helm template` in controller/cronjob/all-features modes, mode isolation checks, schema validation, dashboard JSON embedding, kubeconform |
+| `ci.yaml` | PR + push to `main` | Orchestrator: calls `test.yml` and `helm-lint.yml`, runs detect/build/renovate/gate |
+| `release.yaml` | `workflow_dispatch` | Orchestrator: calls `test.yml` and `helm-lint.yml`, runs build/sign/helm-package/release |
+
+**`ci.yaml`** jobs:
 
 | Job | Runs when | Purpose |
 | --- | --------- | ------- |
 | `detect` | Always | `dorny/paths-filter` classifies changes: `app` (Go, go.mod/sum, Dockerfile), `chart` (charts/**), `renovate` (config only). |
-| `test` | Always (safety net — ensures Go code compiles on every PR, even docs-only) | actionlint, markdownlint-cli2, golangci-lint, go mod verify/tidy, go test, go vet |
-| `build` | `app == true` | Multi-arch Docker build (amd64 + arm64), pushes to GHCR. PR: `pr-N` tag. Main: `vYYYY.MDD.HMMSS` + `latest`. Verifies distroless base image digest with cosign before building. |
-| `sign` | Push to main + `build` succeeded | Cosign keyless signing via GitHub OIDC |
-| `release` | Push to main + `app == true` + `sign` succeeded | Creates git tag, GitHub Release with auto-generated notes, image digest, and chart OCI reference. Waits for `helm-package`. Note: tag push will fail if the tagged commit includes workflow file changes — create the tag manually in that case. |
+| `test` | Always | Calls `test.yml` — safety net, ensures Go code compiles on every PR, even docs-only |
+| `build` | PR + `app == true` | Multi-arch Docker build (amd64 + arm64), pushes `pr-N` tag to GHCR. Verifies distroless base image digest with cosign before building. |
 | `renovate` | `renovate == true` | Validates `.github/renovate.json5` with `renovate-config-validator --strict` |
-| `helm-lint` | Always | `helm lint`, `helm template` in controller/cronjob/all-features modes, mode isolation checks, schema validation, dashboard JSON embedding, kubeconform against built-in and live CRD schemas |
-| `helm-package` | Push to main + (`chart` or `app` changed) | Package chart with CalVer SemVer. On app change: chart version = image tag, `appVersion` = image tag. On chart-only change: chart version = fresh timestamp, `appVersion` = fetched from GitHub releases API (always a real, pullable image). Fails fast if no prior app release exists. Push OCI to GHCR, cosign sign. |
+| `helm-lint` | Always | Calls `helm-lint.yml` |
 | `gate` | Always | Evaluates all job results — only `success` and `skipped` pass. Single required status check for branch protection. |
 
-Build, sign, and release only trigger on application-affecting changes (`app` filter). CI-only changes (e.g., bumping an action SHA, updating linter config) run tests but do not build images. Helm chart is packaged on any chart or app change to keep chart `appVersion` in sync with image tags.
+Pushes to main run `test` and `helm-lint` only (no Docker build, no release). PR builds produce `pr-N` images for testing.
+
+**`release.yaml`** jobs:
+
+| Job | Runs when | Purpose |
+| --- | --------- | ------- |
+| `test` | Always | Calls `test.yml` — re-runs all linting and Go tests as a safety net before building |
+| `helm-lint` | Always | Calls `helm-lint.yml` — re-runs all Helm validation before packaging |
+| `build` | After `test` passes | Multi-arch Docker build (amd64 + arm64), pushes `vYYYY.MDD.HMMSS` + `latest` to GHCR. Verifies distroless base image digest with cosign before building. |
+| `sign` | After `build` | Cosign keyless signing via GitHub OIDC |
+| `helm-package` | After `helm-lint` and `build` | Package chart with CalVer SemVer matching the image tag. Push OCI to GHCR, cosign sign. Image and chart always share the same version — no desync possible. |
+| `release` | After `build`, `sign`, `helm-package` | Creates git tag, GitHub Release with auto-generated notes, image digest, and chart OCI reference. Note: tag push will fail if the tagged commit includes workflow file changes — create the tag manually in that case. |
+
+App image and Helm chart are always released together with the same CalVer version. Releases are decoupled from CI — trigger the release workflow when changes warrant a new version. The release workflow re-runs all tests before building as a safety net. A concurrency group prevents simultaneous releases from racing.
 
 ### Tags
 
-- **Production:** `vYYYY.MDD.HMMSS` (UTC, no leading zeros on month/hour — e.g. `v2026.413.65435`) + `latest` — created on push to main when app code changes
-- **PR:** `pr-N` — created on every PR with code changes
+- **Production:** `vYYYY.MDD.HMMSS` (UTC, no leading zeros on month/hour — e.g. `v2026.413.65435`) + `latest` — created by manual release workflow
+- **PR:** `pr-N` — created on every PR with app code changes
 
 ### Renovate (`.github/renovate.json5`)
 

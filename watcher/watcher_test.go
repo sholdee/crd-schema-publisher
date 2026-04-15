@@ -55,7 +55,59 @@ func testCRD() apiextensionsv1.CustomResourceDefinition {
 	}
 }
 
-// --- debounce tests (existing) ---
+// --- debounce tests ---
+
+func TestDebounce_FirstTriggerFiresImmediately(t *testing.T) {
+	var fired atomic.Bool
+	trigger := make(chan struct{}, 1)
+	done := make(chan struct{})
+
+	go debounceLoop(trigger, 200*time.Millisecond, func() error {
+		fired.Store(true)
+		return nil
+	}, nil, done)
+
+	trigger <- struct{}{}
+
+	// First trigger should fire well before the 200ms debounce duration
+	time.Sleep(50 * time.Millisecond)
+	if !fired.Load() {
+		t.Fatal("expected first trigger to fire immediately, but it did not")
+	}
+	close(done)
+}
+
+func TestDebounce_SubsequentTriggerIsDebounced(t *testing.T) {
+	var count atomic.Int32
+	trigger := make(chan struct{}, 1)
+	done := make(chan struct{})
+
+	go debounceLoop(trigger, 200*time.Millisecond, func() error {
+		count.Add(1)
+		return nil
+	}, nil, done)
+
+	// First trigger — fires immediately
+	trigger <- struct{}{}
+	time.Sleep(50 * time.Millisecond)
+	if c := count.Load(); c != 1 {
+		t.Fatalf("expected 1 publish after first trigger, got %d", c)
+	}
+
+	// Second trigger — should be debounced
+	trigger <- struct{}{}
+	time.Sleep(50 * time.Millisecond)
+	if c := count.Load(); c != 1 {
+		t.Fatalf("expected second trigger to be debounced (still 1), got %d", c)
+	}
+
+	// Wait for debounce to fire
+	time.Sleep(300 * time.Millisecond)
+	if c := count.Load(); c != 2 {
+		t.Fatalf("expected 2 publishes after debounce, got %d", c)
+	}
+	close(done)
+}
 
 func TestDebounce_CoalescesRapidEvents(t *testing.T) {
 	var count atomic.Int32
@@ -67,8 +119,12 @@ func TestDebounce_CoalescesRapidEvents(t *testing.T) {
 		return nil
 	}, nil, done)
 
-	// Send 5 events in rapid succession
-	for range 5 {
+	// First trigger fires immediately
+	trigger <- struct{}{}
+	time.Sleep(50 * time.Millisecond)
+
+	// Send 4 more events in rapid succession — these should coalesce into 1 debounced publish
+	for range 4 {
 		trigger <- struct{}{}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -77,8 +133,9 @@ func TestDebounce_CoalescesRapidEvents(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	close(done)
 
-	if c := count.Load(); c != 1 {
-		t.Fatalf("expected 1 publish cycle, got %d", c)
+	// 1 immediate + 1 debounced = 2 total (not 5)
+	if c := count.Load(); c != 2 {
+		t.Fatalf("expected 2 publish cycles (1 immediate + 1 debounced), got %d", c)
 	}
 }
 

@@ -82,6 +82,7 @@ go run ./cmd/ preview
 - **Theme package** (`theme/`) holds shared CSS, HTML fragments, and JS used by both index and renderer templates. CSS custom properties are the union of both pages' needs. The deepspace theme (starfield, flare, light/dark toggle) is defined once here.
 - **Output format** produces two directory structures: `<group>/<kind>_<version>.json` (primary) and `master-standalone/<group>-<kind>-stable-<version>.json` (kubeval compatibility). Each JSON schema also gets a sibling `.html` documentation page.
 - **Concurrency**: extractor uses 10 goroutines (buffered channel semaphore), publisher uses 3 concurrent upload workers, renderer uses 10 goroutines. These match the original tools' behavior.
+- **Watch mode uses first-trigger-immediate debounce.** The informer's initial List fires AddFunc for all existing CRDs, which signals the debounce loop. The first trigger fires immediately (zero delay), subsequent triggers are debounced. This produces exactly one publish cycle on startup — no explicit initial publish in runLeader.
 - **Watch mode uses full re-extract.** Simpler than incremental. Upload is already incremental via check-missing. Extraction of <200 CRDs is sub-second.
 - **Leader election uses standard client-go leaderelection.** LeaseLock with 15s/10s/2s timings. Leader exits on lease loss (standard controller pattern).
 - **All replicas report ready.** Readiness is not gated on leadership. Standard controller pattern — leadership is an internal concern.

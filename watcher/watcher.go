@@ -126,12 +126,6 @@ func Run(ctx context.Context, cfg Config) error {
 }
 
 func runLeader(ctx context.Context, cfg Config) {
-	// Initial publish on becoming leader
-	slog.Info("running initial publish cycle")
-	if err := publishCycle(cfg); err != nil {
-		slog.Error("initial publish failed", "error", err)
-	}
-
 	// Set up CRD informer
 	trigger := make(chan struct{}, 1)
 	lw := &cache.ListWatch{
@@ -185,6 +179,7 @@ func debounceLoop(trigger <-chan struct{}, duration time.Duration, publish func(
 	var timerC <-chan time.Time
 	var publishing atomic.Bool
 	var wg sync.WaitGroup
+	first := true
 	heartbeat := time.NewTicker(30 * time.Second)
 	defer heartbeat.Stop()
 	m.Heartbeat() // initial heartbeat on loop entry
@@ -209,8 +204,13 @@ func debounceLoop(trigger <-chan struct{}, duration time.Duration, publish func(
 			return
 		case <-trigger:
 			m.Heartbeat()
+			d := duration
+			if first {
+				d = 0
+				first = false
+			}
 			if timer == nil {
-				timer = time.NewTimer(duration)
+				timer = time.NewTimer(d)
 				timerC = timer.C
 			} else {
 				if !timer.Stop() {
@@ -219,7 +219,7 @@ func debounceLoop(trigger <-chan struct{}, duration time.Duration, publish func(
 					default:
 					}
 				}
-				timer.Reset(duration)
+				timer.Reset(d)
 			}
 		case <-heartbeat.C:
 			m.Heartbeat()
@@ -236,7 +236,7 @@ func debounceLoop(trigger <-chan struct{}, duration time.Duration, publish func(
 			go func() {
 				defer wg.Done()
 				defer publishing.Store(false)
-				slog.Info("debounce timer fired, running publish cycle")
+				slog.Info("running publish cycle")
 				if err := publish(); err != nil {
 					slog.Error("publish cycle failed", "error", err)
 				}

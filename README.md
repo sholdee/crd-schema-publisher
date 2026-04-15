@@ -122,7 +122,7 @@ Pre-built multi-arch images (amd64 + arm64) are published to GHCR:
 ghcr.io/sholdee/crd-schema-publisher:latest
 ```
 
-Each push to `main` with application code changes creates a GitHub Release with a date-based tag (`vYYYY.MDD.HMMSS` — e.g. `v2026.413.65435`) and auto-generated release notes including the image digest. PR builds get `pr-N` tags for testing.
+Releases are triggered manually via the release workflow, producing a date-based tag (`vYYYY.MDD.HMMSS` — e.g. `v2026.413.65435`) and `latest`, with auto-generated release notes including the image digest and OCI Helm chart reference. PR builds get `pr-N` tags for testing.
 
 Images use `gcr.io/distroless/static:nonroot` as the runtime base — no shell, no package manager, runs as UID 65534. Production images are signed with [cosign](https://docs.sigstore.dev/cosign/overview/) keyless signing via GitHub Actions OIDC:
 
@@ -321,7 +321,7 @@ git config core.hooksPath .githooks
 
 ### Renovate
 
-Dependencies are managed by [Renovate](https://docs.renovatebot.com/). Minor and patch updates for Go modules, GitHub Actions, and Docker images are automerged.
+Dependencies are managed by [Renovate](https://docs.renovatebot.com/). Minor and patch updates for Go modules, GitHub Actions, Docker images, and CI tools are automerged after required status checks pass.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for full contributor setup and guidelines.
 

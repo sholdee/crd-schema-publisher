@@ -7,6 +7,7 @@
     'helpers:pinGitHubActionDigests',
   ],
   platformAutomerge: true,
+  postUpdateOptions: ['gomodTidy'],
   packageRules: [
     {
       description: 'Automerge minor/patch GitHub Actions updates',

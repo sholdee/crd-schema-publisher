@@ -223,8 +223,8 @@ metrics:
       watchdogStaleSeconds: 120
       # -- Duration before watchdog stale alert fires
       watchdogStaleFor: 5m
-      # -- No successful publish threshold in seconds
-      noPublishSeconds: 86400
+      # -- No successful publish threshold in seconds (0 = disabled)
+      noPublishSeconds: 0
       # -- Duration before no-publish alert fires
       noPublishFor: 1h
       # -- Error spike threshold (errors per hour)

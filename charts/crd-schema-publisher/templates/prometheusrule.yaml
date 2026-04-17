@@ -23,6 +23,7 @@ spec:
               The crd-schema-publisher watcher loop has not sent a heartbeat
               in over {{ .Values.metrics.prometheusRule.rules.watchdogStaleSeconds }} seconds.
               This indicates the process may be stuck or crashed.
+        {{- if gt (int .Values.metrics.prometheusRule.rules.noPublishSeconds) 0 }}
         - alert: CRDPublisherNoSuccessfulPublish
           expr: >-
             (crdpublisher_leader == 1)
@@ -36,6 +37,7 @@ spec:
               The leader pod has not completed a successful publish cycle
               in over {{ .Values.metrics.prometheusRule.rules.noPublishSeconds }} seconds.
               Check logs for errors.
+        {{- end }}
         - alert: CRDPublisherErrorSpike
           expr: increase(crdpublisher_publish_cycles_total{result="error"}[1h]) > {{ .Values.metrics.prometheusRule.rules.errorSpikeThreshold }}
           for: {{ .Values.metrics.prometheusRule.rules.errorSpikeFor }}

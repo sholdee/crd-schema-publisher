@@ -246,6 +246,8 @@ func TestGenerate_BasePath(t *testing.T) {
 		{`href="/iac/favicon.svg"`, "favicon with base path"},
 		{`href="/iac/cert-manager.io/certificate_v1.html"`, "schema link with base path"},
 		{`data-url="/iac/cert-manager.io/certificate_v1.json"`, "data-url with base path"},
+		{`data-base-path="/iac"`, "body data-base-path attribute"},
+		{`document.body.dataset.basePath`, "usage example URL includes base path via data attr"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(html, c.substr) {

@@ -180,7 +180,7 @@ var indexTemplate = `<!DOCTYPE html>
 </style>
 ` + theme.HeadScript + `
 </head>
-<body>
+<body data-base-path="{{.BasePath}}">
 ` + theme.FlareDiv + `
 <header>
   <div class="title-row">
@@ -387,7 +387,8 @@ metadata:
   });
 
   document.querySelectorAll('.usage-content code').forEach(function(el){
-    el.textContent = el.textContent.replace(/https:\/\/YOUR_DOMAIN/g, location.origin);
+    var base = document.body.dataset.basePath || '';
+    el.textContent = el.textContent.replace(/https:\/\/YOUR_DOMAIN/g, location.origin + base);
   });
 
   // Save view state before navigating to a schema page

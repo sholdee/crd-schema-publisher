@@ -123,7 +123,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Validate Renovate config
-        run: npx --yes --package renovate@43.126.0 -- renovate-config-validator --strict
+        run: npx --yes --package renovate@43.129.0 -- renovate-config-validator --strict
 
   helm-lint:
     needs: detect

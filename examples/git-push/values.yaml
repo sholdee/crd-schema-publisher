@@ -13,11 +13,22 @@
 # site. The sidecar handles both fresh repos (init + first push) and existing
 # repos (clone + incremental updates).
 #
+# If your GitHub Pages site serves from a subpath (e.g., user.github.io/repo/),
+# set config.basePath to match:
+#
+#   config:
+#     basePath: "/repo"
+#
+# This ensures all generated HTML links include the subpath prefix. Without it,
+# links resolve against the host root and break. Cloudflare Pages and other
+# hosts that serve from root do not need this.
+#
 # This pattern works with any git hosting (GitLab, Gitea, Bitbucket) by
 # adjusting the remote URL format in the sidecar command.
 #
 # Customize:
 #   - Secret credentials (github-token, github-repo)
+#   - config.basePath: set to your repo subpath for GitHub Pages (e.g., /repo)
 #   - GIT_BRANCH: change from gh-pages if needed
 #   - sync interval: adjust the sleep duration in the sidecar command
 #

@@ -151,11 +151,12 @@ type schemaPageData struct {
 	Group    string
 	Version  string
 	JSONPath string
+	BasePath string
 	Schema   *SchemaNode
 }
 
 // renderSchemaFile reads a JSON schema file and writes a sibling .html file.
-func renderSchemaFile(tmpl *template.Template, jsonPath, group, filename string) error {
+func renderSchemaFile(tmpl *template.Template, jsonPath, group, filename, basePath string) error {
 	data, err := os.ReadFile(jsonPath)
 	if err != nil {
 		return fmt.Errorf("reading schema %s: %w", jsonPath, err)
@@ -178,7 +179,8 @@ func renderSchemaFile(tmpl *template.Template, jsonPath, group, filename string)
 		Kind:     kind,
 		Group:    group,
 		Version:  version,
-		JSONPath: "/" + group + "/" + filename,
+		JSONPath: basePath + "/" + group + "/" + filename,
+		BasePath: basePath,
 		Schema:   &schema,
 	}
 
@@ -234,7 +236,7 @@ func collectRenderJobs(outputDir string) ([]renderJob, error) {
 
 // RenderAll walks the output directory and generates an HTML page for each JSON schema.
 // Skips the master-standalone directory and non-JSON files.
-func RenderAll(outputDir string) error {
+func RenderAll(outputDir, basePath string) error {
 	funcMap := template.FuncMap{
 		"childNode": func(n *SchemaNode) *SchemaNode {
 			if len(n.Properties) > 0 {
@@ -270,7 +272,7 @@ func RenderAll(outputDir string) error {
 		go func(j renderJob) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			if err := renderSchemaFile(tmpl, j.jsonPath, j.groupName, j.fileName); err != nil {
+			if err := renderSchemaFile(tmpl, j.jsonPath, j.groupName, j.fileName, basePath); err != nil {
 				errs <- fmt.Errorf("rendering %s/%s: %w", j.groupName, j.fileName, err)
 			}
 		}(job)
@@ -290,7 +292,7 @@ var schemaTemplate = `<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Kind}} {{.Version}} — {{.Group}}</title>
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/svg+xml" href="{{.BasePath}}/favicon.svg">
 <style>` + theme.CSSVars + theme.CSSBase + `
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
@@ -381,10 +383,10 @@ var schemaTemplate = `<!DOCTYPE html>
 </style>
 ` + theme.HeadScript + `
 </head>
-<body>
+<body data-base-path="{{.BasePath}}">
 ` + theme.FlareDiv + `
 <div class="nav-row">
-  <a href="/" class="back-link">← Back to index <kbd>Esc</kbd></a>
+  <a href="{{.BasePath}}/" class="back-link">← Back to index <kbd>Esc</kbd></a>
   ` + theme.ThemeToggleButton + `
 </div>
 <div class="meta-cards">
@@ -458,7 +460,7 @@ metadata:
       if (document.activeElement && document.activeElement !== document.body) {
         document.activeElement.blur();
       }
-      location.href = '/';
+      location.href = document.body.dataset.basePath + '/';
     }
   });
   document.getElementById('copy-url').addEventListener('click', function(){

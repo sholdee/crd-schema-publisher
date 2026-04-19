@@ -34,6 +34,7 @@ type Config struct {
 	Client     *apiextensionsclient.Clientset
 	KubeConfig *rest.Config
 	OutputDir  string
+	BasePath   string
 	Publisher  *publisher.Publisher // nil = extract-only
 	Debounce   time.Duration
 	Namespace  string
@@ -282,14 +283,14 @@ func publishCycle(cfg Config) (retErr error) {
 	slog.Info("wrote schemas", "count", count)
 
 	if os.Getenv("SKIP_RENDER") != "true" {
-		if err := renderer.RenderAll(cfg.OutputDir); err != nil {
+		if err := renderer.RenderAll(cfg.OutputDir, cfg.BasePath); err != nil {
 			return fmt.Errorf("rendering schemas: %w", err)
 		}
 		slog.Info("rendered schema pages")
 	}
 
 	// Generate index
-	if err := index.Generate(cfg.OutputDir); err != nil {
+	if err := index.Generate(cfg.OutputDir, cfg.BasePath); err != nil {
 		return fmt.Errorf("generating index: %w", err)
 	}
 	slog.Info("generated index")

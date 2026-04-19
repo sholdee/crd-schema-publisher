@@ -240,7 +240,7 @@ func TestRenderSchema_BasicOutput(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(tmpDir, "example.io"), 0o755)
 	_ = os.WriteFile(filepath.Join(tmpDir, "example.io", "myresource_v1.json"), []byte(schema), 0o644)
 
-	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "example.io", "myresource_v1.json"), "example.io", "myresource_v1.json")
+	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "example.io", "myresource_v1.json"), "example.io", "myresource_v1.json", "")
 	if err != nil {
 		t.Fatalf("renderSchemaFile error: %v", err)
 	}
@@ -308,7 +308,7 @@ func TestRenderSchema_LeafVsExpandable(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(tmpDir, "test.io"), 0o755)
 	_ = os.WriteFile(filepath.Join(tmpDir, "test.io", "thing_v1.json"), []byte(schema), 0o644)
 
-	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "test.io", "thing_v1.json"), "test.io", "thing_v1.json")
+	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "test.io", "thing_v1.json"), "test.io", "thing_v1.json", "")
 	if err != nil {
 		t.Fatalf("renderSchemaFile error: %v", err)
 	}
@@ -349,7 +349,7 @@ func TestRenderSchema_ArrayTypes(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(tmpDir, "test.io"), 0o755)
 	_ = os.WriteFile(filepath.Join(tmpDir, "test.io", "thing_v1.json"), []byte(schema), 0o644)
 
-	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "test.io", "thing_v1.json"), "test.io", "thing_v1.json")
+	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "test.io", "thing_v1.json"), "test.io", "thing_v1.json", "")
 	if err != nil {
 		t.Fatalf("renderSchemaFile error: %v", err)
 	}
@@ -380,7 +380,7 @@ func TestRenderSchema_IntOrString(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(tmpDir, "test.io"), 0o755)
 	_ = os.WriteFile(filepath.Join(tmpDir, "test.io", "thing_v1.json"), []byte(schema), 0o644)
 
-	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "test.io", "thing_v1.json"), "test.io", "thing_v1.json")
+	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "test.io", "thing_v1.json"), "test.io", "thing_v1.json", "")
 	if err != nil {
 		t.Fatalf("renderSchemaFile error: %v", err)
 	}
@@ -409,7 +409,7 @@ func TestRenderSchema_EnumValues(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(tmpDir, "test.io"), 0o755)
 	_ = os.WriteFile(filepath.Join(tmpDir, "test.io", "thing_v1.json"), []byte(schema), 0o644)
 
-	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "test.io", "thing_v1.json"), "test.io", "thing_v1.json")
+	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "test.io", "thing_v1.json"), "test.io", "thing_v1.json", "")
 	if err != nil {
 		t.Fatalf("renderSchemaFile error: %v", err)
 	}
@@ -432,7 +432,7 @@ func TestRenderSchema_MinimalSchema(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(tmpDir, "test.io"), 0o755)
 	_ = os.WriteFile(filepath.Join(tmpDir, "test.io", "empty_v1.json"), []byte(schema), 0o644)
 
-	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "test.io", "empty_v1.json"), "test.io", "empty_v1.json")
+	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "test.io", "empty_v1.json"), "test.io", "empty_v1.json", "")
 	if err != nil {
 		t.Fatalf("renderSchemaFile error: %v", err)
 	}
@@ -465,7 +465,7 @@ func TestRenderAll_CreatesHTMLFiles(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(tmpDir, "master-standalone", "test.json"),
 		[]byte(`{"type":"object"}`), 0o644)
 
-	err := RenderAll(tmpDir)
+	err := RenderAll(tmpDir, "")
 	if err != nil {
 		t.Fatalf("RenderAll error: %v", err)
 	}
@@ -491,7 +491,7 @@ func TestRenderAll_SkipsNonJsonFiles(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(tmpDir, "example.io", "thing_v1.json"), []byte(`{"type":"object"}`), 0o644)
 	_ = os.WriteFile(filepath.Join(tmpDir, "example.io", "README.md"), []byte(`# hello`), 0o644)
 
-	err := RenderAll(tmpDir)
+	err := RenderAll(tmpDir, "")
 	if err != nil {
 		t.Fatalf("RenderAll error: %v", err)
 	}
@@ -507,9 +507,80 @@ func TestRenderAll_SkipsNonJsonFiles(t *testing.T) {
 func TestRenderAll_EmptyDir(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	err := RenderAll(tmpDir)
+	err := RenderAll(tmpDir, "")
 	if err != nil {
 		t.Fatalf("RenderAll should handle empty dir: %v", err)
+	}
+}
+
+func TestRenderSchema_BasePath(t *testing.T) {
+	schema := `{
+		"type": "object",
+		"properties": {
+			"name": {"type": "string"}
+		}
+	}`
+
+	tmpDir := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(tmpDir, "example.io"), 0o755)
+	_ = os.WriteFile(filepath.Join(tmpDir, "example.io", "thing_v1.json"), []byte(schema), 0o644)
+
+	err := RenderAll(tmpDir, "/iac")
+	if err != nil {
+		t.Fatalf("RenderAll error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, "example.io", "thing_v1.html"))
+	if err != nil {
+		t.Fatalf("HTML file not created: %v", err)
+	}
+
+	html := string(data)
+	checks := []struct {
+		substr string
+		desc   string
+	}{
+		{`href="/iac/favicon.svg"`, "favicon with base path"},
+		{`href="/iac/"`, "back link with base path"},
+		{`href="/iac/example.io/thing_v1.json"`, "raw schema link with base path"},
+		{`data-url="/iac/example.io/thing_v1.json"`, "copy URL data attr with base path"},
+		{`data-base-path="/iac"`, "base path data attribute on body"},
+	}
+	for _, c := range checks {
+		if !strings.Contains(html, c.substr) {
+			t.Errorf("HTML should contain %s (looked for %q)", c.desc, c.substr)
+		}
+	}
+}
+
+func TestRenderSchema_EmptyBasePath(t *testing.T) {
+	schema := `{"type": "object", "properties": {"name": {"type": "string"}}}`
+
+	tmpDir := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(tmpDir, "example.io"), 0o755)
+	_ = os.WriteFile(filepath.Join(tmpDir, "example.io", "thing_v1.json"), []byte(schema), 0o644)
+
+	err := RenderAll(tmpDir, "")
+	if err != nil {
+		t.Fatalf("RenderAll error: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(tmpDir, "example.io", "thing_v1.html"))
+	html := string(data)
+
+	checks := []struct {
+		substr string
+		desc   string
+	}{
+		{`href="/favicon.svg"`, "favicon at root"},
+		{`href="/"`, "back link at root"},
+		{`href="/example.io/thing_v1.json"`, "raw schema link at root"},
+		{`data-base-path=""`, "empty base path data attribute on body"},
+	}
+	for _, c := range checks {
+		if !strings.Contains(html, c.substr) {
+			t.Errorf("HTML should contain %s (looked for %q)", c.desc, c.substr)
+		}
 	}
 }
 
@@ -541,7 +612,7 @@ func TestRenderSchema_DeepNesting(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(tmpDir, "test.io"), 0o755)
 	_ = os.WriteFile(filepath.Join(tmpDir, "test.io", "deep_v1.json"), []byte(schema), 0o644)
 
-	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "test.io", "deep_v1.json"), "test.io", "deep_v1.json")
+	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "test.io", "deep_v1.json"), "test.io", "deep_v1.json", "")
 	if err != nil {
 		t.Fatalf("renderSchemaFile error: %v", err)
 	}

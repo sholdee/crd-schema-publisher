@@ -100,6 +100,7 @@ func normalizeBasePath(s string) string {
 
 func runExtract() error {
 	outputDir := getEnv("OUTPUT_DIR", "/output")
+	basePath := normalizeBasePath(os.Getenv("BASE_PATH"))
 	kubeContext := os.Getenv("KUBECTL_CONTEXT")
 
 	slog.Info("building kubernetes client")
@@ -128,13 +129,13 @@ func runExtract() error {
 
 	if os.Getenv("SKIP_RENDER") != "true" {
 		slog.Info("rendering schema pages")
-		if err := renderer.RenderAll(outputDir); err != nil {
+		if err := renderer.RenderAll(outputDir, basePath); err != nil {
 			return fmt.Errorf("rendering schemas: %w", err)
 		}
 	}
 
 	slog.Info("generating index")
-	if err := index.Generate(outputDir); err != nil {
+	if err := index.Generate(outputDir, basePath); err != nil {
 		return fmt.Errorf("generating index: %w", err)
 	}
 
@@ -166,6 +167,7 @@ func runUpload() error {
 
 func runWatch() error {
 	outputDir := getEnv("OUTPUT_DIR", "/output")
+	basePath := normalizeBasePath(os.Getenv("BASE_PATH"))
 	kubeContext := os.Getenv("KUBECTL_CONTEXT")
 
 	podName, err := requireEnv("POD_NAME")
@@ -217,6 +219,7 @@ func runWatch() error {
 		Client:     client,
 		KubeConfig: cfg,
 		OutputDir:  outputDir,
+		BasePath:   basePath,
 		Publisher:  pub,
 		Debounce:   time.Duration(debounceSeconds) * time.Second,
 		Namespace:  podNamespace,
@@ -228,6 +231,7 @@ func runWatch() error {
 
 func runPreview() error {
 	dir := getEnv("OUTPUT_DIR", "")
+	basePath := normalizeBasePath(os.Getenv("BASE_PATH"))
 	isTempDir := false
 	if dir == "" {
 		var err error
@@ -247,7 +251,7 @@ func runPreview() error {
 
 	if os.Getenv("SKIP_RENDER") != "true" {
 		slog.Info("rendering schema pages")
-		if err := renderer.RenderAll(dir); err != nil {
+		if err := renderer.RenderAll(dir, basePath); err != nil {
 			if isTempDir {
 				_ = os.RemoveAll(dir)
 			}
@@ -256,7 +260,7 @@ func runPreview() error {
 	}
 
 	slog.Info("generating index")
-	if err := index.Generate(dir); err != nil {
+	if err := index.Generate(dir, basePath); err != nil {
 		if isTempDir {
 			_ = os.RemoveAll(dir)
 		}
@@ -264,7 +268,18 @@ func runPreview() error {
 	}
 
 	addr := getEnv("PREVIEW_ADDR", "127.0.0.1:8989")
-	srv := &http.Server{Addr: addr, Handler: http.FileServer(http.Dir(dir)), ReadHeaderTimeout: 10 * time.Second}
+	var handler http.Handler
+	if basePath != "" {
+		mux := http.NewServeMux()
+		mux.Handle(basePath+"/", http.StripPrefix(basePath, http.FileServer(http.Dir(dir))))
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, basePath+"/", http.StatusFound)
+		})
+		handler = mux
+	} else {
+		handler = http.FileServer(http.Dir(dir))
+	}
+	srv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
@@ -276,7 +291,11 @@ func runPreview() error {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 
-	slog.Info("serving preview", "addr", addr)
+	if basePath != "" {
+		slog.Info("serving preview", "addr", addr, "url", "http://"+addr+basePath+"/")
+	} else {
+		slog.Info("serving preview", "addr", addr)
+	}
 	err := srv.ListenAndServe()
 	if isTempDir {
 		_ = os.RemoveAll(dir)

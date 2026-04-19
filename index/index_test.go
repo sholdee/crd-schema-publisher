@@ -16,7 +16,7 @@ func TestGenerate_CreatesIndexHTML(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(tmpDir, "monitoring.coreos.com"), 0o755)
 	_ = os.WriteFile(filepath.Join(tmpDir, "monitoring.coreos.com", "servicemonitor_v1.json"), []byte(`{}`), 0o644)
 
-	err := Generate(tmpDir)
+	err := Generate(tmpDir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestGenerate_SkipsMasterStandalone(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(tmpDir, "master-standalone"), 0o755)
 	_ = os.WriteFile(filepath.Join(tmpDir, "master-standalone", "example.io-test-stable-v1.json"), []byte(`{}`), 0o644)
 
-	err := Generate(tmpDir)
+	err := Generate(tmpDir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestGenerate_ManySchemasFewGroups(t *testing.T) {
 		_ = os.WriteFile(filepath.Join(tmpDir, "flux.io", s), []byte(`{}`), 0o644)
 	}
 
-	err := Generate(tmpDir)
+	err := Generate(tmpDir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestGenerate_ManySchemasFewGroups(t *testing.T) {
 func TestGenerate_EmptyOutputDir(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	err := Generate(tmpDir)
+	err := Generate(tmpDir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestGenerate_CreatesFavicon(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(tmpDir, "example.io"), 0o755)
 	_ = os.WriteFile(filepath.Join(tmpDir, "example.io", "test_v1.json"), []byte(`{}`), 0o644)
 
-	err := Generate(tmpDir)
+	err := Generate(tmpDir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestGenerate_LinksToHTMLWhenPresent(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(tmpDir, "example.io", "thing_v1.json"), []byte(`{}`), 0o644)
 	_ = os.WriteFile(filepath.Join(tmpDir, "example.io", "thing_v1.html"), []byte(`<html></html>`), 0o644)
 
-	err := Generate(tmpDir)
+	err := Generate(tmpDir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestGenerate_FallsBackToJSONWhenNoHTML(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(tmpDir, "example.io"), 0o755)
 	_ = os.WriteFile(filepath.Join(tmpDir, "example.io", "thing_v1.json"), []byte(`{}`), 0o644)
 
-	err := Generate(tmpDir)
+	err := Generate(tmpDir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestGenerate_SkipsNonJsonFiles(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(tmpDir, "example.io", "README.md"), []byte(`# hello`), 0o644)
 	_ = os.WriteFile(filepath.Join(tmpDir, "example.io", ".gitkeep"), []byte(``), 0o644)
 
-	err := Generate(tmpDir)
+	err := Generate(tmpDir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -222,5 +222,55 @@ func TestGenerate_SkipsNonJsonFiles(t *testing.T) {
 	}
 	if !strings.Contains(html, ">1</strong> schemas") {
 		t.Error("should count only JSON files")
+	}
+}
+
+func TestGenerate_BasePath(t *testing.T) {
+	tmpDir := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(tmpDir, "cert-manager.io"), 0o755)
+	_ = os.WriteFile(filepath.Join(tmpDir, "cert-manager.io", "certificate_v1.json"), []byte(`{}`), 0o644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "cert-manager.io", "certificate_v1.html"), []byte(`<html></html>`), 0o644)
+
+	err := Generate(tmpDir, "/iac")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(tmpDir, "index.html"))
+	html := string(data)
+
+	checks := []struct {
+		substr string
+		desc   string
+	}{
+		{`href="/iac/favicon.svg"`, "favicon with base path"},
+		{`href="/iac/cert-manager.io/certificate_v1.html"`, "schema link with base path"},
+		{`data-url="/iac/cert-manager.io/certificate_v1.json"`, "data-url with base path"},
+	}
+	for _, c := range checks {
+		if !strings.Contains(html, c.substr) {
+			t.Errorf("index should contain %s (looked for %q)", c.desc, c.substr)
+		}
+	}
+}
+
+func TestGenerate_EmptyBasePath(t *testing.T) {
+	tmpDir := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(tmpDir, "example.io"), 0o755)
+	_ = os.WriteFile(filepath.Join(tmpDir, "example.io", "thing_v1.json"), []byte(`{}`), 0o644)
+
+	err := Generate(tmpDir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(tmpDir, "index.html"))
+	html := string(data)
+
+	if !strings.Contains(html, `href="/favicon.svg"`) {
+		t.Error("empty base path should produce root-relative favicon")
+	}
+	if !strings.Contains(html, `href="/example.io/thing_v1.json"`) {
+		t.Error("empty base path should produce root-relative schema links")
 	}
 }

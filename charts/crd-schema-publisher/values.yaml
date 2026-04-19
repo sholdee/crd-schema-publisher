@@ -38,6 +38,8 @@ config:
   leaseName: crd-schema-publisher
   # -- Set to "true" to skip HTML schema page rendering
   skipRender: ""
+  # -- URL path prefix for subpath deployments (e.g., /iac for GitHub Pages at user.github.io/iac/)
+  basePath: ""
 
 # ---------------------------------------------------------------------------
 # Secrets — configure exactly one of the two options below

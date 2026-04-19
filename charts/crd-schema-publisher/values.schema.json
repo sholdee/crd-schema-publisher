@@ -95,6 +95,10 @@
             "boolean"
           ],
           "description": "Set to true to skip HTML schema page rendering"
+        },
+        "basePath": {
+          "type": "string",
+          "description": "URL path prefix for subpath deployments (e.g., /iac)"
         }
       }
     },

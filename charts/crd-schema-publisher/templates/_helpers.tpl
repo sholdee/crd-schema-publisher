@@ -108,6 +108,10 @@ Secret refs + config vars that apply to all modes.
 - name: SKIP_RENDER
   value: {{ .Values.config.skipRender | quote }}
 {{- end }}
+{{- if .Values.config.basePath }}
+- name: BASE_PATH
+  value: {{ .Values.config.basePath | quote }}
+{{- end }}
 {{- end }}
 
 {{/*

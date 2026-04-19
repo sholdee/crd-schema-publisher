@@ -70,6 +70,7 @@ go run ./cmd/ preview
 | `LEASE_NAME` | No | `crd-schema-publisher` | Name of the Lease resource (watch mode) |
 | `HEALTH_PORT` | No | `8080` | Port for liveness/readiness probes (watch mode) |
 | `SKIP_RENDER` | No | — | Set to `true` to skip HTML schema page rendering |
+| `BASE_PATH` | No | — | URL path prefix for subpath deployments (e.g., `/iac` for GitHub Pages) |
 | `PREVIEW_ADDR` | No | `127.0.0.1:8989` | Listen address (preview mode) |
 
 ### Key Design Decisions

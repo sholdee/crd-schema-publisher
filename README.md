@@ -150,6 +150,29 @@ All configuration is via environment variables. Variables marked *(watch)* apply
 | `HEALTH_PORT` | No | `8080` | Port for liveness/readiness probes (watch mode) |
 | `PREVIEW_ADDR` | No | `127.0.0.1:8989` | Listen address for preview server (preview mode) |
 | `SKIP_RENDER` | No | — | Set to `true` to skip HTML schema page rendering |
+| `BASE_PATH` | No | — | URL path prefix for subpath deployments (e.g., `/iac` for GitHub Pages at `user.github.io/iac/`) |
+
+### Subpath Deployments (GitHub Pages)
+
+When hosting schemas at a URL subpath (e.g., `https://user.github.io/iac/`), set `BASE_PATH` to the subpath:
+
+```bash
+BASE_PATH=/iac go run ./cmd/ extract
+```
+
+Or in the Helm chart:
+
+```yaml
+config:
+  basePath: "/iac"
+```
+
+All generated HTML links will include the base path prefix. The preview server also respects `BASE_PATH`, mounting content at the subpath for local testing:
+
+```bash
+BASE_PATH=/iac go run ./cmd/ preview
+# → http://127.0.0.1:8989/iac/
+```
 
 ### Monitoring
 

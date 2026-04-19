@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -84,6 +85,17 @@ func requireEnv(key string) (string, error) {
 		return "", fmt.Errorf("required environment variable %s is not set", key)
 	}
 	return v, nil
+}
+
+func normalizeBasePath(s string) string {
+	s = strings.TrimRight(s, "/")
+	if s == "" {
+		return ""
+	}
+	if !strings.HasPrefix(s, "/") {
+		s = "/" + s
+	}
+	return s
 }
 
 func runExtract() error {

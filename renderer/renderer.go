@@ -36,6 +36,26 @@ type SchemaNode struct {
 	AdditionalProperties interface{}            `json:"additionalProperties,omitempty"`
 }
 
+// UnmarshalJSON handles both regular JSON Schema objects and boolean schemas
+// (true = accept any value, false = reject all values) which are valid in
+// JSON Schema but cannot be decoded into a struct by the default unmarshaler.
+func (n *SchemaNode) UnmarshalJSON(data []byte) error {
+	if len(data) > 0 && (data[0] == 't' || data[0] == 'f') {
+		// Boolean schema — treat as empty node (no type, no properties).
+		*n = SchemaNode{}
+		return nil
+	}
+
+	// Decode as a regular object using an alias to avoid infinite recursion.
+	type schemaAlias SchemaNode
+	var alias schemaAlias
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return err
+	}
+	*n = SchemaNode(alias)
+	return nil
+}
+
 // DisplayType returns a human-readable type string for the schema node.
 func (n *SchemaNode) DisplayType() string {
 	if len(n.OneOf) == 2 && n.Type == nil {

@@ -92,6 +92,60 @@ func TestAdditionalProperties_SkipsRootWhenFlagged(t *testing.T) {
 	}
 }
 
+func TestAdditionalProperties_DoesNotCorruptPropertiesMap(t *testing.T) {
+	// Regression: when a CRD has a field literally named "properties",
+	// the converter would enter the properties map, see the "properties" key,
+	// and inject "additionalProperties": false into the map — corrupting it
+	// with a boolean entry that isn't a valid schema.
+	schema := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"output": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"properties": map[string]interface{}{
+						"type":        "object",
+						"description": "Output properties map",
+						"additionalProperties": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"value": map[string]interface{}{"type": "string"},
+							},
+						},
+					},
+					"required": map[string]interface{}{
+						"type":  "array",
+						"items": map[string]interface{}{"type": "string"},
+					},
+				},
+			},
+		},
+	}
+	result := AdditionalProperties(schema, true)
+
+	// Navigate to output's properties map
+	outputSchema := propField(t, result, "output")
+	outputProps, ok := outputSchema["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected output.properties to be a map")
+	}
+
+	// The properties map should only have "properties" and "required" — NOT "additionalProperties"
+	if _, found := outputProps["additionalProperties"]; found {
+		t.Fatal("additionalProperties was incorrectly injected into the properties map; " +
+			"a property named 'properties' caused the converter to treat the map as a schema object")
+	}
+
+	// The "properties" field's own additionalProperties (the schema) should still be intact
+	propsField, ok := outputProps["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected 'properties' property to be a map")
+	}
+	if _, ok := propsField["additionalProperties"].(map[string]interface{}); !ok {
+		t.Fatal("the additionalProperties schema on the 'properties' field should be preserved")
+	}
+}
+
 func TestReplaceIntOrString_ReplacesFormat(t *testing.T) {
 	schema := map[string]interface{}{
 		"type": "object",

@@ -11,7 +11,20 @@ func AdditionalProperties(data map[string]interface{}, skip bool) map[string]int
 			data["additionalProperties"] = false
 		}
 	}
-	for _, v := range data {
+	for k, v := range data {
+		if k == "properties" {
+			// The "properties" keyword maps property names to sub-schemas.
+			// Recurse into each sub-schema individually — not the map itself,
+			// which would corrupt schemas with a property named "properties".
+			if props, ok := v.(map[string]interface{}); ok {
+				for _, pv := range props {
+					if propSchema, ok := pv.(map[string]interface{}); ok {
+						AdditionalProperties(propSchema, false)
+					}
+				}
+			}
+			continue
+		}
 		if nested, ok := v.(map[string]interface{}); ok {
 			AdditionalProperties(nested, false)
 		}

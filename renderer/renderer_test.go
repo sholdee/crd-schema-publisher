@@ -584,6 +584,85 @@ func TestRenderSchema_EmptyBasePath(t *testing.T) {
 	}
 }
 
+func TestRenderSchema_BooleanSchemaInProperties(t *testing.T) {
+	// JSON Schema allows boolean schemas (true/false) as property values.
+	// The renderer should handle these gracefully instead of crashing.
+	schema := `{
+		"type": "object",
+		"properties": {
+			"name": {"type": "string"},
+			"anything": true,
+			"nothing": false
+		}
+	}`
+
+	tmpDir := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(tmpDir, "test.io"), 0o755)
+	_ = os.WriteFile(filepath.Join(tmpDir, "test.io", "thing_v1.json"), []byte(schema), 0o644)
+
+	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "test.io", "thing_v1.json"), "test.io", "thing_v1.json", "")
+	if err != nil {
+		t.Fatalf("renderSchemaFile should handle boolean schemas: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(tmpDir, "test.io", "thing_v1.html"))
+	html := string(data)
+
+	if !strings.Contains(html, "name") {
+		t.Error("should still render normal properties alongside boolean schemas")
+	}
+	if !strings.Contains(html, "anything") {
+		t.Error("should render boolean true schema property")
+	}
+	if !strings.Contains(html, "nothing") {
+		t.Error("should render boolean false schema property")
+	}
+}
+
+func TestRenderSchema_CompositionWithBooleanSchemas(t *testing.T) {
+	// JSON Schema allows boolean schemas (true/false) inside composition keywords
+	// (oneOf, anyOf, allOf). The renderer should handle these gracefully.
+	schema := `{
+		"type": "object",
+		"properties": {
+			"flexible": {
+				"oneOf": [{"type": "string"}, true]
+			},
+			"strict": {
+				"anyOf": [{"type": "integer"}, false]
+			},
+			"composed": {
+				"allOf": [{"type": "object", "properties": {"name": {"type": "string"}}}, true]
+			}
+		}
+	}`
+
+	tmpDir := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(tmpDir, "test.io"), 0o755)
+	_ = os.WriteFile(filepath.Join(tmpDir, "test.io", "thing_v1.json"), []byte(schema), 0o644)
+
+	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "test.io", "thing_v1.json"), "test.io", "thing_v1.json", "")
+	if err != nil {
+		t.Fatalf("renderSchemaFile should handle boolean schemas in composition keywords: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(tmpDir, "test.io", "thing_v1.html"))
+	html := string(data)
+
+	if !strings.Contains(html, "flexible") {
+		t.Error("should render the oneOf property with boolean schema")
+	}
+	if !strings.Contains(html, "strict") {
+		t.Error("should render the anyOf property with boolean schema")
+	}
+	if !strings.Contains(html, "composed") {
+		t.Error("should render the allOf property with boolean schema")
+	}
+	if !strings.Contains(html, "name") {
+		t.Error("should render nested property inside allOf composition")
+	}
+}
+
 func TestRenderSchema_DeepNesting(t *testing.T) {
 	schema := `{
 		"type": "object",

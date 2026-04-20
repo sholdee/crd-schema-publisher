@@ -444,6 +444,148 @@ func TestWriteSchemas_GoldenE2E(t *testing.T) {
 	}
 }
 
+func boolPtr(b bool) *bool { return &b }
+
+func edgeCaseCRD() apiextensionsv1.CustomResourceDefinition {
+	return apiextensionsv1.CustomResourceDefinition{
+		ObjectMeta: metav1.ObjectMeta{Name: "virtualservices.testing.example.io"},
+		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+			Group: "testing.example.io",
+			Names: apiextensionsv1.CustomResourceDefinitionNames{Kind: "VirtualService"},
+			Versions: []apiextensionsv1.CustomResourceDefinitionVersion{{
+				Name: "v1",
+				Schema: &apiextensionsv1.CustomResourceValidation{
+					OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
+						Type:     "object",
+						Required: []string{"spec"},
+						Properties: map[string]apiextensionsv1.JSONSchemaProps{
+							"spec": {
+								Type:     "object",
+								Required: []string{"output"},
+								Properties: map[string]apiextensionsv1.JSONSchemaProps{
+									"output": {
+										Type:     "object",
+										Required: []string{"properties"},
+										Properties: map[string]apiextensionsv1.JSONSchemaProps{
+											"properties": {
+												Type:        "object",
+												Description: "Output properties map",
+												AdditionalProperties: &apiextensionsv1.JSONSchemaPropsOrBool{
+													Schema: &apiextensionsv1.JSONSchemaProps{
+														Type:     "object",
+														Required: []string{"type"},
+														Properties: map[string]apiextensionsv1.JSONSchemaProps{
+															"type":        {Type: "string"},
+															"value":       {Type: "string"},
+															"description": {Type: "string"},
+															"default": {
+																// Only XPreserveUnknownFields — minimal schema passes through untouched
+																XPreserveUnknownFields: boolPtr(true),
+															},
+															"properties": {
+																Type:                   "object",
+																Description:            "Nested properties for object types",
+																XPreserveUnknownFields: boolPtr(true),
+															},
+														},
+													},
+												},
+											},
+											"required": {
+												Type: "array",
+												Items: &apiextensionsv1.JSONSchemaPropsOrArray{
+													Schema: &apiextensionsv1.JSONSchemaProps{Type: "string"},
+												},
+											},
+										},
+									},
+									"match": {
+										Type: "object",
+										Properties: map[string]apiextensionsv1.JSONSchemaProps{
+											"type":     {Type: "string", Description: "Match type"},
+											"items":    {Type: "array", Items: &apiextensionsv1.JSONSchemaPropsOrArray{Schema: &apiextensionsv1.JSONSchemaProps{Type: "string"}}},
+											"required": {Type: "boolean", Description: "Whether match is required"},
+										},
+									},
+									"options": {
+										Type: "object",
+										Properties: map[string]apiextensionsv1.JSONSchemaProps{
+											"timeout": {Type: "string"},
+										},
+										AdditionalProperties: &apiextensionsv1.JSONSchemaPropsOrBool{Allows: true},
+									},
+								},
+							},
+						},
+					},
+				},
+			}},
+		},
+	}
+}
+
+const goldenEdgeCaseFixturePath = "testdata/golden_edgecase_v1.json"
+
+func TestWriteSchemas_GoldenEdgeCases(t *testing.T) {
+	tmpDir := t.TempDir()
+	crds := []apiextensionsv1.CustomResourceDefinition{edgeCaseCRD()}
+
+	count, err := WriteSchemas(crds, tmpDir)
+	if err != nil {
+		t.Fatalf("WriteSchemas error: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 schema, got %d", count)
+	}
+
+	// Read actual output
+	actualPath := filepath.Join(tmpDir, "testing.example.io", "virtualservice_v1.json")
+	actual, err := os.ReadFile(actualPath)
+	if err != nil {
+		t.Fatalf("reading output schema: %v", err)
+	}
+
+	// Normalize: re-marshal to consistent formatting
+	var actualObj interface{}
+	if err := json.Unmarshal(actual, &actualObj); err != nil {
+		t.Fatalf("unmarshaling actual: %v", err)
+	}
+	actualNorm, _ := json.MarshalIndent(actualObj, "", "  ")
+
+	// Read or generate golden fixture
+	golden, err := os.ReadFile(goldenEdgeCaseFixturePath)
+	if err != nil {
+		// First run: generate the fixture
+		t.Logf("Golden fixture not found, generating: %s", goldenEdgeCaseFixturePath)
+		if err := os.WriteFile(goldenEdgeCaseFixturePath, append(actualNorm, '\n'), 0o644); err != nil {
+			t.Fatalf("writing golden fixture: %v", err)
+		}
+		t.Fatalf("Golden fixture generated at %s — verify it manually, then re-run", goldenEdgeCaseFixturePath)
+	}
+
+	// Normalize golden too
+	var goldenObj interface{}
+	if err := json.Unmarshal(golden, &goldenObj); err != nil {
+		t.Fatalf("unmarshaling golden fixture: %v", err)
+	}
+	goldenNorm, _ := json.MarshalIndent(goldenObj, "", "  ")
+
+	if string(actualNorm) != string(goldenNorm) {
+		t.Errorf("schema output does not match golden fixture %s\n\nTo update after an intentional change, delete the fixture and re-run.\n\ngot:\n%s\n\nwant:\n%s",
+			goldenEdgeCaseFixturePath, string(actualNorm), string(goldenNorm))
+	}
+
+	// Also verify master-standalone output exists and matches
+	standalonePath := filepath.Join(tmpDir, "master-standalone", "testing.example.io-virtualservice-stable-v1.json")
+	standalone, err := os.ReadFile(standalonePath)
+	if err != nil {
+		t.Fatalf("master-standalone file not found: %v", err)
+	}
+	if string(actual) != string(standalone) {
+		t.Error("master-standalone output differs from primary output — both should be identical")
+	}
+}
+
 func TestWriteSchemas_NullableOptionalFields(t *testing.T) {
 	schema := &apiextensionsv1.JSONSchemaProps{
 		Type: "object",

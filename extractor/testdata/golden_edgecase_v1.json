@@ -1,0 +1,121 @@
+{
+  "properties": {
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "match": {
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "required": {
+              "description": "Whether match is required",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "type": {
+              "description": "Match type",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "options": {
+          "additionalProperties": true,
+          "properties": {
+            "timeout": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "output": {
+          "additionalProperties": false,
+          "properties": {
+            "properties": {
+              "additionalProperties": {
+                "additionalProperties": false,
+                "properties": {
+                  "default": {
+                    "x-kubernetes-preserve-unknown-fields": true
+                  },
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "properties": {
+                    "description": "Nested properties for object types",
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "x-kubernetes-preserve-unknown-fields": true
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              },
+              "description": "Output properties map",
+              "type": "object"
+            },
+            "required": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "properties"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "output"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "spec"
+  ],
+  "type": "object"
+}

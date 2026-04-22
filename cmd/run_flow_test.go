@@ -117,16 +117,8 @@ func TestPreparePreviewSite_CreatesSampleGenerationUnderCurrent(t *testing.T) {
 	}
 }
 
-func TestPreparePreviewSite_UsesCurrentForExplicitOutputDir(t *testing.T) {
-	validateOrig := validateOutputDirFunc
-	renderOrig := renderPreviewFunc
-	indexOrig := generatePreviewFunc
-	defer func() {
-		validateOutputDirFunc = validateOrig
-		renderPreviewFunc = renderOrig
-		generatePreviewFunc = indexOrig
-	}()
-
+func seedPreviewSource(t *testing.T) string {
+	t.Helper()
 	rootDir := t.TempDir()
 	generationDir := filepath.Join(rootDir, ".generations", "seed")
 	if err := os.MkdirAll(filepath.Join(generationDir, "example.io"), 0o755); err != nil {
@@ -141,19 +133,54 @@ func TestPreparePreviewSite_UsesCurrentForExplicitOutputDir(t *testing.T) {
 	if err := os.Symlink(filepath.Join(".generations", "seed"), filepath.Join(rootDir, "current")); err != nil {
 		t.Fatalf("symlink current: %v", err)
 	}
+	return rootDir
+}
 
+func withPreviewHooks(t *testing.T, renderFn func(string, string) error, indexFn func(string, string) error) {
+	t.Helper()
+	validateOrig := validateOutputDirFunc
+	renderOrig := renderPreviewFunc
+	indexOrig := generatePreviewFunc
+	t.Cleanup(func() {
+		validateOutputDirFunc = validateOrig
+		renderPreviewFunc = renderOrig
+		generatePreviewFunc = indexOrig
+	})
 	validateOutputDirFunc = func(path string) error { return nil }
+	if renderFn != nil {
+		renderPreviewFunc = renderFn
+	}
+	if indexFn != nil {
+		generatePreviewFunc = indexFn
+	}
+}
+
+func assertPreviewSourceUnchanged(t *testing.T, rootDir string) {
+	t.Helper()
+	if _, err := os.Stat(filepath.Join(rootDir, "current", "index.html")); err != nil {
+		t.Fatalf("expected source current to remain readable: %v", err)
+	}
+	sourceBytes, err := os.ReadFile(filepath.Join(rootDir, "current", "index.html"))
+	if err != nil {
+		t.Fatalf("read source index: %v", err)
+	}
+	if string(sourceBytes) != "original" {
+		t.Fatalf("expected source current to remain unchanged, got %q", string(sourceBytes))
+	}
+}
+
+func TestPreparePreviewSite_UsesCurrentForExplicitOutputDir(t *testing.T) {
+	rootDir := seedPreviewSource(t)
 
 	renderDir := ""
 	indexDir := ""
-	renderPreviewFunc = func(dir, basePath string) error {
+	withPreviewHooks(t, func(dir, basePath string) error {
 		renderDir = dir
 		return nil
-	}
-	generatePreviewFunc = func(dir, basePath string) error {
+	}, func(dir, basePath string) error {
 		indexDir = dir
 		return nil
-	}
+	})
 
 	serveDir, cleanup, err := preparePreviewSite(rootDir, "/docs", true)
 	if err != nil {
@@ -179,45 +206,17 @@ func TestPreparePreviewSite_UsesCurrentForExplicitOutputDir(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(rootDir, "index.html")); !os.IsNotExist(err) {
 		t.Fatalf("expected preview to avoid mutating flat root, got err=%v", err)
 	}
-	if _, err := os.Stat(filepath.Join(rootDir, "current", "index.html")); err != nil {
-		t.Fatalf("expected source current to remain readable: %v", err)
-	}
 	if _, err := os.Stat(filepath.Join(serveDir, "example.io", "test_v1.json")); err != nil {
 		t.Fatalf("expected copied schema under preview current: %v", err)
 	}
-	sourceBytes, err := os.ReadFile(filepath.Join(rootDir, "current", "index.html"))
-	if err != nil {
-		t.Fatalf("read source index: %v", err)
-	}
-	if string(sourceBytes) != "original" {
-		t.Fatalf("expected source current to remain unchanged, got %q", string(sourceBytes))
-	}
+	assertPreviewSourceUnchanged(t, rootDir)
 }
 
 func TestPreparePreviewSite_FailureDoesNotMutateExplicitOutputDir(t *testing.T) {
-	validateOrig := validateOutputDirFunc
-	renderOrig := renderPreviewFunc
-	defer func() {
-		validateOutputDirFunc = validateOrig
-		renderPreviewFunc = renderOrig
-	}()
-
-	rootDir := t.TempDir()
-	generationDir := filepath.Join(rootDir, ".generations", "seed")
-	if err := os.MkdirAll(generationDir, 0o755); err != nil {
-		t.Fatalf("mkdir generation: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(generationDir, "index.html"), []byte("original"), 0o644); err != nil {
-		t.Fatalf("write source index: %v", err)
-	}
-	if err := os.Symlink(filepath.Join(".generations", "seed"), filepath.Join(rootDir, "current")); err != nil {
-		t.Fatalf("symlink current: %v", err)
-	}
-
-	validateOutputDirFunc = func(path string) error { return nil }
-	renderPreviewFunc = func(dir, basePath string) error {
+	rootDir := seedPreviewSource(t)
+	withPreviewHooks(t, func(dir, basePath string) error {
 		return fmt.Errorf("render boom")
-	}
+	}, nil)
 
 	_, cleanup, err := preparePreviewSite(rootDir, "/docs", true)
 	if cleanup != nil {
@@ -229,14 +228,7 @@ func TestPreparePreviewSite_FailureDoesNotMutateExplicitOutputDir(t *testing.T) 
 	if !strings.Contains(err.Error(), "rendering schemas") {
 		t.Fatalf("expected render error, got %v", err)
 	}
-
-	sourceBytes, readErr := os.ReadFile(filepath.Join(rootDir, "current", "index.html"))
-	if readErr != nil {
-		t.Fatalf("read source index: %v", readErr)
-	}
-	if string(sourceBytes) != "original" {
-		t.Fatalf("expected source current to remain unchanged, got %q", string(sourceBytes))
-	}
+	assertPreviewSourceUnchanged(t, rootDir)
 }
 
 func TestPreparePreviewSite_RequiresCurrentForExplicitOutputDir(t *testing.T) {

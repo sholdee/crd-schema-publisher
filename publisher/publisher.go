@@ -83,13 +83,9 @@ func (p *Publisher) Publish(dir string) error {
 	if err := p.ensureProject(); err != nil {
 		return fmt.Errorf("ensuring project: %w", err)
 	}
-	activeDir, err := filepath.EvalSymlinks(filepath.Join(dir, "current"))
+	files, err := p.collectActiveFiles(dir)
 	if err != nil {
-		return fmt.Errorf("resolving active output: %w", err)
-	}
-	files, err := p.collectFiles(activeDir)
-	if err != nil {
-		return fmt.Errorf("collecting files: %w", err)
+		return err
 	}
 	if len(files) == 0 {
 		return fmt.Errorf("no files found in %s", dir)
@@ -101,15 +97,7 @@ func (p *Publisher) Publish(dir string) error {
 		return fmt.Errorf("getting upload token: %w", err)
 	}
 
-	// Deduplicate hashes (identical content across output formats maps to same hash).
-	hashToFile := map[string]*fileEntry{}
-	for _, f := range files {
-		hashToFile[f.hash] = f
-	}
-	uniqueHashes := make([]string, 0, len(hashToFile))
-	for h := range hashToFile {
-		uniqueHashes = append(uniqueHashes, h)
-	}
+	hashToFile, uniqueHashes := buildUploadPlan(files)
 
 	missing, err := p.checkMissing(jwt, uniqueHashes)
 	if err != nil {
@@ -118,12 +106,7 @@ func (p *Publisher) Publish(dir string) error {
 	slog.Info("uploading files", "new", len(missing), "cached", len(uniqueHashes)-len(missing))
 
 	if len(missing) > 0 {
-		var toUpload []*fileEntry
-		for _, h := range missing {
-			if f, ok := hashToFile[h]; ok {
-				toUpload = append(toUpload, f)
-			}
-		}
+		toUpload := selectUploadFiles(hashToFile, missing)
 		if err := p.uploadFiles(jwt, toUpload); err != nil {
 			return fmt.Errorf("uploading files: %w", err)
 		}
@@ -133,16 +116,54 @@ func (p *Publisher) Publish(dir string) error {
 		return fmt.Errorf("upserting hashes: %w", err)
 	}
 
-	manifest := map[string]string{}
-	for _, f := range files {
-		manifest["/"+f.relPath] = f.hash
-	}
-	url, err := p.createDeployment(manifest)
+	url, err := p.createDeployment(buildManifest(files))
 	if err != nil {
 		return fmt.Errorf("creating deployment: %w", err)
 	}
 	slog.Info("deployment successful", "url", url)
 	return nil
+}
+
+func (p *Publisher) collectActiveFiles(dir string) ([]*fileEntry, error) {
+	activeDir, err := filepath.EvalSymlinks(filepath.Join(dir, "current"))
+	if err != nil {
+		return nil, fmt.Errorf("resolving active output: %w", err)
+	}
+	files, err := p.collectFiles(activeDir)
+	if err != nil {
+		return nil, fmt.Errorf("collecting files: %w", err)
+	}
+	return files, nil
+}
+
+func buildUploadPlan(files []*fileEntry) (map[string]*fileEntry, []string) {
+	hashToFile := map[string]*fileEntry{}
+	for _, f := range files {
+		hashToFile[f.hash] = f
+	}
+	uniqueHashes := make([]string, 0, len(hashToFile))
+	for h := range hashToFile {
+		uniqueHashes = append(uniqueHashes, h)
+	}
+	return hashToFile, uniqueHashes
+}
+
+func selectUploadFiles(hashToFile map[string]*fileEntry, missing []string) []*fileEntry {
+	toUpload := make([]*fileEntry, 0, len(missing))
+	for _, h := range missing {
+		if f, ok := hashToFile[h]; ok {
+			toUpload = append(toUpload, f)
+		}
+	}
+	return toUpload
+}
+
+func buildManifest(files []*fileEntry) map[string]string {
+	manifest := make(map[string]string, len(files))
+	for _, f := range files {
+		manifest["/"+f.relPath] = f.hash
+	}
+	return manifest
 }
 
 func (p *Publisher) ensureProject() error {

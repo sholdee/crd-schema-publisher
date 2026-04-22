@@ -289,9 +289,9 @@ func TestPublish_MalformedUploadToken(t *testing.T) {
 	}
 }
 
-func TestPublish_UsesCurrentAndSkipsKindFiles(t *testing.T) {
-	var manifest map[string]string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func newManifestCaptureServer(t *testing.T, manifest *map[string]string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/projects/test-project"):
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "result": map[string]interface{}{"name": "test-project"}})
@@ -308,19 +308,26 @@ func TestPublish_UsesCurrentAndSkipsKindFiles(t *testing.T) {
 		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/upsert-hashes"):
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "result": nil})
 		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/deployments"):
-			if err := r.ParseMultipartForm(1 << 20); err != nil {
-				t.Fatalf("ParseMultipartForm: %v", err)
-			}
-			if err := json.Unmarshal([]byte(r.FormValue("manifest")), &manifest); err != nil {
-				t.Fatalf("manifest unmarshal: %v", err)
-			}
+			decodeManifest(t, r, manifest)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "result": map[string]interface{}{"url": "https://test.pages.dev"}})
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 	}))
-	defer server.Close()
+}
 
+func decodeManifest(t *testing.T, r *http.Request, manifest *map[string]string) {
+	t.Helper()
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		t.Fatalf("ParseMultipartForm: %v", err)
+	}
+	if err := json.Unmarshal([]byte(r.FormValue("manifest")), manifest); err != nil {
+		t.Fatalf("manifest unmarshal: %v", err)
+	}
+}
+
+func seedCurrentGeneration(t *testing.T) string {
+	t.Helper()
 	tmpDir := t.TempDir()
 	generationDir := filepath.Join(tmpDir, ".generations", "gen1")
 	if err := os.MkdirAll(filepath.Join(generationDir, "example.io"), 0o755); err != nil {
@@ -341,15 +348,11 @@ func TestPublish_UsesCurrentAndSkipsKindFiles(t *testing.T) {
 	if err := os.Symlink(filepath.Join(".generations", "gen1"), filepath.Join(tmpDir, "current")); err != nil {
 		t.Fatalf("create current symlink: %v", err)
 	}
+	return tmpDir
+}
 
-	p := &Publisher{
-		APIToken: "fake-token", AccountID: "fake-account", ProjectName: "test-project",
-		BaseURL: server.URL + "/client/v4", AssetsURL: server.URL + "/client/v4",
-	}
-	if err := p.Publish(tmpDir); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
+func assertCurrentManifest(t *testing.T, manifest map[string]string) {
+	t.Helper()
 	if _, ok := manifest["/index.html"]; !ok {
 		t.Fatal("expected index.html from current generation in manifest")
 	}
@@ -362,4 +365,22 @@ func TestPublish_UsesCurrentAndSkipsKindFiles(t *testing.T) {
 	if _, ok := manifest["/flat-root.json"]; ok {
 		t.Fatal("did not expect flat root files outside current generation in manifest")
 	}
+}
+
+func TestPublish_UsesCurrentAndSkipsKindFiles(t *testing.T) {
+	var manifest map[string]string
+	server := newManifestCaptureServer(t, &manifest)
+	defer server.Close()
+
+	tmpDir := seedCurrentGeneration(t)
+
+	p := &Publisher{
+		APIToken: "fake-token", AccountID: "fake-account", ProjectName: "test-project",
+		BaseURL: server.URL + "/client/v4", AssetsURL: server.URL + "/client/v4",
+	}
+	if err := p.Publish(tmpDir); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	assertCurrentManifest(t, manifest)
 }

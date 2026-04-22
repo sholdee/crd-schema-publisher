@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -267,7 +268,7 @@ func runPreview() error {
 		slog.Info("serving preview", "addr", addr)
 	}
 	err = srv.ListenAndServe()
-	if err == http.ErrServerClosed {
+	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
 	return err
@@ -275,38 +276,13 @@ func runPreview() error {
 
 func preparePreviewSite(outputDir, basePath string, render bool) (string, func(), error) {
 	if outputDir == "" {
-		rootDir, err := os.MkdirTemp("", "crd-preview-*")
+		rootDir, cleanup, err := newPreviewRoot()
 		if err != nil {
-			return "", nil, fmt.Errorf("creating temp dir: %w", err)
+			return "", nil, err
 		}
-		cleanup := func() {
-			_ = os.RemoveAll(rootDir)
-		}
-
-		generationDir, err := makePreviewGenerationDir(rootDir)
-		if err != nil {
+		if err := preparePreviewGeneration(rootDir, basePath, render, scaffoldPreviewFunc, "scaffolding sample data"); err != nil {
 			cleanup()
-			return "", nil, fmt.Errorf("creating preview generation: %w", err)
-		}
-		if err := scaffoldPreviewFunc(generationDir); err != nil {
-			cleanup()
-			return "", nil, fmt.Errorf("scaffolding sample data: %w", err)
-		}
-		if render {
-			slog.Info("rendering schema pages")
-			if err := renderPreviewFunc(generationDir, basePath); err != nil {
-				cleanup()
-				return "", nil, fmt.Errorf("rendering schemas: %w", err)
-			}
-		}
-		slog.Info("generating index")
-		if err := generatePreviewFunc(generationDir, basePath); err != nil {
-			cleanup()
-			return "", nil, fmt.Errorf("generating index: %w", err)
-		}
-		if err := activatePreviewGeneration(rootDir, generationDir); err != nil {
-			cleanup()
-			return "", nil, fmt.Errorf("activating preview generation: %w", err)
+			return "", nil, err
 		}
 		slog.Info("using sample data", "dir", rootDir, "active_dir", extractor.ActiveOutputDir(rootDir))
 		return extractor.ActiveOutputDir(rootDir), cleanup, nil
@@ -316,50 +292,69 @@ func preparePreviewSite(outputDir, basePath string, render bool) (string, func()
 		return "", nil, err
 	}
 
-	activeDir := extractor.ActiveOutputDir(outputDir)
-	resolvedActiveDir, err := filepath.EvalSymlinks(activeDir)
+	activeDir, resolvedActiveDir, err := resolvePreviewActiveDir(outputDir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return "", nil, fmt.Errorf("active output %q does not exist; run extract first", activeDir)
-		}
-		return "", nil, fmt.Errorf("resolving active output: %w", err)
+		return "", nil, err
 	}
 
+	rootDir, cleanup, err := newPreviewRoot()
+	if err != nil {
+		return "", nil, err
+	}
+	if err := preparePreviewGeneration(rootDir, basePath, render, func(generationDir string) error {
+		return copyPreviewFiles(resolvedActiveDir, generationDir)
+	}, "copying active output"); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	slog.Info("using existing output", "dir", outputDir, "active_dir", activeDir, "preview_dir", extractor.ActiveOutputDir(rootDir))
+	return extractor.ActiveOutputDir(rootDir), cleanup, nil
+}
+
+func newPreviewRoot() (string, func(), error) {
 	rootDir, err := os.MkdirTemp("", "crd-preview-*")
 	if err != nil {
 		return "", nil, fmt.Errorf("creating temp dir: %w", err)
 	}
-	cleanup := func() {
+	return rootDir, func() {
 		_ = os.RemoveAll(rootDir)
-	}
+	}, nil
+}
 
+func resolvePreviewActiveDir(outputDir string) (string, string, error) {
+	activeDir := extractor.ActiveOutputDir(outputDir)
+	resolvedActiveDir, err := filepath.EvalSymlinks(activeDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", "", fmt.Errorf("active output %q does not exist; run extract first", activeDir)
+		}
+		return "", "", fmt.Errorf("resolving active output: %w", err)
+	}
+	return activeDir, resolvedActiveDir, nil
+}
+
+func preparePreviewGeneration(rootDir, basePath string, render bool, seed func(string) error, seedAction string) error {
 	generationDir, err := makePreviewGenerationDir(rootDir)
 	if err != nil {
-		cleanup()
-		return "", nil, fmt.Errorf("creating preview generation: %w", err)
+		return fmt.Errorf("creating preview generation: %w", err)
 	}
-	if err := copyPreviewFiles(resolvedActiveDir, generationDir); err != nil {
-		cleanup()
-		return "", nil, fmt.Errorf("copying active output: %w", err)
+	if err := seed(generationDir); err != nil {
+		return fmt.Errorf("%s: %w", seedAction, err)
 	}
 	if render {
 		slog.Info("rendering schema pages")
 		if err := renderPreviewFunc(generationDir, basePath); err != nil {
-			cleanup()
-			return "", nil, fmt.Errorf("rendering schemas: %w", err)
+			return fmt.Errorf("rendering schemas: %w", err)
 		}
 	}
 	slog.Info("generating index")
 	if err := generatePreviewFunc(generationDir, basePath); err != nil {
-		cleanup()
-		return "", nil, fmt.Errorf("generating index: %w", err)
+		return fmt.Errorf("generating index: %w", err)
 	}
 	if err := activatePreviewGeneration(rootDir, generationDir); err != nil {
-		cleanup()
-		return "", nil, fmt.Errorf("activating preview generation: %w", err)
+		return fmt.Errorf("activating preview generation: %w", err)
 	}
-	slog.Info("using existing output", "dir", outputDir, "active_dir", activeDir, "preview_dir", extractor.ActiveOutputDir(rootDir))
-	return extractor.ActiveOutputDir(rootDir), cleanup, nil
+	return nil
 }
 
 func makePreviewGenerationDir(outputDir string) (string, error) {

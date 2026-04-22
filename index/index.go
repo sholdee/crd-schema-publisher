@@ -439,41 +439,9 @@ metadata:
 </html>`
 
 func Generate(outputDir, basePath string) error {
-	groups := map[string][]schemaEntry{}
-
-	entries, err := os.ReadDir(outputDir)
+	groups, totalCount, err := collectGroups(outputDir)
 	if err != nil {
-		return fmt.Errorf("reading output dir: %w", err)
-	}
-
-	totalCount := 0
-	for _, entry := range entries {
-		if !entry.IsDir() || entry.Name() == "master-standalone" || entry.Name() == metadataDirName {
-			continue
-		}
-		groupName := entry.Name()
-		groupDir := filepath.Join(outputDir, groupName)
-		files, err := os.ReadDir(groupDir)
-		if err != nil {
-			return fmt.Errorf("reading group dir %s: %w", groupName, err)
-		}
-		for _, f := range files {
-			if f.IsDir() || !strings.HasSuffix(f.Name(), ".json") {
-				continue
-			}
-			jsonPath := groupName + "/" + f.Name()
-			htmlPath := jsonPath
-			htmlFile := strings.TrimSuffix(f.Name(), ".json") + ".html"
-			if _, err := os.Stat(filepath.Join(groupDir, htmlFile)); err == nil {
-				htmlPath = groupName + "/" + htmlFile
-			}
-			groups[groupName] = append(groups[groupName], schemaEntry{
-				Name:     f.Name(),
-				Path:     jsonPath,
-				HTMLPath: htmlPath,
-			})
-			totalCount++
-		}
+		return err
 	}
 
 	var sortedGroups []groupData
@@ -508,4 +476,44 @@ func Generate(outputDir, basePath string) error {
 		return err
 	}
 	return f.Close()
+}
+
+func collectGroups(outputDir string) (map[string][]schemaEntry, int, error) {
+	groups := map[string][]schemaEntry{}
+
+	entries, err := os.ReadDir(outputDir)
+	if err != nil {
+		return nil, 0, fmt.Errorf("reading output dir: %w", err)
+	}
+
+	totalCount := 0
+	for _, entry := range entries {
+		if !entry.IsDir() || entry.Name() == "master-standalone" || entry.Name() == metadataDirName {
+			continue
+		}
+		groupName := entry.Name()
+		groupDir := filepath.Join(outputDir, groupName)
+		files, err := os.ReadDir(groupDir)
+		if err != nil {
+			return nil, 0, fmt.Errorf("reading group dir %s: %w", groupName, err)
+		}
+		for _, f := range files {
+			if f.IsDir() || !strings.HasSuffix(f.Name(), ".json") {
+				continue
+			}
+			jsonPath := groupName + "/" + f.Name()
+			htmlPath := jsonPath
+			htmlFile := strings.TrimSuffix(f.Name(), ".json") + ".html"
+			if _, err := os.Stat(filepath.Join(groupDir, htmlFile)); err == nil {
+				htmlPath = groupName + "/" + htmlFile
+			}
+			groups[groupName] = append(groups[groupName], schemaEntry{
+				Name:     f.Name(),
+				Path:     jsonPath,
+				HTMLPath: htmlPath,
+			})
+			totalCount++
+		}
+	}
+	return groups, totalCount, nil
 }

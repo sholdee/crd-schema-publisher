@@ -237,7 +237,7 @@ func loadKindManifest(outputDir string) (map[string]string, error) {
 	data, err := os.ReadFile(filepath.Join(outputDir, metadataDirName, kindsManifestName))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return map[string]string{}, nil
 		}
 		return nil, fmt.Errorf("reading kind manifest: %w", err)
 	}

@@ -154,6 +154,10 @@ func makeGenerationDir(outputDir string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
+	if err := os.Chmod(generationDir, 0o755); err != nil {
+		_ = os.RemoveAll(generationDir)
+		return "", "", err
+	}
 	return generationDir, filepath.Base(generationDir), nil
 }
 

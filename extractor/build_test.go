@@ -144,6 +144,13 @@ func TestBuildSite_SuccessCreatesGenerationAndSwitchesCurrent(t *testing.T) {
 	if !strings.HasPrefix(after, ".generations") {
 		t.Fatalf("expected current target under .generations, got %q", after)
 	}
+	targetInfo, err := os.Stat(filepath.Join(outputDir, after))
+	if err != nil {
+		t.Fatalf("stat current target: %v", err)
+	}
+	if got := targetInfo.Mode().Perm(); got != 0o755 {
+		t.Fatalf("expected active generation dir perms 0755, got %#o", got)
+	}
 	if _, err := os.Stat(filepath.Join(outputDir, "current", "example.io", "test_v1.json")); err != nil {
 		t.Fatalf("expected schema output under current: %v", err)
 	}

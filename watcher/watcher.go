@@ -12,10 +12,8 @@ import (
 	"time"
 
 	"github.com/sholdee/crd-schema-publisher/extractor"
-	"github.com/sholdee/crd-schema-publisher/index"
 	"github.com/sholdee/crd-schema-publisher/metrics"
 	"github.com/sholdee/crd-schema-publisher/publisher"
-	"github.com/sholdee/crd-schema-publisher/renderer"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -254,45 +252,29 @@ func publishCycle(cfg Config) (retErr error) {
 	// Reset discovery gauges so they reflect each cycle, not stale previous values
 	cfg.Metrics.RecordDiscovery(0, 0)
 
-	// Clean output dir
-	if err := cleanDir(cfg.OutputDir); err != nil {
-		return fmt.Errorf("cleaning output dir: %w", err)
-	}
-
-	// Extract
 	var lister extractor.CRDLister
 	if cfg.CRDLister != nil {
 		lister = cfg.CRDLister
 	} else {
 		lister = cfg.Client.ApiextensionsV1().CustomResourceDefinitions()
 	}
-	crds, err := extractor.ListCRDs(lister)
+
+	result, err := extractor.BuildSite(extractor.SiteBuildOptions{
+		Lister:    lister,
+		OutputDir: cfg.OutputDir,
+		BasePath:  cfg.BasePath,
+		Render:    os.Getenv("SKIP_RENDER") != "true",
+	})
 	if err != nil {
-		return fmt.Errorf("listing CRDs: %w", err)
+		return err
 	}
-	if len(crds) == 0 {
-		slog.Info("no CRDs found")
+	if result.Status == extractor.BuildResultNoop {
+		slog.Info("no CRDs found, leaving existing output untouched")
 		return nil
 	}
 
-	count, err := extractor.WriteSchemas(crds, cfg.OutputDir)
-	if err != nil {
-		return fmt.Errorf("writing schemas: %w", err)
-	}
-	cfg.Metrics.RecordDiscovery(len(crds), count)
-	slog.Info("wrote schemas", "count", count)
-
-	if os.Getenv("SKIP_RENDER") != "true" {
-		if err := renderer.RenderAll(cfg.OutputDir, cfg.BasePath); err != nil {
-			return fmt.Errorf("rendering schemas: %w", err)
-		}
-		slog.Info("rendered schema pages")
-	}
-
-	// Generate index
-	if err := index.Generate(cfg.OutputDir, cfg.BasePath); err != nil {
-		return fmt.Errorf("generating index: %w", err)
-	}
+	cfg.Metrics.RecordDiscovery(result.CRDCount, result.SchemaCount)
+	slog.Info("wrote schemas", "count", result.SchemaCount)
 	slog.Info("generated index")
 
 	// Upload (if publisher configured)

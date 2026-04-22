@@ -451,6 +451,39 @@ func TestRenderSchema_MinimalSchema(t *testing.T) {
 	}
 }
 
+func TestRenderSchema_PreservesOriginalKindFromSidecar(t *testing.T) {
+	schema := `{"type":"object"}`
+
+	tmpDir := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(tmpDir, "monitoring.coreos.com"), 0o755)
+	_ = os.WriteFile(filepath.Join(tmpDir, "monitoring.coreos.com", "servicemonitor_v1.json"), []byte(schema), 0o644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "monitoring.coreos.com", "servicemonitor_v1.kind"), []byte("ServiceMonitor\n"), 0o644)
+
+	err := renderSchemaFile(
+		testTemplate(t),
+		filepath.Join(tmpDir, "monitoring.coreos.com", "servicemonitor_v1.json"),
+		"monitoring.coreos.com",
+		"servicemonitor_v1.json",
+		"",
+	)
+	if err != nil {
+		t.Fatalf("renderSchemaFile error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, "monitoring.coreos.com", "servicemonitor_v1.html"))
+	if err != nil {
+		t.Fatalf("HTML file not created: %v", err)
+	}
+
+	html := string(data)
+	if !strings.Contains(html, "ServiceMonitor") {
+		t.Fatal("expected exact Kind casing from sidecar")
+	}
+	if strings.Contains(html, "Servicemonitor") {
+		t.Fatal("expected title-cased fallback to be overridden")
+	}
+}
+
 func TestRenderAll_CreatesHTMLFiles(t *testing.T) {
 	tmpDir := t.TempDir()
 	_ = os.MkdirAll(filepath.Join(tmpDir, "cert-manager.io"), 0o755)

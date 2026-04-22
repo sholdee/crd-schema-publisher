@@ -75,16 +75,17 @@ func WriteSchemas(crds []apiextensionsv1.CustomResourceDefinition, outputDir str
 			}
 
 			kind := strings.ToLower(crd.Spec.Names.Kind)
+			originalKind := crd.Spec.Names.Kind
 			group := crd.Spec.Group
 			versionName := version.Name
 
 			wg.Add(1)
 			sem <- struct{}{}
-			go func(props *apiextensionsv1.JSONSchemaProps, kind, group, versionName string) {
+			go func(props *apiextensionsv1.JSONSchemaProps, kind, originalKind, group, versionName string) {
 				defer wg.Done()
 				defer func() { <-sem }()
 
-				if err := writeSchemaFiles(props, kind, group, versionName, outputDir); err != nil {
+				if err := writeSchemaFiles(props, kind, originalKind, group, versionName, outputDir); err != nil {
 					mu.Lock()
 					if firstErr == nil {
 						firstErr = err
@@ -96,7 +97,7 @@ func WriteSchemas(crds []apiextensionsv1.CustomResourceDefinition, outputDir str
 				mu.Lock()
 				count++
 				mu.Unlock()
-			}(schemaProps, kind, group, versionName)
+			}(schemaProps, kind, originalKind, group, versionName)
 		}
 	}
 
@@ -104,7 +105,7 @@ func WriteSchemas(crds []apiextensionsv1.CustomResourceDefinition, outputDir str
 	return count, firstErr
 }
 
-func writeSchemaFiles(props *apiextensionsv1.JSONSchemaProps, kind, group, versionName, outputDir string) error {
+func writeSchemaFiles(props *apiextensionsv1.JSONSchemaProps, kind, originalKind, group, versionName, outputDir string) error {
 	raw, err := json.Marshal(props)
 	if err != nil {
 		return fmt.Errorf("marshaling schema for %s/%s: %w", group, kind, err)
@@ -128,6 +129,13 @@ func writeSchemaFiles(props *apiextensionsv1.JSONSchemaProps, kind, group, versi
 	}
 	filename := fmt.Sprintf("%s_%s.json", kind, versionName)
 	if err := os.WriteFile(filepath.Join(groupDir, filename), jsonBytes, 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(
+		filepath.Join(groupDir, strings.TrimSuffix(filename, ".json")+".kind"),
+		[]byte(originalKind+"\n"),
+		0o644,
+	); err != nil {
 		return err
 	}
 

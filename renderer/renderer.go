@@ -190,6 +190,9 @@ func renderSchemaFile(tmpl *template.Template, jsonPath, group, filename, basePa
 	base := strings.TrimSuffix(filename, ".json")
 	parts := strings.SplitN(base, "_", 2)
 	kind := titleCase(parts[0])
+	if sidecarKind, err := readKindSidecar(jsonPath); err == nil && sidecarKind != "" {
+		kind = sidecarKind
+	}
 	version := ""
 	if len(parts) == 2 {
 		version = parts[1]
@@ -215,6 +218,14 @@ func renderSchemaFile(tmpl *template.Template, jsonPath, group, filename, basePa
 		return err
 	}
 	return f.Close()
+}
+
+func readKindSidecar(jsonPath string) (string, error) {
+	data, err := os.ReadFile(strings.TrimSuffix(jsonPath, ".json") + ".kind")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
 }
 
 type renderJob struct {

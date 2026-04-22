@@ -93,6 +93,15 @@ func TestWriteSchemas_CreatesGroupDirAndFile(t *testing.T) {
 	default:
 		t.Fatalf("unexpected type field: %T %v", schema["type"], schema["type"])
 	}
+
+	kindSidecar := filepath.Join(tmpDir, "example.io", "test_v1.kind")
+	data, err = os.ReadFile(kindSidecar)
+	if err != nil {
+		t.Fatalf("kind sidecar not found: %v", err)
+	}
+	if got := strings.TrimSpace(string(data)); got != "Test" {
+		t.Fatalf("expected kind sidecar to contain original Kind, got %q", got)
+	}
 }
 
 func TestWriteSchemas_CreatesMasterStandalone(t *testing.T) {

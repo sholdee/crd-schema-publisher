@@ -21,6 +21,13 @@ import (
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 )
 
+var (
+	buildClientFunc      = extractor.BuildClient
+	buildSiteFunc        = extractor.BuildSite
+	validateOutputDirFunc = extractor.ValidateOutputDir
+	publishOutputFunc    = runUpload
+)
+
 func initLogger(cmd string) {
 	var handler slog.Handler
 	switch cmd {
@@ -99,48 +106,37 @@ func normalizeBasePath(s string) string {
 }
 
 func runExtract() error {
+	_, err := runBuild()
+	return err
+}
+
+func runBuild() (extractor.SiteBuildResult, error) {
 	outputDir := getEnv("OUTPUT_DIR", "/output")
 	basePath := normalizeBasePath(os.Getenv("BASE_PATH"))
 	kubeContext := os.Getenv("KUBECTL_CONTEXT")
 
 	slog.Info("building kubernetes client")
-	client, err := extractor.BuildClient(kubeContext)
+	client, err := buildClientFunc(kubeContext)
 	if err != nil {
-		return fmt.Errorf("building client: %w", err)
+		return extractor.SiteBuildResult{}, fmt.Errorf("building client: %w", err)
 	}
 
-	slog.Info("listing CRDs")
-	crds, err := extractor.ListCRDs(client.ApiextensionsV1().CustomResourceDefinitions())
+	result, err := buildSiteFunc(extractor.SiteBuildOptions{
+		Lister:    client.ApiextensionsV1().CustomResourceDefinitions(),
+		OutputDir: outputDir,
+		BasePath:  basePath,
+		Render:    os.Getenv("SKIP_RENDER") != "true",
+	})
 	if err != nil {
-		return err
+		return extractor.SiteBuildResult{}, err
 	}
-	slog.Info("found CRDs", "count", len(crds))
-
-	if len(crds) == 0 {
-		slog.Info("no CRDs found")
-		return nil
+	if result.Status == extractor.BuildResultNoop {
+		slog.Info("no CRDs found, leaving existing output untouched")
+		return result, nil
 	}
 
-	count, err := extractor.WriteSchemas(crds, outputDir)
-	if err != nil {
-		return err
-	}
-	slog.Info("wrote schemas", "count", count, "dir", outputDir)
-
-	if os.Getenv("SKIP_RENDER") != "true" {
-		slog.Info("rendering schema pages")
-		if err := renderer.RenderAll(outputDir, basePath); err != nil {
-			return fmt.Errorf("rendering schemas: %w", err)
-		}
-	}
-
-	slog.Info("generating index")
-	if err := index.Generate(outputDir, basePath); err != nil {
-		return fmt.Errorf("generating index: %w", err)
-	}
-
-	slog.Info("extract complete")
-	return nil
+	slog.Info("extract complete", "count", result.SchemaCount, "dir", outputDir)
+	return result, nil
 }
 
 func runUpload() error {
@@ -246,6 +242,9 @@ func runPreview() error {
 		}
 		slog.Info("using sample data", "dir", dir)
 	} else {
+		if err := validateOutputDirFunc(dir); err != nil {
+			return err
+		}
 		slog.Info("using existing output", "dir", dir)
 	}
 
@@ -334,10 +333,17 @@ func scaffoldSampleData(dir string) error {
 }
 
 func runAll() error {
-	if err := runExtract(); err != nil {
+	result, err := runBuild()
+	if err != nil {
 		return fmt.Errorf("extract: %w", err)
 	}
-	if err := runUpload(); err != nil {
+	if result.Status == extractor.BuildResultNoop {
+		return nil
+	}
+	if publishOutputFunc == nil {
+		return nil
+	}
+	if err := publishOutputFunc(); err != nil {
 		return fmt.Errorf("upload: %w", err)
 	}
 	return nil

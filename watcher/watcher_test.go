@@ -243,6 +243,10 @@ func TestPublishCycle_HappyPath(t *testing.T) {
 func TestPublishCycle_ExtractError(t *testing.T) {
 	t.Setenv("SKIP_RENDER", "true")
 	dir := t.TempDir()
+	keepPath := filepath.Join(dir, "keep.txt")
+	if err := os.WriteFile(keepPath, []byte("keep"), 0o644); err != nil {
+		t.Fatalf("write keep file: %v", err)
+	}
 
 	cfg := Config{
 		OutputDir: dir,
@@ -257,16 +261,18 @@ func TestPublishCycle_ExtractError(t *testing.T) {
 		t.Fatalf("expected error containing 'listing CRDs', got: %s", got)
 	}
 
-	// Verify no schema files written
-	entries, _ := os.ReadDir(dir)
-	if len(entries) != 0 {
-		t.Fatalf("expected empty dir, got %d entries", len(entries))
+	if _, err := os.Stat(keepPath); err != nil {
+		t.Fatalf("expected existing output to be preserved: %v", err)
 	}
 }
 
 func TestPublishCycle_EmptyCRDs(t *testing.T) {
 	t.Setenv("SKIP_RENDER", "true")
 	dir := t.TempDir()
+	keepPath := filepath.Join(dir, "keep.txt")
+	if err := os.WriteFile(keepPath, []byte("keep"), 0o644); err != nil {
+		t.Fatalf("write keep file: %v", err)
+	}
 
 	cfg := Config{
 		OutputDir: dir,
@@ -277,9 +283,8 @@ func TestPublishCycle_EmptyCRDs(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	entries, _ := os.ReadDir(dir)
-	if len(entries) != 0 {
-		t.Fatalf("expected empty dir after empty CRD list, got %d entries", len(entries))
+	if _, err := os.Stat(keepPath); err != nil {
+		t.Fatalf("expected existing output to remain for zero CRDs: %v", err)
 	}
 }
 

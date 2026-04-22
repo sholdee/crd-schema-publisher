@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -485,6 +486,7 @@ func scaffoldSampleData(dir string) error {
 			{file: "replicationdestination_v1alpha1.json", kind: "ReplicationDestination"},
 		},
 	}
+	kinds := make(map[string]string)
 	for group, files := range sampleGroups {
 		groupDir := filepath.Join(dir, group)
 		if err := os.MkdirAll(groupDir, 0o755); err != nil {
@@ -495,11 +497,19 @@ func scaffoldSampleData(dir string) error {
 			if err := os.WriteFile(path, []byte(`{"type":"object"}`), 0o644); err != nil {
 				return fmt.Errorf("writing %s/%s: %w", group, schema.file, err)
 			}
-			kindPath := strings.TrimSuffix(path, filepath.Ext(path)) + ".kind"
-			if err := os.WriteFile(kindPath, []byte(schema.kind), 0o644); err != nil {
-				return fmt.Errorf("writing %s/%s: %w", group, filepath.Base(kindPath), err)
-			}
+			kinds[filepath.ToSlash(filepath.Join(group, schema.file))] = schema.kind
 		}
+	}
+	manifestDir := filepath.Join(dir, "_meta")
+	if err := os.MkdirAll(manifestDir, 0o755); err != nil {
+		return fmt.Errorf("creating metadata dir: %w", err)
+	}
+	manifestBytes, err := json.MarshalIndent(kinds, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encoding kind manifest: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(manifestDir, "kinds.json"), append(manifestBytes, '\n'), 0o644); err != nil {
+		return fmt.Errorf("writing kind manifest: %w", err)
 	}
 	return nil
 }

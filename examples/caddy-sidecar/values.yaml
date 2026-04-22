@@ -101,7 +101,9 @@ extraObjects:
                 format json
             }
             root * /srv/current
-            file_server browse
+            file_server browse {
+                hide _meta
+            }
         }
 
   # Service targeting the caddy sidecar port.

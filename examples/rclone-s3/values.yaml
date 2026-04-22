@@ -60,7 +60,7 @@ extraContainers:
             sleep 5
             continue
           fi
-          rclone sync /data/current s3:${RCLONE_S3_BUCKET} --checksum --verbose --transfers 4
+          rclone sync /data/current s3:${RCLONE_S3_BUCKET} --exclude "/_meta/**" --checksum --verbose --transfers 4
           sleep 60
         done
     env:

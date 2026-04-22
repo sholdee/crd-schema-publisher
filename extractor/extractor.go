@@ -23,6 +23,11 @@ type CRDLister interface {
 	List(ctx context.Context, opts metav1.ListOptions) (*apiextensionsv1.CustomResourceDefinitionList, error)
 }
 
+const (
+	metadataDirName   = "_meta"
+	kindsManifestName = "kinds.json"
+)
+
 func BuildConfig(kubeContext string) (*rest.Config, error) {
 	cfg, err := rest.InClusterConfig()
 	if err != nil {
@@ -62,6 +67,7 @@ func WriteSchemas(crds []apiextensionsv1.CustomResourceDefinition, outputDir str
 		sem      = make(chan struct{}, 10)
 		count    int
 		firstErr error
+		kinds    = make(map[string]string)
 	)
 
 	for _, crd := range crds {
@@ -75,17 +81,17 @@ func WriteSchemas(crds []apiextensionsv1.CustomResourceDefinition, outputDir str
 			}
 
 			kind := strings.ToLower(crd.Spec.Names.Kind)
-			originalKind := crd.Spec.Names.Kind
 			group := crd.Spec.Group
 			versionName := version.Name
 
 			wg.Add(1)
 			sem <- struct{}{}
-			go func(props *apiextensionsv1.JSONSchemaProps, kind, originalKind, group, versionName string) {
+			go func(props *apiextensionsv1.JSONSchemaProps, kind, group, versionName, originalKind string) {
 				defer wg.Done()
 				defer func() { <-sem }()
 
-				if err := writeSchemaFiles(props, kind, originalKind, group, versionName, outputDir); err != nil {
+				filename, err := writeSchemaFiles(props, kind, group, versionName, outputDir)
+				if err != nil {
 					mu.Lock()
 					if firstErr == nil {
 						firstErr = err
@@ -95,54 +101,73 @@ func WriteSchemas(crds []apiextensionsv1.CustomResourceDefinition, outputDir str
 				}
 
 				mu.Lock()
+				kinds[filepath.ToSlash(filepath.Join(group, filename))] = originalKind
 				count++
 				mu.Unlock()
-			}(schemaProps, kind, originalKind, group, versionName)
+			}(schemaProps, kind, group, versionName, crd.Spec.Names.Kind)
 		}
 	}
 
 	wg.Wait()
+	if firstErr != nil {
+		return count, firstErr
+	}
+	if len(kinds) == 0 {
+		return count, nil
+	}
+	if err := writeKindsManifest(outputDir, kinds); err != nil {
+		return count, err
+	}
 	return count, firstErr
 }
 
-func writeSchemaFiles(props *apiextensionsv1.JSONSchemaProps, kind, originalKind, group, versionName, outputDir string) error {
+func writeSchemaFiles(props *apiextensionsv1.JSONSchemaProps, kind, group, versionName, outputDir string) (string, error) {
 	raw, err := json.Marshal(props)
 	if err != nil {
-		return fmt.Errorf("marshaling schema for %s/%s: %w", group, kind, err)
+		return "", fmt.Errorf("marshaling schema for %s/%s: %w", group, kind, err)
 	}
 
 	var schema map[string]interface{}
 	if err := json.Unmarshal(raw, &schema); err != nil {
-		return fmt.Errorf("unmarshaling schema for %s/%s: %w", group, kind, err)
+		return "", fmt.Errorf("unmarshaling schema for %s/%s: %w", group, kind, err)
 	}
 
 	schema = converter.Convert(schema)
 
 	jsonBytes, err := json.MarshalIndent(schema, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshaling JSON for %s/%s: %w", group, kind, err)
+		return "", fmt.Errorf("marshaling JSON for %s/%s: %w", group, kind, err)
 	}
 
 	groupDir := filepath.Join(outputDir, group)
 	if err := os.MkdirAll(groupDir, 0o755); err != nil {
-		return err
+		return "", err
 	}
 	filename := fmt.Sprintf("%s_%s.json", kind, versionName)
 	if err := os.WriteFile(filepath.Join(groupDir, filename), jsonBytes, 0o644); err != nil {
-		return err
-	}
-	if err := os.WriteFile(
-		filepath.Join(groupDir, strings.TrimSuffix(filename, ".json")+".kind"),
-		[]byte(originalKind+"\n"),
-		0o644,
-	); err != nil {
-		return err
+		return "", err
 	}
 
 	standaloneDir := filepath.Join(outputDir, "master-standalone")
 	if err := os.MkdirAll(standaloneDir, 0o755); err != nil {
-		return err
+		return "", err
 	}
 	standaloneName := fmt.Sprintf("%s-%s-stable-%s.json", group, kind, versionName)
-	return os.WriteFile(filepath.Join(standaloneDir, standaloneName), jsonBytes, 0o644)
+	if err := os.WriteFile(filepath.Join(standaloneDir, standaloneName), jsonBytes, 0o644); err != nil {
+		return "", err
+	}
+	return filename, nil
+}
+
+func writeKindsManifest(outputDir string, kinds map[string]string) error {
+	metaDir := filepath.Join(outputDir, metadataDirName)
+	if err := os.MkdirAll(metaDir, 0o755); err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(kinds, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling kinds manifest: %w", err)
+	}
+	return os.WriteFile(filepath.Join(metaDir, kindsManifestName), data, 0o644)
 }

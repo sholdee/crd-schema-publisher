@@ -13,6 +13,11 @@ import (
 	"github.com/sholdee/crd-schema-publisher/theme"
 )
 
+const (
+	metadataDirName   = "_meta"
+	kindsManifestName = "kinds.json"
+)
+
 // SchemaNode represents a JSON Schema node for rendering.
 type SchemaNode struct {
 	Type                 interface{}            `json:"type,omitempty"`
@@ -177,6 +182,14 @@ type schemaPageData struct {
 
 // renderSchemaFile reads a JSON schema file and writes a sibling .html file.
 func renderSchemaFile(tmpl *template.Template, jsonPath, group, filename, basePath string) error {
+	kinds, err := loadKindManifest(filepath.Dir(filepath.Dir(jsonPath)))
+	if err != nil {
+		return err
+	}
+	return renderSchemaFileWithKinds(tmpl, jsonPath, group, filename, basePath, kinds)
+}
+
+func renderSchemaFileWithKinds(tmpl *template.Template, jsonPath, group, filename, basePath string, kinds map[string]string) error {
 	data, err := os.ReadFile(jsonPath)
 	if err != nil {
 		return fmt.Errorf("reading schema %s: %w", jsonPath, err)
@@ -190,8 +203,8 @@ func renderSchemaFile(tmpl *template.Template, jsonPath, group, filename, basePa
 	base := strings.TrimSuffix(filename, ".json")
 	parts := strings.SplitN(base, "_", 2)
 	kind := titleCase(parts[0])
-	if sidecarKind, err := readKindSidecar(jsonPath); err == nil && sidecarKind != "" {
-		kind = sidecarKind
+	if manifestKind := lookupManifestKind(kinds, group, filename); manifestKind != "" {
+		kind = manifestKind
 	}
 	version := ""
 	if len(parts) == 2 {
@@ -220,12 +233,26 @@ func renderSchemaFile(tmpl *template.Template, jsonPath, group, filename, basePa
 	return f.Close()
 }
 
-func readKindSidecar(jsonPath string) (string, error) {
-	data, err := os.ReadFile(strings.TrimSuffix(jsonPath, ".json") + ".kind")
+func loadKindManifest(outputDir string) (map[string]string, error) {
+	data, err := os.ReadFile(filepath.Join(outputDir, metadataDirName, kindsManifestName))
 	if err != nil {
-		return "", err
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading kind manifest: %w", err)
 	}
-	return strings.TrimSpace(string(data)), nil
+	var kinds map[string]string
+	if err := json.Unmarshal(data, &kinds); err != nil {
+		return nil, fmt.Errorf("parsing kind manifest: %w", err)
+	}
+	return kinds, nil
+}
+
+func lookupManifestKind(kinds map[string]string, group, filename string) string {
+	if len(kinds) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(kinds[filepath.ToSlash(filepath.Join(group, filename))])
 }
 
 type renderJob struct {
@@ -242,7 +269,7 @@ func collectRenderJobs(outputDir string) ([]renderJob, error) {
 
 	var jobs []renderJob
 	for _, entry := range entries {
-		if !entry.IsDir() || entry.Name() == "master-standalone" {
+		if !entry.IsDir() || entry.Name() == "master-standalone" || entry.Name() == metadataDirName {
 			continue
 		}
 		groupName := entry.Name()
@@ -292,6 +319,10 @@ func RenderAll(outputDir, basePath string) error {
 	if err != nil {
 		return err
 	}
+	kinds, err := loadKindManifest(outputDir)
+	if err != nil {
+		return err
+	}
 
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 10)
@@ -303,7 +334,7 @@ func RenderAll(outputDir, basePath string) error {
 		go func(j renderJob) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			if err := renderSchemaFile(tmpl, j.jsonPath, j.groupName, j.fileName, basePath); err != nil {
+			if err := renderSchemaFileWithKinds(tmpl, j.jsonPath, j.groupName, j.fileName, basePath, kinds); err != nil {
 				errs <- fmt.Errorf("rendering %s/%s: %w", j.groupName, j.fileName, err)
 			}
 		}(job)

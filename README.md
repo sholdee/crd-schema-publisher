@@ -268,6 +268,8 @@ This validates built-in Kubernetes resources against the default schemas and CRD
       <apigroup>/
         <kind>_<version>.json          # JSON schema
         <kind>_<version>.html          # Interactive documentation page
+      _meta/
+        kinds.json                     # Internal renderer metadata manifest
       master-standalone/
         <apigroup>-<kind>-stable-<version>.json  # kubeval-compatible format
       index.html                       # Browsable schema index
@@ -275,7 +277,7 @@ This validates built-in Kubernetes resources against the default schemas and CRD
   current -> .generations/<generation> # Stable read path for sidecars and local servers
 ```
 
-Direct-volume consumers should read or serve `OUTPUT_DIR/current`, not the flat root of `OUTPUT_DIR`.
+Direct-volume consumers should read or serve `OUTPUT_DIR/current`, not the flat root of `OUTPUT_DIR`. First-party Cloudflare, git, S3, and Caddy examples exclude `_meta/` from published or served output.
 
 ## ⚙️ How It Works
 

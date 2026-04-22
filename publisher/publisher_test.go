@@ -333,14 +333,17 @@ func seedCurrentGeneration(t *testing.T) string {
 	if err := os.MkdirAll(filepath.Join(generationDir, "example.io"), 0o755); err != nil {
 		t.Fatalf("mkdir generation: %v", err)
 	}
+	if err := os.MkdirAll(filepath.Join(generationDir, "_meta"), 0o755); err != nil {
+		t.Fatalf("mkdir metadata: %v", err)
+	}
 	if err := os.WriteFile(filepath.Join(generationDir, "index.html"), []byte(`<html></html>`), 0o644); err != nil {
 		t.Fatalf("write index: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(generationDir, "example.io", "test_v1.json"), []byte(`{"type":"object"}`), 0o644); err != nil {
 		t.Fatalf("write schema: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(generationDir, "example.io", "test_v1.kind"), []byte("Test\n"), 0o644); err != nil {
-		t.Fatalf("write sidecar: %v", err)
+	if err := os.WriteFile(filepath.Join(generationDir, "_meta", "kinds.json"), []byte(`{"example.io/test_v1.json":"Test"}`), 0o644); err != nil {
+		t.Fatalf("write metadata manifest: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(tmpDir, "flat-root.json"), []byte(`{"wrong":"path"}`), 0o644); err != nil {
 		t.Fatalf("write flat root file: %v", err)
@@ -359,8 +362,8 @@ func assertCurrentManifest(t *testing.T, manifest map[string]string) {
 	if _, ok := manifest["/example.io/test_v1.json"]; !ok {
 		t.Fatal("expected schema file from current generation in manifest")
 	}
-	if _, ok := manifest["/example.io/test_v1.kind"]; ok {
-		t.Fatal("did not expect .kind sidecar in manifest")
+	if _, ok := manifest["/_meta/kinds.json"]; ok {
+		t.Fatal("did not expect metadata manifest in manifest")
 	}
 	if _, ok := manifest["/flat-root.json"]; ok {
 		t.Fatal("did not expect flat root files outside current generation in manifest")

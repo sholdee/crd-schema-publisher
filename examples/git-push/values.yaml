@@ -92,6 +92,7 @@ extraContainers:
           rm -rf /tmp/site-sync
           mkdir -p /tmp/site-sync
           cp -r /data/current/. /tmp/site-sync/ || continue
+          rm -rf /tmp/site-sync/_meta
           find /repo -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           cp -r /tmp/site-sync/. /repo/ || continue
           git add -A

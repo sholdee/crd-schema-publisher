@@ -81,6 +81,31 @@ func TestGenerate_SkipsMasterStandalone(t *testing.T) {
 	}
 }
 
+func TestGenerate_SkipsMetadataDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(tmpDir, "example.io"), 0o755)
+	_ = os.WriteFile(filepath.Join(tmpDir, "example.io", "test_v1.json"), []byte(`{}`), 0o644)
+	_ = os.MkdirAll(filepath.Join(tmpDir, "_meta"), 0o755)
+	_ = os.WriteFile(filepath.Join(tmpDir, "_meta", "kinds.json"), []byte(`{"example.io/test_v1.json":"Test"}`), 0o644)
+
+	err := Generate(tmpDir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(tmpDir, "index.html"))
+	html := string(data)
+	if strings.Contains(html, "_meta") {
+		t.Fatal("index should not list metadata directory")
+	}
+	if !strings.Contains(html, ">1</strong> API groups") {
+		t.Fatal("metadata directory should not affect group count")
+	}
+	if !strings.Contains(html, ">1</strong> schemas") {
+		t.Fatal("metadata directory should not affect schema count")
+	}
+}
+
 func TestGenerate_ManySchemasFewGroups(t *testing.T) {
 	tmpDir := t.TempDir()
 	// 1 group with 5 schemas — tests that group count and schema count diverge correctly

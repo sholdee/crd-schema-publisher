@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -218,12 +219,12 @@ func (p *Publisher) collectFiles(dir string) ([]*fileEntry, error) {
 		if err != nil || info.IsDir() {
 			return err
 		}
-		if filepath.Ext(path) == ".kind" {
-			return nil
-		}
 		rel, err := filepath.Rel(dir, path)
 		if err != nil {
 			return err
+		}
+		if shouldSkipPublishedFile(rel) {
+			return nil
 		}
 		hash, err := HashFile(path)
 		if err != nil {
@@ -237,6 +238,11 @@ func (p *Publisher) collectFiles(dir string) ([]*fileEntry, error) {
 		return nil
 	})
 	return files, err
+}
+
+func shouldSkipPublishedFile(rel string) bool {
+	rel = filepath.ToSlash(rel)
+	return filepath.Ext(rel) == ".kind" || strings.HasPrefix(rel, "_meta/")
 }
 
 func (p *Publisher) getUploadToken() (string, error) {

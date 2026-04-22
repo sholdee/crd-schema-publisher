@@ -1,6 +1,7 @@
 package renderer
 
 import (
+	"encoding/json"
 	"html/template"
 	"os"
 	"path/filepath"
@@ -451,13 +452,14 @@ func TestRenderSchema_MinimalSchema(t *testing.T) {
 	}
 }
 
-func TestRenderSchema_PreservesOriginalKindFromSidecar(t *testing.T) {
+func TestRenderSchema_PreservesOriginalKindFromManifest(t *testing.T) {
 	schema := `{"type":"object"}`
 
 	tmpDir := t.TempDir()
 	_ = os.MkdirAll(filepath.Join(tmpDir, "monitoring.coreos.com"), 0o755)
+	_ = os.MkdirAll(filepath.Join(tmpDir, "_meta"), 0o755)
 	_ = os.WriteFile(filepath.Join(tmpDir, "monitoring.coreos.com", "servicemonitor_v1.json"), []byte(schema), 0o644)
-	_ = os.WriteFile(filepath.Join(tmpDir, "monitoring.coreos.com", "servicemonitor_v1.kind"), []byte("ServiceMonitor\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "_meta", "kinds.json"), []byte(`{"monitoring.coreos.com/servicemonitor_v1.json":"ServiceMonitor"}`), 0o644)
 
 	err := renderSchemaFile(
 		testTemplate(t),
@@ -477,7 +479,7 @@ func TestRenderSchema_PreservesOriginalKindFromSidecar(t *testing.T) {
 
 	html := string(data)
 	if !strings.Contains(html, "ServiceMonitor") {
-		t.Fatal("expected exact Kind casing from sidecar")
+		t.Fatal("expected exact Kind casing from manifest")
 	}
 	if strings.Contains(html, "Servicemonitor") {
 		t.Fatal("expected title-cased fallback to be overridden")
@@ -543,6 +545,40 @@ func TestRenderAll_EmptyDir(t *testing.T) {
 	err := RenderAll(tmpDir, "")
 	if err != nil {
 		t.Fatalf("RenderAll should handle empty dir: %v", err)
+	}
+}
+
+func TestRenderAll_SkipsMetadataDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	groupDir := filepath.Join(tmpDir, "example.io")
+	if err := os.MkdirAll(groupDir, 0o755); err != nil {
+		t.Fatalf("mkdir group: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(groupDir, "test_v1.json"), []byte(`{"type":"object"}`), 0o644); err != nil {
+		t.Fatalf("write schema: %v", err)
+	}
+
+	metaDir := filepath.Join(tmpDir, "_meta")
+	if err := os.MkdirAll(metaDir, 0o755); err != nil {
+		t.Fatalf("mkdir metadata dir: %v", err)
+	}
+	manifest, err := json.Marshal(map[string]string{"example.io/test_v1.json": "Test"})
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(metaDir, "kinds.json"), manifest, 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	if err := RenderAll(tmpDir, ""); err != nil {
+		t.Fatalf("RenderAll error: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(groupDir, "test_v1.html")); err != nil {
+		t.Fatalf("expected schema HTML file: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(metaDir, "kinds.html")); !os.IsNotExist(err) {
+		t.Fatalf("expected metadata dir to be skipped, got err=%v", err)
 	}
 }
 

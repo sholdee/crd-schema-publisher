@@ -31,6 +31,8 @@ type indexData struct {
 	BasePath   string
 }
 
+const metadataDirName = "_meta"
+
 const faviconSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
 <line x1="16" y1="3" x2="28.38" y2="7.96" stroke="#6bc1fe" stroke-width="1.5" stroke-linecap="round"/>
 <line x1="28.38" y1="7.96" x2="27.02" y2="21.53" stroke="#6bc1fe" stroke-width="1.5" stroke-linecap="round"/>
@@ -446,7 +448,7 @@ func Generate(outputDir, basePath string) error {
 
 	totalCount := 0
 	for _, entry := range entries {
-		if !entry.IsDir() || entry.Name() == "master-standalone" {
+		if !entry.IsDir() || entry.Name() == "master-standalone" || entry.Name() == metadataDirName {
 			continue
 		}
 		groupName := entry.Name()

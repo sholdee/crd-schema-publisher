@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,16 +9,23 @@ import (
 	"testing"
 
 	"github.com/sholdee/crd-schema-publisher/extractor"
+	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+	"k8s.io/client-go/rest"
 )
 
 func TestRunAll_SkipsUploadOnNoopBuild(t *testing.T) {
+	clientOrig := buildClientFunc
 	buildOrig := buildSiteFunc
 	publishOrig := publishOutputFunc
 	defer func() {
+		buildClientFunc = clientOrig
 		buildSiteFunc = buildOrig
 		publishOutputFunc = publishOrig
 	}()
 
+	buildClientFunc = func(string) (*apiextensionsclient.Clientset, error) {
+		return apiextensionsclient.NewForConfig(&rest.Config{Host: "https://example.invalid"})
+	}
 	buildSiteFunc = func(extractor.SiteBuildOptions) (extractor.SiteBuildResult, error) {
 		return extractor.SiteBuildResult{Status: extractor.BuildResultNoop}, nil
 	}
@@ -107,8 +115,20 @@ func TestPreparePreviewSite_CreatesSampleGenerationUnderCurrent(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(serveDir, "index.html")); err != nil {
 		t.Fatalf("expected generated index under current: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(serveDir, "monitoring.coreos.com", "servicemonitor_v1.kind")); err != nil {
-		t.Fatalf("expected sample kind sidecar under current: %v", err)
+	manifestPath := filepath.Join(serveDir, "_meta", "kinds.json")
+	manifestBytes, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("expected sample kind manifest under current: %v", err)
+	}
+	var manifest map[string]string
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		t.Fatalf("parse sample kind manifest: %v", err)
+	}
+	if got := manifest["monitoring.coreos.com/servicemonitor_v1.json"]; got != "ServiceMonitor" {
+		t.Fatalf("expected ServiceMonitor in sample kind manifest, got %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(serveDir, "monitoring.coreos.com", "servicemonitor_v1.kind")); !os.IsNotExist(err) {
+		t.Fatalf("expected sample preview to stop writing .kind sidecars, got err=%v", err)
 	}
 
 	cleanup()

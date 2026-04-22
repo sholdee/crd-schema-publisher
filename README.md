@@ -41,7 +41,9 @@ This installs in **controller mode** by default (real-time watch with leader ele
 
 #### Credentials
 
-Cloudflare credentials are **optional**. Without them, the chart runs in extract-only mode — site generations are written under the output directory and the active snapshot is exposed at `OUTPUT_DIR/current`, but nothing is uploaded. This is useful when serving schemas locally (e.g., via a sidecar web server) instead of Cloudflare Pages.
+Cloudflare credentials are **optional in controller mode**. Without them, the Deployment runs in extract-only mode — site generations are written under the output directory and the active snapshot is exposed at `OUTPUT_DIR/current`, but nothing is uploaded. This is useful when serving schemas locally (e.g., via a sidecar web server) instead of Cloudflare Pages.
+
+CronJob mode still expects Cloudflare credentials because it runs the default `run` command (`extract` + `upload`). Extract-only cronjobs are not chart-supported yet.
 
 To publish to Cloudflare Pages, provide an API token with **Cloudflare Pages: Edit** permission and your account ID. Two secret management options are supported:
 
@@ -116,7 +118,7 @@ kubectl apply -f deploy/common.yaml -f deploy/cronjob.yaml
 
 Both modes share [`deploy/common.yaml`](deploy/common.yaml) which provides namespace, ServiceAccount, RBAC (ClusterRole for CRD read access), and a hardened security context (nonroot, read-only rootfs, dropped capabilities).
 
-The deploy manifests include a placeholder Secret named `crd-schema-publisher-cloudflare`. Edit the placeholder values in `common.yaml` directly, or replace the Secret with your own secrets management (e.g., ExternalSecret, Sealed Secret). If the Secret is omitted, both modes run extract-only (site generations written under `OUTPUT_DIR/.generations` with the active snapshot exposed at `OUTPUT_DIR/current`, but not uploaded).
+The deploy manifests include a placeholder Secret named `crd-schema-publisher-cloudflare`. Edit the placeholder values in `common.yaml` directly, or replace the Secret with your own secrets management (e.g., ExternalSecret, Sealed Secret). If the Secret is omitted, the Deployment can still run in extract-only mode (site generations written under `OUTPUT_DIR/.generations` with the active snapshot exposed at `OUTPUT_DIR/current`, but not uploaded). The CronJob manifest still requires Cloudflare credentials because it uses the default `run` command.
 
 ### Container Image
 

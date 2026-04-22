@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A statically-compiled Go binary that extracts CRD JSON schemas from a Kubernetes cluster and publishes them to a Cloudflare Pages website. Runs as a long-lived Deployment (watch mode) or CronJob in a K3s cluster. Deployed in a nonroot distroless container.
+A statically-compiled Go binary that extracts CRD JSON schemas from a Kubernetes cluster and builds a browsable static site. It can publish directly to Cloudflare Pages or run in extract-only mode for sidecar consumers such as local web servers, git sync, or object-storage sync. Runs as a long-lived Deployment (watch mode) or CronJob on Kubernetes. Deployed in a nonroot distroless container.
 
 ## Repository Layout
 
@@ -50,10 +50,10 @@ go run ./cmd/ preview
 ### Subcommands
 
 - `run` (default) — extract + upload
-- `extract` — extract CRDs and write JSON schemas + index.html to OUTPUT_DIR
-- `upload` — upload OUTPUT_DIR contents to Cloudflare Pages
+- `extract` — extract CRDs and build a new site generation, exposed at `OUTPUT_DIR/current`
+- `upload` — upload the active site from `OUTPUT_DIR/current` to Cloudflare Pages
 - `watch` — long-lived process: informer watches CRDs, debounces events, runs extract+publish cycles. Leader election for multi-replica safety.
-- `preview` — generate index with sample data (or real schemas via OUTPUT_DIR) and serve on localhost. No cluster or credentials needed. Handles signal cleanup of temp directories.
+- `preview` — generate sample data or copy the active site into an isolated temp generation and serve it on localhost. No cluster or credentials needed. Handles signal cleanup of temp directories.
 
 ### Configuration (env vars)
 
@@ -62,7 +62,7 @@ go run ./cmd/ preview
 | `CLOUDFLARE_API_TOKEN` | Yes (run/upload) | — | CF API token |
 | `CLOUDFLARE_ACCOUNT_ID` | Yes (run/upload) | — | CF account ID |
 | `CF_PAGES_PROJECT` | No | `kubernetes-schemas` | CF Pages project name |
-| `OUTPUT_DIR` | No | `/output` | Schema output directory |
+| `OUTPUT_DIR` | No | `/output` | Site output root. Stable read path is `OUTPUT_DIR/current` |
 | `KUBECTL_CONTEXT` | No | — | K8s context (local dev only) |
 | `DEBOUNCE_SECONDS` | No | `15` | Seconds to wait after last CRD event before publishing (watch mode) |
 | `POD_NAME` | Yes (watch) | — | Pod identity for leader election (set via downward API) |
@@ -81,7 +81,7 @@ go run ./cmd/ preview
 - **OpenAPI v3 to JSON Schema conversion** is an improved port of `openapi2jsonschema.py` from datreeio/CRDs-catalog (via yannh/kubeconform). Three transforms applied in order: additionalProperties, replaceIntOrString, allowNullOptionalFields. Known divergences from the Python original, all intentional improvements for kubeconform/IDE validation correctness: (1) nullable applies only to fields *not* in the required list — Python disables nullable for *all* siblings when any sibling is required; (2) `replaceIntOrString` preserves existing keys alongside oneOf — Python discards the entire dict; (3) root object and array items are not made nullable — Python makes them nullable unnecessarily. A golden E2E test (`extractor/testdata/golden_certificate_v1.json`) freezes the converter output and catches any regression.
 - **Schema renderer** generates interactive HTML documentation pages (collapsible `<details>`/`<summary>` property trees, type/required badges, YAML boilerplate). Uses `html/template` with recursive `{{define "properties"}}` for nested schemas. Enabled by default; disable with `SKIP_RENDER=true`.
 - **Theme package** (`theme/`) holds shared CSS, HTML fragments, and JS used by both index and renderer templates. CSS custom properties are the union of both pages' needs. The deepspace theme (starfield, flare, light/dark toggle) is defined once here.
-- **Output format** produces two directory structures: `<group>/<kind>_<version>.json` (primary) and `master-standalone/<group>-<kind>-stable-<version>.json` (kubeval compatibility). Each JSON schema also gets a sibling `.html` documentation page.
+- **Output format** builds immutable site generations under `OUTPUT_DIR/.generations/<generation>/` and atomically switches `OUTPUT_DIR/current` to the active generation. Each generation contains both directory formats: `<group>/<kind>_<version>.json` (primary) and `master-standalone/<group>-<kind>-stable-<version>.json` (kubeval compatibility), plus rendered `.html` documentation pages, `index.html`, and static assets. Direct-volume consumers should read from `OUTPUT_DIR/current`, not the flat root.
 - **Concurrency**: extractor uses 10 goroutines (buffered channel semaphore), publisher uses 3 concurrent upload workers, renderer uses 10 goroutines. These match the original tools' behavior.
 - **Watch mode uses first-trigger-immediate debounce.** The informer's initial List fires AddFunc for all existing CRDs, which signals the debounce loop. The first trigger fires immediately (zero delay), subsequent triggers are debounced. This produces exactly one publish cycle on startup — no explicit initial publish in runLeader.
 - **Watch mode uses full re-extract.** Simpler than incremental. Upload is already incremental via check-missing. Extraction of <200 CRDs is sub-second.
@@ -91,7 +91,7 @@ go run ./cmd/ preview
 - **Image signing** uses cosign keyless mode via GitHub OIDC. Production images on main are signed; PR images are not. Base images (golang, distroless) are verified before every build.
 - **Supply chain hardening**: all GitHub Actions pinned by commit SHA (not version tag), Dockerfile base images pinned by digest, `go mod verify` runs in CI.
 - **Prometheus metrics** use stdlib-only text exposition format (no `prometheus/client_golang` dependency). Atomic counters and gauges in `metrics/` package, served at `/metrics` on the health server port. Metrics are always registered in watch mode — zero overhead when not scraped. Recording methods are nil-receiver safe so callers don't need nil checks. Float gauges use `math.Float64bits`/`math.Float64frombits` with `atomic.Int64` for lock-free storage.
-- **Helm chart** in `charts/crd-schema-publisher/` distributed as OCI artifact via GHCR. Two modes (`controller`/`cronjob`) with mode-isolated templates. Two-tier secret management: `existingSecret`, `externalSecret` (ESO) — or no secret at all for extract-only mode (watch gracefully degrades without Cloudflare creds). `values.schema.json` enforces secret mutual exclusivity via `if/then` (not `oneOf`, which breaks yaml-language-server with `additionalProperties: false`); template precedence in `_helpers.tpl` handles runtime resolution (`existingSecret.name` wins, else chart fullname). NetworkPolicy and CiliumNetworkPolicy are mutually exclusive (enforced via `fail` guard in `_helpers.tpl`). PrometheusRule only renders in controller mode. Chart version is CalVer SemVer: `YYYY.MDD.HMMSS` (no leading zeros on month or hour — e.g. `2026.413.65435`). Image and chart are always released together with the same CalVer version — both `version` and `appVersion` match the image tag. `Chart.yaml` version/appVersion fields are placeholder `0.0.0` — both overridden by the release workflow at package time. Dashboard embedded via `.Files.Get`. Pod anti-affinity presets in `_helpers.tpl`.
+- **Helm chart** in `charts/crd-schema-publisher/` distributed as OCI artifact via GHCR. Two modes (`controller`/`cronjob`) with mode-isolated templates. Two-tier secret management: `existingSecret`, `externalSecret` (ESO). Controller mode gracefully degrades to extract-only without Cloudflare creds because it runs `watch` and simply omits the publisher; CronJob mode still expects Cloudflare creds because it runs the default `run` command. `values.schema.json` enforces secret mutual exclusivity via `if/then` (not `oneOf`, which breaks yaml-language-server with `additionalProperties: false`); template precedence in `_helpers.tpl` handles runtime resolution (`existingSecret.name` wins, else chart fullname). NetworkPolicy and CiliumNetworkPolicy are mutually exclusive (enforced via `fail` guard in `_helpers.tpl`). PrometheusRule only renders in controller mode. Chart version is CalVer SemVer: `YYYY.MDD.HMMSS` (no leading zeros on month or hour — e.g. `2026.413.65435`). Image and chart are always released together with the same CalVer version — both `version` and `appVersion` match the image tag. `Chart.yaml` version/appVersion fields are placeholder `0.0.0` — both overridden by the release workflow at package time. Dashboard embedded via `.Files.Get`. Pod anti-affinity presets in `_helpers.tpl`.
 
 ### Dependencies (direct only)
 

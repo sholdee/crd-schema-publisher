@@ -18,8 +18,9 @@
 #     --namespace crd-schema-publisher --create-namespace \
 #     -f values.yaml
 
-# No Cloudflare secret — extract-only mode. The publisher writes schemas to
-# the output directory and the caddy sidecar serves them.
+# No Cloudflare secret — extract-only mode. The publisher writes complete site
+# generations under the output directory and exposes the active snapshot at
+# /srv/current for the caddy sidecar to serve.
 
 # Recreate strategy is required with ReadWriteOnce persistence — RollingUpdate
 # deadlocks because the new pod cannot mount the PVC until the old pod releases it.
@@ -36,11 +37,12 @@ persistence:
 extraVolumes:
   - name: caddy-config
     configMap:
-      name: '{{ include "crd-schema-publisher.fullname" . }}-caddyfile'
+      name: "{{ include \"crd-schema-publisher.fullname\" . }}-caddyfile"
   - name: caddy-tmp
     emptyDir: {}
 
-# Caddy sidecar — mounts the shared output volume as its document root.
+# Caddy sidecar — mounts the shared output volume and serves the active
+# generation from /srv/current.
 # The "output" volume is created by the chart's persistence block above.
 extraContainers:
   - name: caddy
@@ -67,26 +69,30 @@ extraContainers:
         memory: 10Mi
       limits:
         memory: 50Mi
-    livenessProbe: &caddy-probe
+    # Keep liveness independent from the generated content path so startup
+    # before the first successful build is a no-op, not a restart loop.
+    livenessProbe:
+      tcpSocket:
+        port: http
+    readinessProbe:
       httpGet:
         path: /
         port: http
-    readinessProbe: *caddy-probe
     securityContext:
       allowPrivilegeEscalation: false
       readOnlyRootFilesystem: true
       capabilities:
-        drop: ["ALL"]
-        add: ["NET_BIND_SERVICE"]
+        drop: [ "ALL" ]
+        add: [ "NET_BIND_SERVICE" ]
 
 # Supporting objects: Caddyfile ConfigMap, Service for the sidecar, and an
 # HTTPRoute for ingress. All use chart template helpers for consistent naming.
 extraObjects:
-  # Caddyfile — serves the output directory with directory browsing enabled.
+  # Caddyfile — serves the active generation with directory browsing enabled.
   - apiVersion: v1
     kind: ConfigMap
     metadata:
-      name: '{{ include "crd-schema-publisher.fullname" . }}-caddyfile'
+      name: "{{ include \"crd-schema-publisher.fullname\" . }}-caddyfile"
     data:
       Caddyfile: |
         :80 {
@@ -94,7 +100,7 @@ extraObjects:
                 output stdout
                 format json
             }
-            root * /srv
+            root * /srv/current
             file_server browse
         }
 
@@ -102,10 +108,10 @@ extraObjects:
   - apiVersion: v1
     kind: Service
     metadata:
-      name: '{{ include "crd-schema-publisher.fullname" . }}-caddy'
+      name: "{{ include \"crd-schema-publisher.fullname\" . }}-caddy"
     spec:
       selector:
-        app.kubernetes.io/name: '{{ include "crd-schema-publisher.name" . }}'
+        app.kubernetes.io/name: "{{ include \"crd-schema-publisher.name\" . }}"
         app.kubernetes.io/instance: "{{ .Release.Name }}"
       ports:
         - protocol: TCP
@@ -119,7 +125,7 @@ extraObjects:
   - apiVersion: gateway.networking.k8s.io/v1
     kind: HTTPRoute
     metadata:
-      name: '{{ include "crd-schema-publisher.fullname" . }}'
+      name: "{{ include \"crd-schema-publisher.fullname\" . }}"
     spec:
       parentRefs:
         - group: gateway.networking.k8s.io
@@ -136,6 +142,6 @@ extraObjects:
           backendRefs:
             - group: ""
               kind: Service
-              name: '{{ include "crd-schema-publisher.fullname" . }}-caddy'
+              name: "{{ include \"crd-schema-publisher.fullname\" . }}-caddy"
               port: 80
               weight: 1

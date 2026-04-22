@@ -37,8 +37,9 @@
 #     --namespace crd-schema-publisher --create-namespace \
 #     -f values.yaml
 
-# No Cloudflare secret — extract-only mode. The publisher writes schemas to
-# the output directory and the git-push sidecar commits and pushes them.
+# No Cloudflare secret — extract-only mode. The publisher writes complete site
+# generations under the output directory and exposes the active snapshot at
+# /data/current for the git-push sidecar to commit and push.
 # No persistence needed — the publisher re-extracts on startup and the sidecar
 # re-syncs the full set. The default emptyDir volume is sufficient.
 
@@ -51,7 +52,8 @@ extraVolumes:
   - name: git-tmp
     emptyDir: {}
 
-# alpine/git sidecar — commits and pushes the shared output volume to GitHub.
+# alpine/git sidecar — commits and pushes the active generation from the shared
+# output volume to GitHub.
 # The "output" volume is the chart's default emptyDir.
 extraContainers:
   - name: git-push
@@ -60,8 +62,10 @@ extraContainers:
     args:
       - |
         # Configure git identity
-        # Wait for the publisher to complete its first extraction
-        while [ ! -f /data/index.html ]; do sleep 5; done
+        # Wait for the publisher to complete its first successful build.
+        # If this path never appears, the sidecar stays fail-closed and
+        # does not rewrite the target repository.
+        while [ ! -f /data/current/index.html ]; do sleep 5; done
 
         git config --global user.name "crd-schema-publisher"
         git config --global user.email "crd-schema-publisher@users.noreply.github.com"
@@ -81,8 +85,15 @@ extraContainers:
         cd /repo
         while true; do
           sleep 30  # Can be lowered to 15s safely; no-op cycles are near-zero cost
-          # Sync schemas from output volume to repo working copy
-          cp -r /data/. /repo/ || continue
+          if [ ! -f /data/current/index.html ]; then
+            continue
+          fi
+          # Mirror the active generation into the repo working copy, including deletions
+          rm -rf /tmp/site-sync
+          mkdir -p /tmp/site-sync
+          cp -r /data/current/. /tmp/site-sync/ || continue
+          find /repo -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -r /tmp/site-sync/. /repo/ || continue
           git add -A
           if ! git diff --cached --quiet; then
             git commit -m "update schemas $(date -u +%Y-%m-%dT%H:%M:%SZ)"

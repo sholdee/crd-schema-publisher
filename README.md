@@ -8,6 +8,8 @@
 
 Reads CRD JSON schemas directly from your Kubernetes API server and publishes a browsable documentation site with search and interactive schema pages. Runs as a Kubernetes-native controller with real-time CRD watching, or as a CronJob for scheduled extraction. Exports schemas for IDE validation (yaml-language-server) and CI linting (kubeconform). Cloudflare Pages is the built-in backend; S3, git repos, and local serving supported via sidecar.
 
+> **Direct-volume consumers:** the active site now lives at `OUTPUT_DIR/current`. This is a breaking change for sidecars or scripts that read the shared output volume directly. Cloudflare Pages users do not need to change anything.
+
 **[Live demo →](https://kube-schemas.shold.io)**
 
 ## 💡 Why
@@ -39,7 +41,7 @@ This installs in **controller mode** by default (real-time watch with leader ele
 
 #### Credentials
 
-Cloudflare credentials are **optional**. Without them, the chart runs in extract-only mode — schemas are written to the output directory but not uploaded. This is useful when serving schemas locally (e.g., via an nginx sidecar) instead of Cloudflare Pages.
+Cloudflare credentials are **optional**. Without them, the chart runs in extract-only mode — site generations are written under the output directory and the active snapshot is exposed at `OUTPUT_DIR/current`, but nothing is uploaded. This is useful when serving schemas locally (e.g., via a sidecar web server) instead of Cloudflare Pages.
 
 To publish to Cloudflare Pages, provide an API token with **Cloudflare Pages: Edit** permission and your account ID. Two secret management options are supported:
 
@@ -64,7 +66,7 @@ Persistent output volume (`persistence`), extra volumes/volume mounts/containers
 
 #### Examples: Alternative backends via sidecar pattern
 
-The chart's `extraContainers` and `extraObjects` values let you wire up any backend without changes to the tool. Each example runs in extract-only mode (no Cloudflare credentials) — schemas are written to the output directory and a sidecar handles serving or syncing. Examples that push to external storage run stateless with an emptyDir; the caddy example uses a persistent volume since it serves directly from the cluster.
+The chart's `extraContainers` and `extraObjects` values let you wire up any backend without changes to the tool. Each example runs in extract-only mode (no Cloudflare credentials) — schemas are written to generation snapshots under the output directory and the active site is exposed at `OUTPUT_DIR/current` for the sidecar to serve or sync. Examples that push to external storage run stateless with an emptyDir; the caddy example uses a persistent volume since it serves directly from the cluster.
 
 ```bash
 helm install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-schema-publisher \
@@ -79,6 +81,8 @@ helm install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-schema-publis
 | [`git-push`](examples/git-push/values.yaml) | Git repository | Commits and pushes schema changes to a GitHub repository for GitHub Pages hosting. Works with any git host (GitLab, Gitea, Bitbucket) by adjusting the remote URL. |
 
 Each example is a self-contained values file — copy it, fill in your credentials, and install. See the comments in each file for what to customize.
+
+If you already use the first-party `git-push` or `rclone-s3` examples, update them to read `/data/current`. Older example configs fail closed after upgrading to a new image: syncing stops, but existing remote content is not deleted or overwritten. Cloudflare Pages users do not need to change anything.
 
 #### Verification
 
@@ -112,7 +116,7 @@ kubectl apply -f deploy/common.yaml -f deploy/cronjob.yaml
 
 Both modes share [`deploy/common.yaml`](deploy/common.yaml) which provides namespace, ServiceAccount, RBAC (ClusterRole for CRD read access), and a hardened security context (nonroot, read-only rootfs, dropped capabilities).
 
-The deploy manifests include a placeholder Secret named `crd-schema-publisher-cloudflare`. Edit the placeholder values in `common.yaml` directly, or replace the Secret with your own secrets management (e.g., ExternalSecret, Sealed Secret). If the Secret is omitted, both modes run extract-only (schemas written to `OUTPUT_DIR` but not uploaded).
+The deploy manifests include a placeholder Secret named `crd-schema-publisher-cloudflare`. Edit the placeholder values in `common.yaml` directly, or replace the Secret with your own secrets management (e.g., ExternalSecret, Sealed Secret). If the Secret is omitted, both modes run extract-only (site generations written under `OUTPUT_DIR/.generations` with the active snapshot exposed at `OUTPUT_DIR/current`, but not uploaded).
 
 ### Container Image
 
@@ -141,7 +145,7 @@ All configuration is via environment variables. Variables marked *(watch)* apply
 | `CLOUDFLARE_API_TOKEN` | Yes (run/upload) | — | Cloudflare API token with Pages permissions |
 | `CLOUDFLARE_ACCOUNT_ID` | Yes (run/upload) | — | Cloudflare account ID |
 | `CF_PAGES_PROJECT` | No | `kubernetes-schemas` | Cloudflare Pages project name |
-| `OUTPUT_DIR` | No | `/output` | Directory for schema output |
+| `OUTPUT_DIR` | No | `/output` | Site output root. The active snapshot is exposed at `OUTPUT_DIR/current` |
 | `KUBECTL_CONTEXT` | No | — | Kubernetes context name (local development only) |
 | `DEBOUNCE_SECONDS` | No | `15` | Seconds to wait after last CRD event before publishing (watch mode) |
 | `POD_NAME` | Yes (watch) | — | Pod identity for leader election (set via downward API) |
@@ -257,14 +261,19 @@ This validates built-in Kubernetes resources against the default schemas and CRD
 
 ```text
 <output-dir>/
-  <apigroup>/
-    <kind>_<version>.json          # JSON schema
-    <kind>_<version>.html          # Interactive documentation page
-  master-standalone/
-    <apigroup>-<kind>-stable-<version>.json  # kubeval-compatible format
-  index.html                       # Browsable schema index
-  favicon.svg                      # Constellation icon
+  .generations/
+    <generation>/
+      <apigroup>/
+        <kind>_<version>.json          # JSON schema
+        <kind>_<version>.html          # Interactive documentation page
+      master-standalone/
+        <apigroup>-<kind>-stable-<version>.json  # kubeval-compatible format
+      index.html                       # Browsable schema index
+      favicon.svg                      # Constellation icon
+  current -> .generations/<generation> # Stable read path for sidecars and local servers
 ```
+
+Direct-volume consumers should read or serve `OUTPUT_DIR/current`, not the flat root of `OUTPUT_DIR`.
 
 ## ⚙️ How It Works
 
@@ -273,10 +282,10 @@ crd-schema-publisher [command]
 
 Commands:
   run       Extract schemas and upload to Cloudflare Pages (default)
-  extract   Extract schemas and generate index to OUTPUT_DIR
-  upload    Upload OUTPUT_DIR contents to Cloudflare Pages
+  extract   Extract schemas and generate the active site under OUTPUT_DIR/current
+  upload    Upload the active site from OUTPUT_DIR/current to Cloudflare Pages
   watch     Watch for CRD changes and publish on each change (extract-only if no credentials)
-  preview   Generate index with sample data and serve locally for UI development
+  preview   Generate a sample or active site snapshot and serve it locally
 ```
 
 1. Connects to the Kubernetes API (in-cluster or via kubeconfig)
@@ -287,10 +296,11 @@ Commands:
    - Allows null for optional fields (per-field precision, not per-parent)
 
    These improve on the Python original's handling of nullable fields, int-or-string types, and root objects. A frozen golden test locks converter output to prevent regressions.
-4. Writes schemas to both primary and kubeval-compatible directory formats
+4. Writes schemas to both primary and kubeval-compatible directory formats inside a new generation snapshot
 5. Renders an interactive HTML documentation page for each schema with collapsible property trees
 6. Generates an HTML index grouped by API group with client-side search, schema statistics, and yaml-language-server usage examples
-7. Uploads to Cloudflare Pages via the direct upload API (BLAKE3 content hashing, batched uploads with retry)
+7. Atomically switches `OUTPUT_DIR/current` to the completed generation so sidecars read a stable snapshot
+8. Uploads the active generation to Cloudflare Pages via the direct upload API (BLAKE3 content hashing, batched uploads with retry)
 
 ## 🔧 Development
 
@@ -303,9 +313,11 @@ go run ./cmd/ preview
 
 # Preview with real extracted schemas
 OUTPUT_DIR=./output go run ./cmd/ preview
+# Serves the active snapshot from ./output/current
 
 # Extract schemas from a local cluster (no upload)
 KUBECTL_CONTEXT=my-cluster OUTPUT_DIR=./output go run ./cmd/ extract
+# Writes the active snapshot under ./output/current
 
 # Full run with upload
 KUBECTL_CONTEXT=my-cluster \

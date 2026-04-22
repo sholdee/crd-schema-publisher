@@ -30,8 +30,9 @@
 #     --namespace crd-schema-publisher --create-namespace \
 #     -f values.yaml
 
-# No Cloudflare secret — extract-only mode. The publisher writes schemas to
-# the output directory and the rclone sidecar syncs them to object storage.
+# No Cloudflare secret — extract-only mode. The publisher writes complete site
+# generations under the output directory and exposes the active snapshot at
+# /data/current for the rclone sidecar to sync to object storage.
 # No persistence needed — the publisher re-extracts on startup and the sidecar
 # re-syncs the full set. The default emptyDir volume is sufficient.
 
@@ -40,7 +41,8 @@ extraVolumes:
   - name: rclone-tmp
     emptyDir: {}
 
-# rclone sidecar — syncs the shared output volume to S3-compatible storage.
+# rclone sidecar — syncs the active generation from the shared output volume to
+# S3-compatible storage.
 # The "output" volume is the chart's default emptyDir.
 extraContainers:
   - name: rclone
@@ -48,11 +50,17 @@ extraContainers:
     command: ["/bin/sh", "-c"]
     args:
       - |
-        # Wait for the publisher to complete its first extraction
-        while [ ! -f /data/index.html ]; do sleep 5; done
+        # Wait for the publisher to complete its first successful build.
+        # If this path never appears, the sidecar stays fail-closed and
+        # does not delete remote content.
+        while [ ! -f /data/current/index.html ]; do sleep 5; done
 
         while true; do
-          rclone sync /data s3:${RCLONE_S3_BUCKET} --checksum --verbose --transfers 4
+          if [ ! -f /data/current/index.html ]; then
+            sleep 5
+            continue
+          fi
+          rclone sync /data/current s3:${RCLONE_S3_BUCKET} --checksum --verbose --transfers 4
           sleep 60
         done
     env:

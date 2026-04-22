@@ -83,7 +83,11 @@ func (p *Publisher) Publish(dir string) error {
 	if err := p.ensureProject(); err != nil {
 		return fmt.Errorf("ensuring project: %w", err)
 	}
-	files, err := p.collectFiles(dir)
+	activeDir, err := filepath.EvalSymlinks(filepath.Join(dir, "current"))
+	if err != nil {
+		return fmt.Errorf("resolving active output: %w", err)
+	}
+	files, err := p.collectFiles(activeDir)
 	if err != nil {
 		return fmt.Errorf("collecting files: %w", err)
 	}
@@ -192,6 +196,9 @@ func (p *Publisher) collectFiles(dir string) ([]*fileEntry, error) {
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return err
+		}
+		if filepath.Ext(path) == ".kind" {
+			return nil
 		}
 		rel, err := filepath.Rel(dir, path)
 		if err != nil {

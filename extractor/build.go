@@ -5,15 +5,24 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/sholdee/crd-schema-publisher/index"
 	"github.com/sholdee/crd-schema-publisher/renderer"
 )
 
 var (
-	writeSchemasFunc = WriteSchemas
-	renderAllFunc    = renderer.RenderAll
-	generateIndexFunc = index.Generate
+	writeSchemasFunc       = WriteSchemas
+	renderAllFunc          = renderer.RenderAll
+	generateIndexFunc      = index.Generate
+	activateGenerationFunc = activateGeneration
+	cleanLegacyRootFunc    = cleanLegacyRoot
+	pruneGenerationsFunc   = pruneGenerations
+)
+
+const (
+	generationsDirName = ".generations"
+	currentLinkName    = "current"
 )
 
 type SiteBuildStatus string
@@ -41,6 +50,8 @@ func BuildSite(opts SiteBuildOptions) (SiteBuildResult, error) {
 		return SiteBuildResult{}, err
 	}
 
+	previousGeneration := currentGenerationName(opts.OutputDir)
+
 	crds, err := ListCRDs(opts.Lister)
 	if err != nil {
 		return SiteBuildResult{}, fmt.Errorf("listing CRDs: %w", err)
@@ -49,31 +60,41 @@ func BuildSite(opts SiteBuildOptions) (SiteBuildResult, error) {
 		return SiteBuildResult{Status: BuildResultNoop}, nil
 	}
 
-	stagingDir, err := makeStagingDir(opts.OutputDir)
+	generationDir, generationName, err := makeGenerationDir(opts.OutputDir)
 	if err != nil {
-		return SiteBuildResult{}, fmt.Errorf("creating staging dir: %w", err)
+		return SiteBuildResult{}, fmt.Errorf("creating generation dir: %w", err)
 	}
+	keepGeneration := false
 	defer func() {
-		_ = os.RemoveAll(stagingDir)
+		if !keepGeneration {
+			_ = os.RemoveAll(generationDir)
+		}
 	}()
 
-	count, err := writeSchemasFunc(crds, stagingDir)
+	count, err := writeSchemasFunc(crds, generationDir)
 	if err != nil {
 		return SiteBuildResult{}, fmt.Errorf("writing schemas: %w", err)
 	}
 
 	if opts.Render {
-		if err := renderAllFunc(stagingDir, opts.BasePath); err != nil {
+		if err := renderAllFunc(generationDir, opts.BasePath); err != nil {
 			return SiteBuildResult{}, fmt.Errorf("rendering schemas: %w", err)
 		}
 	}
 
-	if err := generateIndexFunc(stagingDir, opts.BasePath); err != nil {
+	if err := generateIndexFunc(generationDir, opts.BasePath); err != nil {
 		return SiteBuildResult{}, fmt.Errorf("generating index: %w", err)
 	}
 
-	if err := promoteSite(stagingDir, opts.OutputDir); err != nil {
-		return SiteBuildResult{}, fmt.Errorf("promoting output: %w", err)
+	if err := activateGenerationFunc(opts.OutputDir, generationName); err != nil {
+		return SiteBuildResult{}, fmt.Errorf("activating generation: %w", err)
+	}
+	keepGeneration = true
+	if err := cleanLegacyRootFunc(opts.OutputDir); err != nil {
+		return SiteBuildResult{}, fmt.Errorf("cleaning legacy root: %w", err)
+	}
+	if err := pruneGenerationsFunc(opts.OutputDir, generationName, previousGeneration); err != nil {
+		return SiteBuildResult{}, fmt.Errorf("pruning generations: %w", err)
 	}
 
 	return SiteBuildResult{
@@ -123,73 +144,86 @@ func ValidateOutputDir(outputDir string) error {
 	return nil
 }
 
-func makeStagingDir(outputDir string) (string, error) {
-	parent := filepath.Dir(outputDir)
-	if err := os.MkdirAll(parent, 0o755); err != nil {
-		return "", err
+func makeGenerationDir(outputDir string) (string, string, error) {
+	generationsDir := filepath.Join(outputDir, generationsDirName)
+	if err := os.MkdirAll(generationsDir, 0o755); err != nil {
+		return "", "", err
 	}
-	return os.MkdirTemp(parent, "."+filepath.Base(outputDir)+".staging-*")
+	prefix := time.Now().UTC().Format("20060102T150405.000000000Z") + "-"
+	generationDir, err := os.MkdirTemp(generationsDir, prefix)
+	if err != nil {
+		return "", "", err
+	}
+	return generationDir, filepath.Base(generationDir), nil
 }
 
-func promoteSite(stagingDir, outputDir string) error {
-	parent := filepath.Dir(outputDir)
-	if err := os.MkdirAll(parent, 0o755); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(outputDir, 0o755); err != nil {
-		return err
-	}
+func activateGeneration(outputDir, generationName string) error {
+	currentPath := filepath.Join(outputDir, currentLinkName)
+	tmpPath := filepath.Join(outputDir, "."+currentLinkName+".tmp")
+	target := filepath.Join(generationsDirName, generationName)
 
-	backupDir, err := os.MkdirTemp(parent, "."+filepath.Base(outputDir)+".backup-*")
+	_ = os.Remove(tmpPath)
+	if err := os.Symlink(target, tmpPath); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, currentPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return nil
+}
+
+func cleanLegacyRoot(outputDir string) error {
+	entries, err := os.ReadDir(outputDir)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		_ = os.RemoveAll(backupDir)
-	}()
-
-	currentEntries, err := os.ReadDir(outputDir)
-	if err != nil {
-		return err
-	}
-	movedCurrent := make([]string, 0, len(currentEntries))
-	for _, entry := range currentEntries {
+	for _, entry := range entries {
 		name := entry.Name()
-		if err := os.Rename(filepath.Join(outputDir, name), filepath.Join(backupDir, name)); err != nil {
-			for i := len(movedCurrent) - 1; i >= 0; i-- {
-				rollbackName := movedCurrent[i]
-				_ = os.Rename(filepath.Join(backupDir, rollbackName), filepath.Join(outputDir, rollbackName))
-			}
+		if name == generationsDirName || name == currentLinkName {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(outputDir, name)); err != nil {
 			return err
 		}
-		movedCurrent = append(movedCurrent, name)
 	}
+	return nil
+}
 
-	stagedEntries, err := os.ReadDir(stagingDir)
+func currentGenerationName(outputDir string) string {
+	target, err := os.Readlink(filepath.Join(outputDir, currentLinkName))
 	if err != nil {
-		for i := len(movedCurrent) - 1; i >= 0; i-- {
-			rollbackName := movedCurrent[i]
-			_ = os.Rename(filepath.Join(backupDir, rollbackName), filepath.Join(outputDir, rollbackName))
+		return ""
+	}
+	return filepath.Base(target)
+}
+
+func pruneGenerations(outputDir string, keep ...string) error {
+	generationsDir := filepath.Join(outputDir, generationsDirName)
+	entries, err := os.ReadDir(generationsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
 		}
 		return err
 	}
-	movedStaged := make([]string, 0, len(stagedEntries))
-	for _, entry := range stagedEntries {
-		name := entry.Name()
-		if err := os.Rename(filepath.Join(stagingDir, name), filepath.Join(outputDir, name)); err != nil {
-			for i := len(movedStaged) - 1; i >= 0; i-- {
-				rollbackName := movedStaged[i]
-				_ = os.Rename(filepath.Join(outputDir, rollbackName), filepath.Join(stagingDir, rollbackName))
-			}
-			for i := len(movedCurrent) - 1; i >= 0; i-- {
-				rollbackName := movedCurrent[i]
-				_ = os.Rename(filepath.Join(backupDir, rollbackName), filepath.Join(outputDir, rollbackName))
-			}
-			return err
+
+	keepSet := make(map[string]struct{}, len(keep))
+	for _, name := range keep {
+		if name == "" {
+			continue
 		}
-		movedStaged = append(movedStaged, name)
+		keepSet[name] = struct{}{}
 	}
 
+	for _, entry := range entries {
+		if _, ok := keepSet[entry.Name()]; ok {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(generationsDir, entry.Name())); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -232,4 +266,8 @@ func samePath(a, b string) bool {
 func isFilesystemRoot(path string) bool {
 	clean := filepath.Clean(path)
 	return clean == string(filepath.Separator)
+}
+
+func ActiveOutputDir(outputDir string) string {
+	return filepath.Join(outputDir, currentLinkName)
 }

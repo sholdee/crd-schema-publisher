@@ -38,6 +38,7 @@ jobs:
               - 'Dockerfile'
             chart:
               - 'charts/**'
+              - '.github/workflows/helm-lint.yml'
             renovate:
               - '.github/renovate.json5'
               - '.github/workflows/ci.yaml'

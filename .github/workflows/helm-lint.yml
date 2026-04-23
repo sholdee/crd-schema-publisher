@@ -114,9 +114,13 @@ jobs:
             -schema-location 'https://kube-schemas.shold.io/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
           )
 
-          echo "Validating controller mode..."
+          echo "Validating controller mode (including CRD-backed resources)..."
           helm template test charts/crd-schema-publisher \
-            --set existingSecret.name=test \
+            --set externalSecret.enabled=true \
+            --set externalSecret.secretStoreRef.name=test \
+            --set ciliumNetworkPolicy.enabled=true \
+            --set metrics.podMonitor.enabled=true \
+            --set metrics.prometheusRule.enabled=true \
             | kubeconform "${SCHEMA_ARGS[@]}"
 
           echo "Validating cronjob mode..."

@@ -40,6 +40,7 @@ jobs:
               - 'charts/**'
             renovate:
               - '.github/renovate.json5'
+              - '.github/workflows/ci.yaml'
 
   test:
     uses: ./.github/workflows/test.yml

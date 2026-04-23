@@ -51,6 +51,8 @@ func TestGenerate_CreatesIndexHTML(t *testing.T) {
 		{"id=\"stat-schemas\"", "schema stat ID for JS update"},
 		{"id=\"toggle-all\"", "expand/collapse all button"},
 		{"#q=", "URL hash deep-link support"},
+		{"history.replaceState(null, '', q ? '#q=' + encodeURIComponent(q) : location.pathname);", "hash-based URL sync"},
+		{"input.dispatchEvent(new Event('input'));\n      } else if (document.activeElement === input) {\n        input.blur();", "escape clears search before blurring focused input"},
 		{"id=\"back-to-top\"", "back to top button"},
 		{"focus-visible", "keyboard focus outlines"},
 		{"favicon.svg", "favicon link tag"},

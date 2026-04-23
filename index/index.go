@@ -81,15 +81,8 @@ var indexTemplate = `<!DOCTYPE html>
   }
   .stat { font-size: 0.85rem; color: var(--fg-muted); }
   .stat strong { color: var(--stat-fg); font-size: 1.1rem; font-weight: 700; margin-right: 0.3rem; }
-  .search-box {
-    width: 100%; padding: 0.65rem 1rem; font-size: 0.95rem;
-    background: var(--bg-surface); color: var(--fg);
-    border: 1px solid var(--border); border-radius: 6px;
-    outline: none; transition: border-color 0.2s;
-    margin-bottom: 1.5rem;
-  }
-  .search-box::placeholder { color: var(--fg-muted); }
-  .search-box:focus { border-color: var(--accent); }
+` + theme.SearchCSS + `
+  .search-box { margin-bottom: 1.5rem; }
   .toolbar {
     display: flex; justify-content: flex-end; margin-bottom: 0.75rem;
   }
@@ -99,10 +92,6 @@ var indexTemplate = `<!DOCTYPE html>
     transition: color 0.15s;
   }
   .toolbar button:hover { color: var(--accent); }
-  .no-results {
-    text-align: center; color: var(--fg-muted); padding: 3rem 1rem;
-    font-size: 0.95rem; display: none;
-  }
   .usage-section { margin-bottom: 1.5rem; }
   .usage-section details { border: 1px solid var(--border); border-radius: 6px; }
   .usage-section summary {
@@ -243,7 +232,7 @@ metadata:
 </div>
 </details>
 </div>
-<input type="search" class="search-box" placeholder="Search groups and schemas…  ( / to focus, Esc to clear )" id="search" autocomplete="off" spellcheck="false">
+<input type="search" class="search-box" placeholder="Search groups and schemas...  ` + theme.SearchHintText + `" id="search" autocomplete="off" spellcheck="false">
 <div class="toolbar"><button id="toggle-all">Expand all</button></div>
 <div id="groups">
 {{range .Groups}}
@@ -260,6 +249,7 @@ metadata:
 ` + theme.FooterHTML + `
 <button class="back-to-top" id="back-to-top" title="Back to top" aria-label="Back to top">&#8593;</button>
 <script>
+` + theme.SearchHashStateJS + `
 (function(){
   var input = document.getElementById('search');
   var groups = document.querySelectorAll('.group');
@@ -316,7 +306,7 @@ metadata:
       statGroups.textContent = visible + ' / ' + totalGroups;
       statSchemas.textContent = visibleSchemas + ' / ' + totalSchemas;
     }
-    history.replaceState(null, '', q ? '#q=' + encodeURIComponent(q) : location.pathname);
+    writeHashSearchQuery(q);
   });
 
   document.addEventListener('keydown', function(e){
@@ -325,6 +315,7 @@ metadata:
       if (input.value) {
         input.value = '';
         input.dispatchEvent(new Event('input'));
+      } else if (document.activeElement === input) {
         input.blur();
       } else {
         var hadOpen = false;
@@ -373,11 +364,10 @@ metadata:
   });
 
   (function(){
-    var hash = location.hash;
-    if (hash.indexOf('#q=') === 0) {
-      input.value = decodeURIComponent(hash.slice(3));
-      input.dispatchEvent(new Event('input'));
-    }
+    var query = readHashSearchQuery();
+    if (!query) return;
+    input.value = query;
+    input.dispatchEvent(new Event('input'));
   })();
 
   var btt = document.getElementById('back-to-top');

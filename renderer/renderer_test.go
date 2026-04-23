@@ -264,6 +264,20 @@ func TestRenderSchema_BasicOutput(t *testing.T) {
 		{"apiVersion: example.io/v1", "YAML boilerplate"},
 		{"kind: Myresource", "YAML boilerplate kind"},
 		{"← Back to index", "back link"},
+		{"id=\"search\"", "schema search input"},
+		{"Search schema fields...  ( / to focus, Esc to clear )", "search placeholder"},
+		{"id=\"search-status\"", "search status element"},
+		{"class=\"search-row\"", "full-width search row"},
+		{"class=\"search-input-wrap\"", "inline search wrapper"},
+		{"id=\"search-ghost\"", "inline ghost suggestion element"},
+		{"appearance: none;", "search input native appearance reset"},
+		{"font-size: 0.95rem; line-height: 1.2;", "shared search text metrics on wrapper"},
+		{"font-family: inherit; font-weight: inherit; letter-spacing: inherit;", "shared search font metrics inherit exactly"},
+		{"line-height: inherit;", "ghost text inherits line height"},
+		{"display: flex; align-items: center;", "ghost overlay vertical centering"},
+		{"justify-content: space-between;", "restored toolbar split layout"},
+		{"<div class=\"toolbar-left\">", "left toolbar group"},
+		{"id=\"no-results\"", "no results element"},
 		{"Expand all", "expand all button"},
 		{"Collapse all", "collapse all button"},
 		{"View raw schema", "raw schema link"},
@@ -276,9 +290,28 @@ func TestRenderSchema_BasicOutput(t *testing.T) {
 		{"required", "required badge"},
 		{"integer", "type badge"},
 		{"object", "type badge for object"},
+		{"data-path=\"spec\"", "root property path metadata"},
+		{"data-path=\"spec.replicas\"", "nested property path metadata"},
+		{"data-path-key=\"|spec|replicas|\"", "normalized path key metadata"},
+		{"data-name=\"replicas\"", "field name metadata"},
+		{"data-text=\"Number of replicas minimum: 1 maximum: 10\"", "search text metadata"},
 		{"minimum: 1", "constraint display"},
 		{"maximum: 10", "constraint display"},
 		{"pattern: ^[a-z]+$", "constraint display"},
+		{"#q=", "URL hash search state"},
+		{"query.indexOf('.') === 0", "leading-dot path-only detection"},
+		{"if (pathOnly && !query) {", "dot-only path query guard"},
+		{"matchesPathQuery(pathKey, query)", "segment-aware path matching"},
+		{"bestCompletionForQuery(query)", "autocomplete suggestion lookup"},
+		{"return bestCompletionForPaths(query, currentSuggestions());", "default autocomplete uses full path suggestions"},
+		{"completionCandidatesForPaths(query, suggestions)", "completion candidate collection"},
+		{"completionForSuggestion(rawQuery, suggestion)", "conservative segment completion"},
+		{"ghostSuffixForCompletion(input.value, completion)", "inline ghost suffix calculation"},
+		{"trimPathSearch(input.value)", "path-aware escape trimming"},
+		{"if (e.key === 'Tab' && document.activeElement === input)", "tab autocomplete shortcut"},
+		{"e.key === 'ArrowDown' && document.activeElement === input", "arrow down completion browsing"},
+		{"e.key === 'ArrowUp' && document.activeElement === input", "arrow up completion browsing"},
+		{"e.key === '/'", "slash keyboard shortcut"},
 		{"toggleTheme", "theme toggle function"},
 		{"favicon.svg", "favicon link"},
 		{"--accent", "CSS custom properties"},
@@ -363,6 +396,252 @@ func TestRenderSchema_ArrayTypes(t *testing.T) {
 	}
 	if !strings.Contains(html, "[]object") {
 		t.Error("should show []object for object array")
+	}
+	if !strings.Contains(html, `data-path="servers[].host"`) {
+		t.Error("array child path should use [] notation")
+	}
+	if !strings.Contains(html, `data-path-key="|servers[]|host|"`) {
+		t.Error("array child path key should preserve [] segment notation")
+	}
+}
+
+func TestBuildPathSearchKey(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+	}{
+		{"spec", "|spec|"},
+		{"spec.replicas", "|spec|replicas|"},
+		{"servers[].host", "|servers[]|host|"},
+		{"operation.sync.source.helm.apiVersions", "|operation|sync|source|helm|apiVersions|"},
+	}
+
+	for _, tt := range tests {
+		if got := buildPathSearchKey(tt.path); got != tt.want {
+			t.Errorf("buildPathSearchKey(%q) = %q, want %q", tt.path, got, tt.want)
+		}
+	}
+}
+
+func TestCompletionForSuggestion(t *testing.T) {
+	tests := []struct {
+		name       string
+		query      string
+		suggestion string
+		want       string
+	}{
+		{
+			name:       "leading dot completes next segment only",
+			query:      ".spec.tem",
+			suggestion: "spec.template.spec.containers[].image",
+			want:       ".spec.template",
+		},
+		{
+			name:       "dotted path completes next segment only",
+			query:      "spec.template.sp",
+			suggestion: "spec.template.spec.containers[].image",
+			want:       "spec.template.spec",
+		},
+		{
+			name:       "full segment query advances one more segment on repeated tab",
+			query:      ".spec.template",
+			suggestion: "spec.template.spec.containers[].image",
+			want:       ".spec.template.spec",
+		},
+		{
+			name:       "non path query has no completion",
+			query:      "helm",
+			suggestion: "spec.template.spec.containers[].image",
+			want:       "",
+		},
+		{
+			name:       "mismatched suggestion has no completion",
+			query:      ".status.co",
+			suggestion: "spec.template.spec.containers[].image",
+			want:       "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := completionForSuggestion(tt.query, tt.suggestion); got != tt.want {
+				t.Errorf("completionForSuggestion(%q, %q) = %q, want %q", tt.query, tt.suggestion, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGhostSuffixForCompletion(t *testing.T) {
+	tests := []struct {
+		name       string
+		query      string
+		completion string
+		want       string
+	}{
+		{
+			name:       "partial segment shows only remaining suffix",
+			query:      ".spec.tem",
+			completion: ".spec.template",
+			want:       "plate",
+		},
+		{
+			name:       "completed segment shows only next segment addition",
+			query:      ".spec.template",
+			completion: ".spec.template.spec",
+			want:       ".spec",
+		},
+		{
+			name:       "non path completion has no ghost suffix",
+			query:      "helm",
+			completion: "",
+			want:       "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ghostSuffixForCompletion(tt.query, tt.completion); got != tt.want {
+				t.Errorf("ghostSuffixForCompletion(%q, %q) = %q, want %q", tt.query, tt.completion, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBestCompletionForPaths(t *testing.T) {
+	tests := []struct {
+		name        string
+		query       string
+		suggestions []string
+		want        string
+	}{
+		{
+			name:  "completed segment with multiple next segments shows no completion",
+			query: ".spec.",
+			suggestions: []string{
+				"spec.template.spec.containers[].image",
+				"spec.strategy.type",
+			},
+			want: "",
+		},
+		{
+			name:  "completed segment with one next segment completes it",
+			query: ".spec.",
+			suggestions: []string{
+				"spec.template.spec.containers[].image",
+				"spec.template.metadata.labels",
+			},
+			want: ".spec.template",
+		},
+		{
+			name:  "partial segment still completes best match",
+			query: ".spec.tem",
+			suggestions: []string{
+				"spec.template.spec.containers[].image",
+				"spec.template.metadata.labels",
+			},
+			want: ".spec.template",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := bestCompletionForPaths(tt.query, tt.suggestions); got != tt.want {
+				t.Errorf("bestCompletionForPaths(%q, %v) = %q, want %q", tt.query, tt.suggestions, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCompletionCandidatesForPaths(t *testing.T) {
+	tests := []struct {
+		name        string
+		query       string
+		suggestions []string
+		want        []string
+	}{
+		{
+			name:  "completed segment returns multiple unique next segments",
+			query: ".spec.",
+			suggestions: []string{
+				"spec.template.spec.containers[].image",
+				"spec.strategy.type",
+				"spec.template.metadata.labels",
+			},
+			want: []string{".spec.strategy", ".spec.template"},
+		},
+		{
+			name:  "partial segment deduplicates to one completion",
+			query: ".spec.tem",
+			suggestions: []string{
+				"spec.template.spec.containers[].image",
+				"spec.template.metadata.labels",
+			},
+			want: []string{".spec.template"},
+		},
+		{
+			name:  "non path query has no candidates",
+			query: "helm",
+			suggestions: []string{
+				"spec.template.spec.containers[].image",
+			},
+			want: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := completionCandidatesForPaths(tt.query, tt.suggestions)
+			if len(got) != len(tt.want) {
+				t.Fatalf("completionCandidatesForPaths(%q, %v) len = %d, want %d (%v)", tt.query, tt.suggestions, len(got), len(tt.want), got)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("completionCandidatesForPaths(%q, %v)[%d] = %q, want %q", tt.query, tt.suggestions, i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestTrimPathSearch(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		want  string
+	}{
+		{
+			name:  "leading-dot path trims one segment",
+			query: ".spec.template",
+			want:  ".spec",
+		},
+		{
+			name:  "dotted path trims one segment",
+			query: "spec.template.spec",
+			want:  "spec.template",
+		},
+		{
+			name:  "single leading-dot segment clears",
+			query: ".spec",
+			want:  "",
+		},
+		{
+			name:  "single dotted segment clears",
+			query: "spec",
+			want:  "",
+		},
+		{
+			name:  "plain text stays unchanged",
+			query: "helm-values",
+			want:  "helm-values",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := trimPathSearch(tt.query); got != tt.want {
+				t.Errorf("trimPathSearch(%q) = %q, want %q", tt.query, got, tt.want)
+			}
+		})
 	}
 }
 

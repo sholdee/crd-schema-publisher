@@ -399,7 +399,7 @@ metadata:
 
   // Restore view state when returning from a schema page
   var saved = sessionStorage.getItem('indexState');
-  if (saved) {
+  if (!hasHashSearchQuery() && saved) {
     sessionStorage.removeItem('indexState');
     try {
       var state = JSON.parse(saved);

@@ -267,17 +267,21 @@ func TestRenderSchema_BasicOutput(t *testing.T) {
 		{"id=\"search\"", "schema search input"},
 		{"Search schema fields...  ( / to focus, Esc to clear )", "search placeholder"},
 		{"id=\"search-status\"", "search status element"},
+		{"Tip: use .spec.replicas for path-only search", "schema-derived empty search hint"},
+		{"<div class=\"search-status\" id=\"search-status\" data-empty-message=\"Tip: use .spec.replicas for path-only search\" aria-live=\"polite\">Tip: use .spec.replicas for path-only search</div>", "empty search hint rendered on first paint"},
 		{"class=\"search-row\"", "full-width search row"},
 		{"class=\"search-input-wrap\"", "inline search wrapper"},
 		{"id=\"search-ghost\"", "inline ghost suggestion element"},
 		{"appearance: none;", "search input native appearance reset"},
 		{"font-size: 0.95rem; line-height: 1.2;", "shared search text metrics on wrapper"},
 		{"font-family: inherit; font-weight: inherit; letter-spacing: inherit;", "shared search font metrics inherit exactly"},
+		{"text-transform: inherit; text-indent: inherit; font-kerning: inherit;", "shared search text shaping inherits exactly"},
 		{"line-height: inherit;", "ghost text inherits line height"},
 		{"display: flex; align-items: center;", "ghost overlay vertical centering"},
 		{"justify-content: space-between;", "restored toolbar split layout"},
 		{"<div class=\"toolbar-left\">", "left toolbar group"},
 		{"id=\"no-results\"", "no results element"},
+		{"No matches. Try .spec.replicas for an exact path", "schema-derived no-results hint"},
 		{"Expand all", "expand all button"},
 		{"Collapse all", "collapse all button"},
 		{"View raw schema", "raw schema link"},
@@ -301,14 +305,36 @@ func TestRenderSchema_BasicOutput(t *testing.T) {
 		{"#q=", "URL hash search state"},
 		{"query.indexOf('.') === 0", "leading-dot path-only detection"},
 		{"if (pathOnly && !query) {", "dot-only path query guard"},
-		{"matchesPathQuery(pathKey, query)", "segment-aware path matching"},
+		{"matchesPathQuery(path, trimmedQuery)", "depth-aware path matching"},
+		{"var openPaths = {};", "separate open path tracking for filtered results"},
+		{"if (open) {", "only ancestor branches auto-open during search"},
+		{"var selectedRow = rows.find(function(row){ return !!directMatches[row.dataset.path]; });", "first direct match becomes selected result"},
+		{"if (selectedRow && selectedRow.tagName === 'DETAILS') {", "selected expandable match auto-expands to reveal description"},
+		{"openPaths[selectedRow.dataset.path] = true;", "selected expandable match is opened explicitly"},
 		{"bestCompletionForQuery(query)", "autocomplete suggestion lookup"},
 		{"return bestCompletionForPaths(query, currentSuggestions());", "default autocomplete uses full path suggestions"},
 		{"completionCandidatesForPaths(query, suggestions)", "completion candidate collection"},
 		{"completionForSuggestion(rawQuery, suggestion)", "conservative segment completion"},
 		{"ghostSuffixForCompletion(input.value, completion)", "inline ghost suffix calculation"},
+		{"function dotAdvanceForPathSearch(rawQuery, suggestions)", "dot key path-advance helper"},
+		{"if (e.key === '.' && document.activeElement === input", "dot key interception in search input"},
+		{"var dotAdvance = dotAdvanceForPathSearch(input.value, currentSuggestions());", "dot key uses conservative path advance"},
+		{"var pathLikeQuery = isPathLikeQuery(input.value, currentSuggestions());", "dot interception is limited to actual path-like queries"},
+		{"function isPathLikeQuery(rawQuery, suggestions)", "path-likeness helper exists for dot interception"},
+		{"var learnedPathSearchStorageKey = 'crd-schema-publisher:path-search-learned';", "path search learning is persisted in local storage"},
+		{"function hasLearnedPathSearch()", "path search learned-state helper exists"},
+		{"function markPathSearchLearned(rawQuery)", "path search learned-state writer exists"},
+		{"if (query.indexOf('.') !== 0) {", "learned-state only triggers for leading-dot queries"},
+		{"if (queryState.segments.length < 2) {", "learned-state requires at least two path segments"},
+		{"localStorage.setItem(learnedPathSearchStorageKey, '1');", "learned path search is persisted per browser"},
+		{"setSearchStatus(hasLearnedPathSearch() ? '' : (searchStatus.dataset.emptyMessage || ''), false);", "empty hint is suppressed after learning"},
+		{"if (pathLikeQuery) {", "invalid dot positions are only blocked in path mode"},
+		{"if (input.selectionStart === input.value.length && input.selectionEnd === input.value.length) {", "dot interception only applies at the end of the query"},
+		{"clearSearchState();", "initial empty state is applied on page load"},
 		{"trimPathSearch(input.value)", "path-aware escape trimming"},
-		{"if (e.key === 'Tab' && document.activeElement === input)", "tab autocomplete shortcut"},
+		{"if ((e.key === 'Tab' || e.key === 'ArrowRight') && document.activeElement === input)", "tab and right arrow share autocomplete acceptance"},
+		{"var caretAtEnd = input.selectionStart === input.value.length && input.selectionEnd === input.value.length;", "autocomplete acceptance computes caret-at-end once"},
+		{"if (!caretAtEnd) {", "tab and right arrow only accept completion at end of input"},
 		{"e.key === 'ArrowDown' && document.activeElement === input", "arrow down completion browsing"},
 		{"e.key === 'ArrowUp' && document.activeElement === input", "arrow up completion browsing"},
 		{"e.key === '/'", "slash keyboard shortcut"},
@@ -403,6 +429,9 @@ func TestRenderSchema_ArrayTypes(t *testing.T) {
 	if !strings.Contains(html, `data-path-key="|servers[]|host|"`) {
 		t.Error("array child path key should preserve [] segment notation")
 	}
+	if !strings.Contains(html, `data-parent-path="servers"`) {
+		t.Error("array child should point to the rendered array row as its parent path")
+	}
 }
 
 func TestBuildPathSearchKey(t *testing.T) {
@@ -420,6 +449,110 @@ func TestBuildPathSearchKey(t *testing.T) {
 		if got := buildPathSearchKey(tt.path); got != tt.want {
 			t.Errorf("buildPathSearchKey(%q) = %q, want %q", tt.path, got, tt.want)
 		}
+	}
+}
+
+func TestSearchPathExampleForProperties(t *testing.T) {
+	props := []RenderProperty{
+		{
+			Name: "apiVersion",
+			Path: "apiVersion",
+			Node: &SchemaNode{Type: "string"},
+		},
+		{
+			Name: "metadata",
+			Path: "metadata",
+			Node: &SchemaNode{Type: "object"},
+			Children: []RenderProperty{
+				{Name: "name", Path: "metadata.name", Node: &SchemaNode{Type: "string"}},
+			},
+		},
+		{
+			Name: "spec",
+			Path: "spec",
+			Node: &SchemaNode{Type: "object"},
+			Children: []RenderProperty{
+				{Name: "name", Path: "spec.name", Node: &SchemaNode{Type: "string"}},
+				{Name: "replicas", Path: "spec.replicas", Node: &SchemaNode{Type: "integer"}},
+				{Name: "template", Path: "spec.template", Node: &SchemaNode{Type: "object"}},
+			},
+		},
+	}
+
+	if got := searchPathExampleForProperties(props); got != ".spec.replicas" {
+		t.Fatalf("searchPathExampleForProperties(...) = %q, want %q", got, ".spec.replicas")
+	}
+}
+
+func TestMatchesPathQuery(t *testing.T) {
+	tests := []struct {
+		name  string
+		path  string
+		query string
+		want  bool
+	}{
+		{
+			name:  "exact path query matches exact node",
+			path:  "spec.acme",
+			query: ".spec.acme",
+			want:  true,
+		},
+		{
+			name:  "exact path query does not match descendants",
+			path:  "spec.acme.settings",
+			query: ".spec.acme",
+			want:  false,
+		},
+		{
+			name:  "partial final segment matches same-depth path",
+			path:  "spec.template",
+			query: ".spec.tem",
+			want:  true,
+		},
+		{
+			name:  "partial final segment does not match deeper descendants",
+			path:  "spec.template.spec",
+			query: ".spec.tem",
+			want:  false,
+		},
+		{
+			name:  "trailing dot matches immediate children",
+			path:  "spec.template",
+			query: ".spec.",
+			want:  true,
+		},
+		{
+			name:  "trailing dot does not match deeper descendants",
+			path:  "spec.template.spec",
+			query: ".spec.",
+			want:  false,
+		},
+		{
+			name:  "matching is case insensitive",
+			path:  "spec.volumeClaimTemplates",
+			query: ".spec.volumeclaimt",
+			want:  true,
+		},
+		{
+			name:  "array child path matches exact query",
+			path:  "spec.ipam.pools.allocated[].cidrs",
+			query: ".spec.ipam.pools.allocated[].cidrs",
+			want:  true,
+		},
+		{
+			name:  "virtual array item query matches immediate children",
+			path:  "spec.ipam.pools.allocated[].cidrs",
+			query: ".spec.ipam.pools.allocated[]",
+			want:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := matchesPathQuery(tt.path, tt.query); got != tt.want {
+				t.Errorf("matchesPathQuery(%q, %q) = %v, want %v", tt.path, tt.query, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -443,10 +576,10 @@ func TestCompletionForSuggestion(t *testing.T) {
 			want:       "spec.template.spec",
 		},
 		{
-			name:       "full segment query advances one more segment on repeated tab",
+			name:       "exact object path completes to object boundary first",
 			query:      ".spec.template",
 			suggestion: "spec.template.spec.containers[].image",
-			want:       ".spec.template.spec",
+			want:       ".spec.template.",
 		},
 		{
 			name:       "non path query has no completion",
@@ -459,6 +592,12 @@ func TestCompletionForSuggestion(t *testing.T) {
 			query:      ".status.co",
 			suggestion: "spec.template.spec.containers[].image",
 			want:       "",
+		},
+		{
+			name:       "completion is case insensitive for camel case fields",
+			query:      ".spec.volumeclaimt",
+			suggestion: "spec.volumeClaimTemplates",
+			want:       ".spec.volumeClaimTemplates",
 		},
 	}
 
@@ -496,12 +635,48 @@ func TestGhostSuffixForCompletion(t *testing.T) {
 			completion: "",
 			want:       "",
 		},
+		{
+			name:       "ghost suffix is case insensitive for camel case completion",
+			query:      ".spec.volumeclaimt",
+			completion: ".spec.volumeClaimTemplates",
+			want:       "ClaimTemplates",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := ghostSuffixForCompletion(tt.query, tt.completion); got != tt.want {
 				t.Errorf("ghostSuffixForCompletion(%q, %q) = %q, want %q", tt.query, tt.completion, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGhostPrefixForCompletion(t *testing.T) {
+	tests := []struct {
+		name       string
+		query      string
+		completion string
+		want       string
+	}{
+		{
+			name:       "matching case keeps full typed prefix",
+			query:      ".spec.tem",
+			completion: ".spec.template",
+			want:       ".spec.tem",
+		},
+		{
+			name:       "camel case completion falls back to exact shared prefix",
+			query:      ".spec.volumeclaimt",
+			completion: ".spec.volumeClaimTemplates",
+			want:       ".spec.volume",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ghostPrefixForCompletion(tt.query, tt.completion); got != tt.want {
+				t.Errorf("ghostPrefixForCompletion(%q, %q) = %q, want %q", tt.query, tt.completion, got, tt.want)
 			}
 		})
 	}
@@ -515,13 +690,21 @@ func TestBestCompletionForPaths(t *testing.T) {
 		want        string
 	}{
 		{
-			name:  "completed segment with multiple next segments shows no completion",
+			name:  "exact object path prefers object boundary",
+			query: ".spec.apiKeyAuth",
+			suggestions: []string{
+				"spec.apiKeyAuth.credentialRefs",
+			},
+			want: ".spec.apiKeyAuth.",
+		},
+		{
+			name:  "completed segment with multiple next segments shows first ranked completion",
 			query: ".spec.",
 			suggestions: []string{
 				"spec.template.spec.containers[].image",
 				"spec.strategy.type",
 			},
-			want: "",
+			want: ".spec.strategy",
 		},
 		{
 			name:  "completed segment with one next segment completes it",
@@ -541,6 +724,14 @@ func TestBestCompletionForPaths(t *testing.T) {
 			},
 			want: ".spec.template",
 		},
+		{
+			name:  "exact lowercase query still prefers camel case boundary",
+			query: ".spec.volumeclaimtemplates",
+			suggestions: []string{
+				"spec.volumeClaimTemplates.name",
+			},
+			want: ".spec.volumeClaimTemplates.",
+		},
 	}
 
 	for _, tt := range tests {
@@ -559,6 +750,14 @@ func TestCompletionCandidatesForPaths(t *testing.T) {
 		suggestions []string
 		want        []string
 	}{
+		{
+			name:  "exact object path exposes object boundary candidate",
+			query: ".spec.apiKeyAuth",
+			suggestions: []string{
+				"spec.apiKeyAuth.credentialRefs",
+			},
+			want: []string{".spec.apiKeyAuth."},
+		},
 		{
 			name:  "completed segment returns multiple unique next segments",
 			query: ".spec.",
@@ -603,6 +802,180 @@ func TestCompletionCandidatesForPaths(t *testing.T) {
 	}
 }
 
+func TestDotAdvanceForPathSearch(t *testing.T) {
+	suggestions := []string{
+		"spec.replicas",
+		"spec.targetNamespace",
+		"spec.template.metadata.labels",
+		"spec.template.spec.containers[].image",
+		"spec.ipam.pools.allocated[].cidrs",
+		"spec.issuerRef.group",
+	}
+
+	tests := []struct {
+		name        string
+		query       string
+		suggestions []string
+		want        string
+	}{
+		{
+			name:  "empty query can start strict path mode",
+			query: "",
+			want:  ".",
+		},
+		{
+			name:  "exact segment with children appends dot",
+			query: ".spec",
+			want:  ".spec.",
+		},
+		{
+			name:  "dotted exact segment with children appends dot",
+			query: "spec.template",
+			want:  "spec.template.",
+		},
+		{
+			name:  "unique partial segment advances conservatively",
+			query: ".spec.tem",
+			want:  ".spec.template.",
+		},
+		{
+			name:  "ambiguous partial segment does nothing",
+			query: ".spec.t",
+			want:  "",
+		},
+		{
+			name:  "terminal leaf does nothing",
+			query: ".spec.issuerRef.group",
+			want:  "",
+		},
+		{
+			name:  "array field advances to array item boundary",
+			query: ".spec.ipam.pools.allocated",
+			want:  ".spec.ipam.pools.allocated[].",
+		},
+		{
+			name:  "ambiguous trailing dot advances to first ranked child",
+			query: ".spec.",
+			want:  ".spec.ipam",
+		},
+		{
+			name:  "unique trailing dot advances to only child",
+			query: ".spec.apiKeyAuth.",
+			suggestions: []string{
+				"spec.apiKeyAuth.credentialRefs",
+			},
+			want: ".spec.apiKeyAuth.credentialRefs",
+		},
+		{
+			name:  "non path text cannot introduce invalid dot",
+			query: "helm",
+			want:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testSuggestions := suggestions
+			if tt.suggestions != nil {
+				testSuggestions = tt.suggestions
+			}
+			if got := dotAdvanceForPathSearch(tt.query, testSuggestions); got != tt.want {
+				t.Errorf("dotAdvanceForPathSearch(%q, %v) = %q, want %q", tt.query, testSuggestions, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPathHasChildren(t *testing.T) {
+	suggestions := []string{
+		"spec.ipam.pools.allocated[].cidrs",
+		"spec.template.spec.containers[].image",
+	}
+
+	tests := []struct {
+		name  string
+		query string
+		want  bool
+	}{
+		{
+			name:  "plain object field detects dotted children",
+			query: ".spec.template",
+			want:  true,
+		},
+		{
+			name:  "array field detects synthetic array item children",
+			query: ".spec.ipam.pools.allocated",
+			want:  true,
+		},
+		{
+			name:  "terminal child reports no children",
+			query: ".spec.ipam.pools.allocated[].cidrs",
+			want:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := pathHasChildren(tt.query, suggestions); got != tt.want {
+				t.Errorf("pathHasChildren(%q, %v) = %v, want %v", tt.query, suggestions, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsPathLikeQuery(t *testing.T) {
+	suggestions := []string{
+		"spec.template.spec.containers[].image",
+		"spec.ipam.pools.allocated[].cidrs",
+		"spec.issuerRef.group",
+	}
+
+	tests := []struct {
+		name  string
+		query string
+		want  bool
+	}{
+		{
+			name:  "leading dot is path-like",
+			query: ".spec",
+			want:  true,
+		},
+		{
+			name:  "dotted partial path with completion is path-like",
+			query: "spec.tem",
+			want:  true,
+		},
+		{
+			name:  "exact dotted leaf path is path-like",
+			query: "spec.issuerRef.group",
+			want:  true,
+		},
+		{
+			name:  "virtual array item path is path-like",
+			query: "spec.ipam.pools.allocated[]",
+			want:  true,
+		},
+		{
+			name:  "plain dotted text is not path-like",
+			query: "v1.2",
+			want:  false,
+		},
+		{
+			name:  "plain text is not path-like",
+			query: "helm",
+			want:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isPathLikeQuery(tt.query, suggestions); got != tt.want {
+				t.Errorf("isPathLikeQuery(%q, %v) = %v, want %v", tt.query, suggestions, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestTrimPathSearch(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -610,13 +983,33 @@ func TestTrimPathSearch(t *testing.T) {
 		want  string
 	}{
 		{
-			name:  "leading-dot path trims one segment",
+			name:  "leading-dot child path trims to parent object boundary",
 			query: ".spec.template",
-			want:  ".spec",
+			want:  ".spec.",
 		},
 		{
-			name:  "dotted path trims one segment",
+			name:  "dotted child path trims to parent object boundary",
 			query: "spec.template.spec",
+			want:  "spec.template.",
+		},
+		{
+			name:  "leading-dot deep child path trims to immediate parent boundary",
+			query: ".spec.rclone.customCA.configMapName",
+			want:  ".spec.rclone.customCA.",
+		},
+		{
+			name:  "dotted deep child path trims to immediate parent boundary",
+			query: "spec.rclone.customCA.configMapName",
+			want:  "spec.rclone.customCA.",
+		},
+		{
+			name:  "leading-dot trailing boundary trims only trailing dot",
+			query: ".spec.template.",
+			want:  ".spec.template",
+		},
+		{
+			name:  "dotted trailing boundary trims only trailing dot",
+			query: "spec.template.",
 			want:  "spec.template",
 		},
 		{

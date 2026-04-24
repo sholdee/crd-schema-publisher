@@ -156,10 +156,17 @@ const FooterHTML = `<footer>
 const SearchHintText = `( / to focus, Esc to clear )`
 
 // SearchHashStateJS contains small shared helpers for hash-based search state.
-const SearchHashStateJS = `function readHashSearchQuery(){
+const SearchHashStateJS = `function hasHashSearchQuery(){
+  return (location.hash || '').indexOf('#q=') === 0;
+}
+function readHashSearchQuery(){
   var hash = location.hash || '';
-  if (hash.indexOf('#q=') === 0) {
-    return decodeURIComponent(hash.slice(3));
+  if (hasHashSearchQuery()) {
+    try {
+      return decodeURIComponent(hash.slice(3));
+    } catch (err) {
+      return '';
+    }
   }
   return '';
 }

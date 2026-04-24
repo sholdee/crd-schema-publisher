@@ -38,6 +38,9 @@ jobs:
           go mod tidy
           git diff --exit-code go.mod go.sum
 
+      - name: Run schema search JS tests
+        run: node --test theme/schema_search.test.js
+
       - name: Run tests
         run: go test -race ./... -v -coverprofile=coverage.txt -covermode=atomic
 

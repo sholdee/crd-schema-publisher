@@ -382,319 +382,6 @@ func buildPathSearchKey(path string) string {
 	return "|" + strings.Join(filtered, "|") + "|"
 }
 
-func splitPathSegments(path string) ([]string, bool) {
-	path = strings.TrimSpace(strings.TrimPrefix(path, "."))
-	if path == "" {
-		return nil, false
-	}
-
-	trailingDot := strings.HasSuffix(path, ".")
-	parts := strings.Split(path, ".")
-	filtered := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		filtered = append(filtered, part)
-	}
-	return filtered, trailingDot
-}
-
-func matchesPathQuery(path, rawQuery string) bool {
-	pathParts, _ := splitPathSegments(path)
-	queryParts, trailingDot := splitPathSegments(rawQuery)
-	if len(pathParts) == 0 || len(queryParts) == 0 {
-		return false
-	}
-
-	if !trailingDot && strings.HasSuffix(queryParts[len(queryParts)-1], "[]") && len(pathParts) == len(queryParts)+1 {
-		for i := range queryParts {
-			if !strings.EqualFold(pathParts[i], queryParts[i]) {
-				return false
-			}
-		}
-		return true
-	}
-
-	expectedLen := len(queryParts)
-	if trailingDot {
-		expectedLen++
-	}
-	if len(pathParts) != expectedLen {
-		return false
-	}
-
-	for i := range len(queryParts) - 1 {
-		if !strings.EqualFold(pathParts[i], queryParts[i]) {
-			return false
-		}
-	}
-
-	lastIndex := len(queryParts) - 1
-	if trailingDot {
-		return strings.EqualFold(pathParts[lastIndex], queryParts[lastIndex])
-	}
-	return strings.HasPrefix(strings.ToLower(pathParts[lastIndex]), strings.ToLower(queryParts[lastIndex]))
-}
-
-func formatPathCompletion(leadingDot bool, value string) string {
-	if leadingDot {
-		return "." + value
-	}
-	return value
-}
-
-func formatObjectBoundaryCompletion(leadingDot bool, queryParts []string, lastIndex int, lastSuggestion string) string {
-	boundaryParts := append([]string{}, queryParts...)
-	boundaryParts[lastIndex] = lastSuggestion
-	return formatPathCompletion(leadingDot, strings.Join(boundaryParts, ".")+".")
-}
-
-func formatNextCompletionStep(leadingDot bool, queryParts, suggestionParts []string, lastIndex int, lastSuggestion string) string {
-	completed := append([]string{}, queryParts...)
-	switch {
-	case !strings.EqualFold(queryParts[lastIndex], lastSuggestion):
-		completed[lastIndex] = lastSuggestion
-	case len(suggestionParts) > len(queryParts):
-		completed = append(completed, suggestionParts[len(queryParts)])
-	default:
-		return ""
-	}
-	return formatPathCompletion(leadingDot, strings.Join(completed, "."))
-}
-
-func completionForSuggestion(query, suggestion string) string {
-	query = strings.TrimSpace(query)
-	suggestion = strings.TrimSpace(suggestion)
-	if query == "" || suggestion == "" {
-		return ""
-	}
-
-	leadingDot := strings.HasPrefix(query, ".")
-	normalized := strings.TrimPrefix(query, ".")
-	if !leadingDot && !strings.Contains(normalized, ".") {
-		return ""
-	}
-	if normalized == "" {
-		return ""
-	}
-
-	queryParts := strings.Split(normalized, ".")
-	suggestionParts := strings.Split(suggestion, ".")
-	if len(queryParts) == 0 || len(suggestionParts) < len(queryParts) {
-		return ""
-	}
-
-	for i := range len(queryParts) - 1 {
-		if !strings.EqualFold(queryParts[i], suggestionParts[i]) {
-			return ""
-		}
-	}
-
-	lastIndex := len(queryParts) - 1
-	lastQuery := queryParts[lastIndex]
-	lastSuggestion := suggestionParts[lastIndex]
-	if strings.EqualFold(lastQuery, lastSuggestion) && len(suggestionParts) > len(queryParts) {
-		return formatObjectBoundaryCompletion(leadingDot, queryParts, lastIndex, lastSuggestion)
-	}
-	if !strings.HasPrefix(strings.ToLower(lastSuggestion), strings.ToLower(lastQuery)) {
-		return ""
-	}
-
-	return formatNextCompletionStep(leadingDot, queryParts, suggestionParts, lastIndex, lastSuggestion)
-}
-
-func ghostSuffixForCompletion(query, completion string) string {
-	query = strings.TrimSpace(query)
-	completion = strings.TrimSpace(completion)
-	if query == "" || completion == "" {
-		return ""
-	}
-	prefix := ghostPrefixForCompletion(query, completion)
-	if prefix == "" && completion != "" && query != "" && !strings.HasPrefix(strings.ToLower(completion), strings.ToLower(query)) {
-		return ""
-	}
-	return completion[len(prefix):]
-}
-
-func ghostPrefixForCompletion(query, completion string) string {
-	query = strings.TrimSpace(query)
-	completion = strings.TrimSpace(completion)
-	if query == "" || completion == "" {
-		return ""
-	}
-	if !strings.HasPrefix(strings.ToLower(completion), strings.ToLower(query)) {
-		return ""
-	}
-
-	max := len(query)
-	if len(completion) < max {
-		max = len(completion)
-	}
-	i := 0
-	for i < max && completion[i] == query[i] {
-		i++
-	}
-	if i == 0 && max == len(query) {
-		return query
-	}
-	if i == len(query) {
-		return query
-	}
-	return completion[:i]
-}
-
-func completionCandidatesForPaths(query string, suggestions []string) []string {
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return nil
-	}
-
-	seen := make(map[string]struct{})
-	candidates := make([]string, 0)
-	for _, suggestion := range suggestions {
-		completion := completionForSuggestion(query, suggestion)
-		if completion == "" {
-			continue
-		}
-		if _, ok := seen[completion]; ok {
-			continue
-		}
-		seen[completion] = struct{}{}
-		candidates = append(candidates, completion)
-	}
-	sort.Strings(candidates)
-	return candidates
-}
-
-func pathHasChildren(query string, suggestions []string) bool {
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return false
-	}
-
-	normalized := strings.TrimPrefix(query, ".")
-	if normalized == "" {
-		return false
-	}
-	lowerNormalized := strings.ToLower(normalized)
-	for _, suggestion := range suggestions {
-		suggestion = strings.TrimSpace(suggestion)
-		if suggestion == "" {
-			continue
-		}
-		lowerSuggestion := strings.ToLower(suggestion)
-		if strings.HasPrefix(lowerSuggestion, lowerNormalized+".") || strings.HasPrefix(lowerSuggestion, lowerNormalized+"[].") {
-			return true
-		}
-	}
-	return false
-}
-
-func dotAdvanceForPathSearch(query string, suggestions []string) string {
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return "."
-	}
-	if strings.HasSuffix(query, ".") {
-		return bestCompletionForPaths(query, suggestions)
-	}
-
-	candidates := completionCandidatesForPaths(query, suggestions)
-	if len(candidates) == 1 && candidates[0] != query {
-		if strings.HasSuffix(candidates[0], ".") {
-			return candidates[0]
-		}
-		if !pathHasChildren(candidates[0], suggestions) {
-			return ""
-		}
-		return candidates[0] + "."
-	}
-	if pathHasChildren(query, suggestions) {
-		return query + "."
-	}
-	return ""
-}
-
-func isPathLikeQuery(query string, suggestions []string) bool {
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return true
-	}
-	if strings.HasPrefix(query, ".") {
-		return true
-	}
-	if !strings.Contains(query, ".") {
-		return false
-	}
-	if len(completionCandidatesForPaths(query, suggestions)) > 0 {
-		return true
-	}
-
-	lowerQuery := strings.ToLower(query)
-	for _, suggestion := range suggestions {
-		lowerSuggestion := strings.ToLower(strings.TrimSpace(suggestion))
-		if lowerSuggestion == lowerQuery || matchesPathQuery(lowerSuggestion, query) {
-			return true
-		}
-	}
-	return false
-}
-
-func trimPathSearch(query string) string {
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return ""
-	}
-	if strings.HasSuffix(query, ".") {
-		trimmed := strings.TrimSuffix(query, ".")
-		if trimmed == "." {
-			return ""
-		}
-		return trimmed
-	}
-
-	leadingDot := strings.HasPrefix(query, ".")
-	normalized := strings.TrimPrefix(query, ".")
-	if !strings.Contains(normalized, ".") {
-		if leadingDot || !strings.ContainsAny(normalized, "-_/ ") {
-			return ""
-		}
-		return query
-	}
-
-	parts := strings.Split(normalized, ".")
-	filtered := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if part == "" {
-			continue
-		}
-		filtered = append(filtered, part)
-	}
-	if len(filtered) <= 1 {
-		return ""
-	}
-	result := strings.Join(filtered[:len(filtered)-1], ".") + "."
-	if leadingDot {
-		return "." + result
-	}
-	return result
-}
-
-func bestCompletionForPaths(query string, suggestions []string) string {
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return ""
-	}
-
-	candidates := completionCandidatesForPaths(query, suggestions)
-	if len(candidates) == 0 {
-		return ""
-	}
-	return candidates[0]
-}
-
 func buildSearchText(node *SchemaNode) string {
 	parts := make([]string, 0, 1+len(node.Constraints()))
 	if node.Description != "" {
@@ -766,6 +453,10 @@ func collectRenderJobs(outputDir string) ([]renderJob, error) {
 // RenderAll walks the output directory and generates an HTML page for each JSON schema.
 // Skips the master-standalone directory and non-JSON files.
 func RenderAll(outputDir, basePath string) error {
+	if err := theme.WriteSchemaSearchAsset(outputDir); err != nil {
+		return fmt.Errorf("writing schema search asset: %w", err)
+	}
+
 	funcMap := template.FuncMap{
 		"childNode": func(n *SchemaNode) *SchemaNode {
 			if len(n.Properties) > 0 {
@@ -1046,6 +737,7 @@ metadata:
 <p class="no-results" id="no-results" data-no-results-message="No matches. Try {{.SearchPathHint}} for an exact path">No matches. Try {{.SearchPathHint}} for an exact path</p>
 ` + theme.ToastDiv + `
 ` + theme.FooterHTML + `
+<script src="{{.BasePath}}/` + theme.SchemaSearchAssetName + `"></script>
 <script>
 ` + theme.SearchHashStateJS + `
 (function(){
@@ -1061,6 +753,16 @@ metadata:
   var completionCandidates = [];
   var completionIndex = -1;
   var rowByPath = {};
+  var schemaSearch = window.SchemaSearch;
+  var bestCompletionForPaths = schemaSearch.bestCompletionForPaths;
+  var completionCandidatesForPaths = schemaSearch.completionCandidatesForPaths;
+  var ghostPrefixForCompletion = schemaSearch.ghostPrefixForCompletion;
+  var ghostSuffixForCompletion = schemaSearch.ghostSuffixForCompletion;
+  var dotAdvanceForPathSearch = schemaSearch.dotAdvanceForPathSearch;
+  var isPathLikeQuery = schemaSearch.isPathLikeQuery;
+  var matchesPathQuery = schemaSearch.matchesPathQuery;
+  var splitPathSegments = schemaSearch.splitPathSegments;
+  var trimPathSearch = schemaSearch.trimPathSearch;
   rows.forEach(function(row){
     rowByPath[row.dataset.path] = row;
   });
@@ -1113,80 +815,6 @@ metadata:
     return bestCompletionForPaths(query, currentSuggestions());
   }
 
-  function completionForSuggestion(rawQuery, suggestion) {
-    var query = (rawQuery || '').trim();
-    suggestion = (suggestion || '').trim();
-    if (!query || !suggestion) {
-      return '';
-    }
-
-    var leadingDot = query.indexOf('.') === 0;
-    var normalized = leadingDot ? query.slice(1) : query;
-    if (!leadingDot && normalized.indexOf('.') === -1) {
-      return '';
-    }
-    if (!normalized) {
-      return '';
-    }
-
-    var queryParts = normalized.split('.');
-    var suggestionParts = suggestion.split('.');
-    if (suggestionParts.length < queryParts.length) {
-      return '';
-    }
-
-    for (var i = 0; i < queryParts.length - 1; i++) {
-      if (queryParts[i].toLowerCase() !== suggestionParts[i].toLowerCase()) {
-        return '';
-      }
-    }
-
-    var lastIndex = queryParts.length - 1;
-    var lastQuery = queryParts[lastIndex];
-    var lastSuggestion = suggestionParts[lastIndex];
-    if (lastQuery.toLowerCase() === lastSuggestion.toLowerCase() && suggestionParts.length > queryParts.length) {
-      var boundaryParts = queryParts.slice();
-      boundaryParts[lastIndex] = lastSuggestion;
-      var boundaryResult = boundaryParts.join('.') + '.';
-      return leadingDot ? '.' + boundaryResult : boundaryResult;
-    }
-    if (lastSuggestion.toLowerCase().indexOf(lastQuery.toLowerCase()) !== 0) {
-      return '';
-    }
-
-    var completed = queryParts.slice();
-    if (lastQuery !== lastSuggestion) {
-      completed[lastIndex] = lastSuggestion;
-    } else if (suggestionParts.length > queryParts.length) {
-      completed.push(suggestionParts[queryParts.length]);
-    } else {
-      return '';
-    }
-
-    var result = completed.join('.');
-    return leadingDot ? '.' + result : result;
-  }
-
-  function completionCandidatesForPaths(rawQuery, suggestions) {
-    var query = (rawQuery || '').trim();
-    if (!query) {
-      return [];
-    }
-
-    var seen = Object.create(null);
-    var candidates = [];
-    suggestions.forEach(function(suggestion){
-      var completion = completionForSuggestion(query, suggestion);
-      if (!completion || seen[completion]) {
-        return;
-      }
-      seen[completion] = true;
-      candidates.push(completion);
-    });
-    candidates.sort();
-    return candidates;
-  }
-
   function updateGhostSuggestion(rawQuery) {
     var completion = selectedCompletion() || bestCompletionForQuery(rawQuery);
     var suffix = ghostSuffixForCompletion(input.value, completion);
@@ -1194,144 +822,6 @@ metadata:
     searchGhost.hidden = !suffix;
     searchGhostPrefix.textContent = suffix ? prefix : '';
     searchGhostSuffix.textContent = suffix;
-  }
-
-  function ghostPrefixForCompletion(rawQuery, completion) {
-    var query = (rawQuery || '').trim();
-    completion = (completion || '').trim();
-    if (!query || !completion) {
-      return '';
-    }
-    if (completion.toLowerCase().indexOf(query.toLowerCase()) !== 0) {
-      return '';
-    }
-
-    var max = Math.min(query.length, completion.length);
-    var i = 0;
-    while (i < max && completion.charAt(i) === query.charAt(i)) {
-      i++;
-    }
-    if (i === query.length) {
-      return query;
-    }
-    return completion.slice(0, i);
-  }
-
-  function ghostSuffixForCompletion(rawQuery, completion) {
-    var query = (rawQuery || '').trim();
-    completion = (completion || '').trim();
-    if (!query || !completion) {
-      return '';
-    }
-    if (completion.toLowerCase().indexOf(query.toLowerCase()) !== 0) {
-      return '';
-    }
-    return completion.slice(ghostPrefixForCompletion(query, completion).length);
-  }
-
-  function bestCompletionForPaths(rawQuery, suggestions) {
-    var query = (rawQuery || '').trim();
-    if (!query) {
-      return '';
-    }
-
-    var candidates = completionCandidatesForPaths(query, suggestions);
-    if (!candidates.length) {
-      return '';
-    }
-    return candidates[0];
-  }
-
-  function pathHasChildren(rawQuery, suggestions) {
-    var query = (rawQuery || '').trim();
-    if (!query) {
-      return false;
-    }
-
-    var normalized = query.replace(/^\./, '');
-    if (!normalized) {
-      return false;
-    }
-
-    var lowerNormalized = normalized.toLowerCase();
-    return suggestions.some(function(suggestion){
-      var lowerSuggestion = (suggestion || '').trim().toLowerCase();
-      return lowerSuggestion.indexOf(lowerNormalized + '.') === 0 || lowerSuggestion.indexOf(lowerNormalized + '[].') === 0;
-    });
-  }
-
-  function dotAdvanceForPathSearch(rawQuery, suggestions) {
-    var query = (rawQuery || '').trim();
-    if (!query) {
-      return '.';
-    }
-    if (query.lastIndexOf('.') === query.length - 1) {
-      return bestCompletionForPaths(query, suggestions);
-    }
-
-    var candidates = completionCandidatesForPaths(query, suggestions);
-    if (candidates.length === 1 && candidates[0] !== query) {
-      if (candidates[0].lastIndexOf('.') === candidates[0].length - 1) {
-        return candidates[0];
-      }
-      if (!pathHasChildren(candidates[0], suggestions)) {
-        return '';
-      }
-      return candidates[0] + '.';
-    }
-    if (pathHasChildren(query, suggestions)) {
-      return query + '.';
-    }
-    return '';
-  }
-
-  function isPathLikeQuery(rawQuery, suggestions) {
-    var query = (rawQuery || '').trim();
-    if (!query) {
-      return true;
-    }
-    if (query.indexOf('.') === 0) {
-      return true;
-    }
-    if (query.indexOf('.') === -1) {
-      return false;
-    }
-    if (completionCandidatesForPaths(query, suggestions).length) {
-      return true;
-    }
-
-    var lowerQuery = query.toLowerCase();
-    return suggestions.some(function(suggestion){
-      var lowerSuggestion = (suggestion || '').trim().toLowerCase();
-      return lowerSuggestion === lowerQuery || matchesPathQuery(lowerSuggestion, query);
-    });
-  }
-
-  function trimPathSearch(rawQuery) {
-    var query = (rawQuery || '').trim();
-    if (!query) {
-      return '';
-    }
-    if (query.lastIndexOf('.') === query.length - 1) {
-      var trimmedBoundary = query.slice(0, -1);
-      return trimmedBoundary === '.' ? '' : trimmedBoundary;
-    }
-
-    var leadingDot = query.indexOf('.') === 0;
-    var normalized = leadingDot ? query.slice(1) : query;
-    if (normalized.indexOf('.') === -1) {
-      if (leadingDot || !/[-_/ ]/.test(normalized)) {
-        return '';
-      }
-      return query;
-    }
-
-    var parts = normalized.split('.').filter(Boolean);
-    if (parts.length <= 1) {
-      return '';
-    }
-    var result = parts.slice(0, -1).join('.') + '.';
-    return leadingDot ? '.' + result : result;
   }
 
   function clearSearchState() {
@@ -1351,18 +841,6 @@ metadata:
     completionIndex = -1;
   }
 
-  function splitPathSegments(path) {
-    path = (path || '').trim().replace(/^\./, '');
-    if (!path) {
-      return { segments: [], trailingDot: false };
-    }
-
-    return {
-      segments: path.split('.').filter(Boolean),
-      trailingDot: path.lastIndexOf('.') === path.length - 1
-    };
-  }
-
   function addAncestorPaths(path, visiblePaths, openPaths) {
     var current = path;
     var directMatch = true;
@@ -1378,42 +856,6 @@ metadata:
       current = row.dataset.parentPath;
       directMatch = false;
     }
-  }
-
-  function matchesPathQuery(path, rawQuery) {
-    var pathState = splitPathSegments(path);
-    var queryState = splitPathSegments(rawQuery);
-    if (!pathState.segments.length || !queryState.segments.length) {
-      return false;
-    }
-
-    if (!queryState.trailingDot &&
-        /\[\]$/.test(queryState.segments[queryState.segments.length - 1]) &&
-        pathState.segments.length === queryState.segments.length + 1) {
-      for (var j = 0; j < queryState.segments.length; j++) {
-        if (pathState.segments[j].toLowerCase() !== queryState.segments[j].toLowerCase()) {
-          return false;
-        }
-      }
-      return true;
-    }
-
-    var expectedLength = queryState.segments.length + (queryState.trailingDot ? 1 : 0);
-    if (pathState.segments.length !== expectedLength) {
-      return false;
-    }
-
-    for (var i = 0; i < queryState.segments.length - 1; i++) {
-      if (pathState.segments[i].toLowerCase() !== queryState.segments[i].toLowerCase()) {
-        return false;
-      }
-    }
-
-    var lastIndex = queryState.segments.length - 1;
-    if (queryState.trailingDot) {
-      return pathState.segments[lastIndex].toLowerCase() === queryState.segments[lastIndex].toLowerCase();
-    }
-    return pathState.segments[lastIndex].toLowerCase().indexOf(queryState.segments[lastIndex].toLowerCase()) === 0;
   }
 
   function applySearch(rawQuery) {

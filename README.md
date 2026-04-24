@@ -296,11 +296,11 @@ Commands:
 1. Connects to the Kubernetes API (in-cluster or via kubeconfig)
 2. Lists all CRDs and extracts `.spec.versions[].schema.openAPIV3Schema`
 3. Applies three JSON Schema transforms (improved from [openapi2jsonschema.py](https://github.com/yannh/kubeconform/blob/master/scripts/openapi2jsonschema.py)):
-   - Adds `additionalProperties: false` to objects with `properties`
+   - Adds `additionalProperties: false` to objects with `properties` — recurses into each property sub-schema individually, fixing a bug in the original where CRD fields named `properties` or other JSON Schema keywords corrupt the output
    - Replaces `int-or-string` format with `oneOf [string, integer]` while preserving existing keys
    - Allows null for optional fields (per-field precision, not per-parent)
 
-   These improve on the Python original's handling of nullable fields, int-or-string types, and root objects. A frozen golden test locks converter output to prevent regressions.
+   These improve on the Python original's handling of nullable fields, int-or-string types, root objects, and keyword-colliding property names. A frozen golden test locks converter output to prevent regressions.
 4. Writes schemas to both primary and kubeval-compatible directory formats inside a new generation snapshot
 5. Renders an interactive HTML documentation page for each schema with collapsible property trees, path-aware search, and autocomplete powered by a shared emitted `schema-search.js` asset
 6. Generates an HTML index grouped by API group with client-side search, schema statistics, and yaml-language-server usage examples

@@ -273,6 +273,7 @@ This validates built-in Kubernetes resources against the default schemas and CRD
       master-standalone/
         <apigroup>-<kind>-stable-<version>.json  # kubeval-compatible format
       index.html                       # Browsable schema index
+      schema-search.js                 # Shared schema-page search/autocomplete module
       favicon.svg                      # Constellation icon
   current -> .generations/<generation> # Stable read path for sidecars and local servers
 ```
@@ -301,7 +302,7 @@ Commands:
 
    These improve on the Python original's handling of nullable fields, int-or-string types, and root objects. A frozen golden test locks converter output to prevent regressions.
 4. Writes schemas to both primary and kubeval-compatible directory formats inside a new generation snapshot
-5. Renders an interactive HTML documentation page for each schema with collapsible property trees
+5. Renders an interactive HTML documentation page for each schema with collapsible property trees, path-aware search, and autocomplete powered by a shared emitted `schema-search.js` asset
 6. Generates an HTML index grouped by API group with client-side search, schema statistics, and yaml-language-server usage examples
 7. Atomically switches `OUTPUT_DIR/current` to the completed generation so sidecars read a stable snapshot
 8. Uploads the active generation to Cloudflare Pages via the direct upload API (BLAKE3 content hashing, batched uploads with retry)
@@ -356,6 +357,12 @@ Enable the pre-commit hook to enforce linting before each commit:
 
 ```bash
 git config core.hooksPath .githooks
+```
+
+If you change the extracted schema search module or its tests, also run:
+
+```bash
+node --test theme/schema_search.test.js
 ```
 
 ### Renovate

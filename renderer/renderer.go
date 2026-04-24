@@ -753,16 +753,6 @@ metadata:
   var completionCandidates = [];
   var completionIndex = -1;
   var rowByPath = {};
-  var schemaSearch = window.SchemaSearch;
-  var bestCompletionForPaths = schemaSearch.bestCompletionForPaths;
-  var completionCandidatesForPaths = schemaSearch.completionCandidatesForPaths;
-  var ghostPrefixForCompletion = schemaSearch.ghostPrefixForCompletion;
-  var ghostSuffixForCompletion = schemaSearch.ghostSuffixForCompletion;
-  var dotAdvanceForPathSearch = schemaSearch.dotAdvanceForPathSearch;
-  var isPathLikeQuery = schemaSearch.isPathLikeQuery;
-  var matchesPathQuery = schemaSearch.matchesPathQuery;
-  var splitPathSegments = schemaSearch.splitPathSegments;
-  var trimPathSearch = schemaSearch.trimPathSearch;
   rows.forEach(function(row){
     rowByPath[row.dataset.path] = row;
   });
@@ -840,6 +830,67 @@ metadata:
     completionCandidates = [];
     completionIndex = -1;
   }
+
+  var toast = document.getElementById('toast');
+  var toastTimer;
+  document.getElementById('copy-url').addEventListener('click', function(){
+    var url = location.origin + this.dataset.url;
+    navigator.clipboard.writeText(url).then(function(){
+      clearTimeout(toastTimer);
+      toast.classList.add('show');
+      toastTimer = setTimeout(function(){ toast.classList.remove('show'); }, 1500);
+    });
+  });
+
+  var schemaSearch = window.SchemaSearch;
+  if (!schemaSearch) {
+    clearSearchState();
+    input.value = '';
+    input.disabled = true;
+    input.placeholder = 'Schema search unavailable';
+    setSearchStatus('Search unavailable', false);
+    if (window.console && console.warn) {
+      console.warn('schema-search.js failed to load; schema search disabled');
+    }
+    document.getElementById('expand-all').addEventListener('click', function(){
+      props.forEach(function(p){ p.setAttribute('open',''); });
+    });
+    document.getElementById('collapse-all').addEventListener('click', function(){
+      props.forEach(function(p){ p.removeAttribute('open'); });
+    });
+    document.addEventListener('keydown', function(e){
+      if (e.key !== 'Escape') {
+        return;
+      }
+      e.preventDefault();
+      var hadOpen = false;
+      visibleRows().forEach(function(row){
+        if (row.tagName === 'DETAILS' && row.hasAttribute('open')) {
+          hadOpen = true;
+          row.removeAttribute('open');
+        }
+      });
+      if (hadOpen) {
+        return;
+      }
+      if (document.activeElement && document.activeElement !== document.body) {
+        document.activeElement.blur();
+        return;
+      }
+      location.href = document.body.dataset.basePath + '/';
+    });
+    return;
+  }
+
+  var bestCompletionForPaths = schemaSearch.bestCompletionForPaths;
+  var completionCandidatesForPaths = schemaSearch.completionCandidatesForPaths;
+  var ghostPrefixForCompletion = schemaSearch.ghostPrefixForCompletion;
+  var ghostSuffixForCompletion = schemaSearch.ghostSuffixForCompletion;
+  var dotAdvanceForPathSearch = schemaSearch.dotAdvanceForPathSearch;
+  var isPathLikeQuery = schemaSearch.isPathLikeQuery;
+  var matchesPathQuery = schemaSearch.matchesPathQuery;
+  var splitPathSegments = schemaSearch.splitPathSegments;
+  var trimPathSearch = schemaSearch.trimPathSearch;
 
   function addAncestorPaths(path, visiblePaths, openPaths) {
     var current = path;
@@ -950,8 +1001,6 @@ metadata:
   input.addEventListener('input', function(){
     applySearch(this.value);
   });
-  var toast = document.getElementById('toast');
-  var toastTimer;
   document.addEventListener('keydown', function(e){
     if (e.key === 'ArrowDown' && document.activeElement === input) {
       if (completionCandidates.length) {
@@ -1031,14 +1080,6 @@ metadata:
       }
       location.href = document.body.dataset.basePath + '/';
     }
-  });
-  document.getElementById('copy-url').addEventListener('click', function(){
-    var url = location.origin + this.dataset.url;
-    navigator.clipboard.writeText(url).then(function(){
-      clearTimeout(toastTimer);
-      toast.classList.add('show');
-      toastTimer = setTimeout(function(){ toast.classList.remove('show'); }, 1500);
-    });
   });
   (function(){
     clearSearchState();

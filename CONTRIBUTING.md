@@ -16,7 +16,8 @@ git config core.hooksPath .githooks
 ## Guidelines
 
 - Follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages
-- All tests must pass: `go test ./...`
+- All Go tests must pass: `go test ./...`
+- If you change `theme/schema_search.js` or `theme/schema_search.test.js`, also run: `node --test theme/schema_search.test.js`
 - Linter must pass: `golangci-lint run`
 - Run `go mod tidy` when changing dependencies
 - All changes require a pull request to `main` -- direct pushes are blocked

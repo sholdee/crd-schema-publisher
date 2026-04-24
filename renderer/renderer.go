@@ -409,7 +409,7 @@ func matchesPathQuery(path, rawQuery string) bool {
 	}
 
 	if !trailingDot && strings.HasSuffix(queryParts[len(queryParts)-1], "[]") && len(pathParts) == len(queryParts)+1 {
-		for i := 0; i < len(queryParts); i++ {
+		for i := range queryParts {
 			if !strings.EqualFold(pathParts[i], queryParts[i]) {
 				return false
 			}
@@ -425,7 +425,7 @@ func matchesPathQuery(path, rawQuery string) bool {
 		return false
 	}
 
-	for i := 0; i < len(queryParts)-1; i++ {
+	for i := range len(queryParts) - 1 {
 		if !strings.EqualFold(pathParts[i], queryParts[i]) {
 			return false
 		}
@@ -436,6 +436,32 @@ func matchesPathQuery(path, rawQuery string) bool {
 		return strings.EqualFold(pathParts[lastIndex], queryParts[lastIndex])
 	}
 	return strings.HasPrefix(strings.ToLower(pathParts[lastIndex]), strings.ToLower(queryParts[lastIndex]))
+}
+
+func formatPathCompletion(leadingDot bool, value string) string {
+	if leadingDot {
+		return "." + value
+	}
+	return value
+}
+
+func formatObjectBoundaryCompletion(leadingDot bool, queryParts []string, lastIndex int, lastSuggestion string) string {
+	boundaryParts := append([]string{}, queryParts...)
+	boundaryParts[lastIndex] = lastSuggestion
+	return formatPathCompletion(leadingDot, strings.Join(boundaryParts, ".")+".")
+}
+
+func formatNextCompletionStep(leadingDot bool, queryParts, suggestionParts []string, lastIndex int, lastSuggestion string) string {
+	completed := append([]string{}, queryParts...)
+	switch {
+	case !strings.EqualFold(queryParts[lastIndex], lastSuggestion):
+		completed[lastIndex] = lastSuggestion
+	case len(suggestionParts) > len(queryParts):
+		completed = append(completed, suggestionParts[len(queryParts)])
+	default:
+		return ""
+	}
+	return formatPathCompletion(leadingDot, strings.Join(completed, "."))
 }
 
 func completionForSuggestion(query, suggestion string) string {
@@ -460,7 +486,7 @@ func completionForSuggestion(query, suggestion string) string {
 		return ""
 	}
 
-	for i := 0; i < len(queryParts)-1; i++ {
+	for i := range len(queryParts) - 1 {
 		if !strings.EqualFold(queryParts[i], suggestionParts[i]) {
 			return ""
 		}
@@ -470,33 +496,13 @@ func completionForSuggestion(query, suggestion string) string {
 	lastQuery := queryParts[lastIndex]
 	lastSuggestion := suggestionParts[lastIndex]
 	if strings.EqualFold(lastQuery, lastSuggestion) && len(suggestionParts) > len(queryParts) {
-		result := strings.Join(queryParts, ".") + "."
-		resultParts := strings.Split(strings.TrimSuffix(result, "."), ".")
-		resultParts[lastIndex] = lastSuggestion
-		result = strings.Join(resultParts, ".") + "."
-		if leadingDot {
-			return "." + result
-		}
-		return result
+		return formatObjectBoundaryCompletion(leadingDot, queryParts, lastIndex, lastSuggestion)
 	}
 	if !strings.HasPrefix(strings.ToLower(lastSuggestion), strings.ToLower(lastQuery)) {
 		return ""
 	}
 
-	completed := append([]string{}, queryParts...)
-	if lastQuery != lastSuggestion {
-		completed[lastIndex] = lastSuggestion
-	} else if len(suggestionParts) > len(queryParts) {
-		completed = append(completed, suggestionParts[len(queryParts)])
-	} else {
-		return ""
-	}
-
-	result := strings.Join(completed, ".")
-	if leadingDot {
-		return "." + result
-	}
-	return result
+	return formatNextCompletionStep(leadingDot, queryParts, suggestionParts, lastIndex, lastSuggestion)
 }
 
 func ghostSuffixForCompletion(query, completion string) string {

@@ -42,7 +42,8 @@ config:
   basePath: ""
 
 # ---------------------------------------------------------------------------
-# Secrets — configure exactly one of the two options below
+# Secrets — optional; configure at most one of the two options below
+# Omit both options to run in extract-only mode without Cloudflare upload.
 # Precedence: existingSecret > externalSecret
 # ---------------------------------------------------------------------------
 
@@ -274,7 +275,8 @@ ciliumNetworkPolicy:
 # Persistence (output directory volume)
 # ---------------------------------------------------------------------------
 persistence:
-  # -- Use a PersistentVolumeClaim for the output directory instead of emptyDir
+  # -- Use a PersistentVolumeClaim for the output directory instead of emptyDir.
+  # Recommended for CronJob extract-only mode when no upload backend is configured.
   enabled: false
   # -- Use an existing PVC (skips PVC creation when set)
   existingClaim: ""

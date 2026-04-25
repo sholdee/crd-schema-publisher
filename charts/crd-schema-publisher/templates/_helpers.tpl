@@ -85,7 +85,7 @@ Digest takes precedence over tag; tag defaults to appVersion.
 
 {{/*
 Common environment variables shared by both deployment and cronjob pods.
-Secret refs + config vars that apply to all modes.
+Optional Secret refs + config vars that apply to all modes.
 */}}
 {{- define "crd-schema-publisher.commonEnvVars" -}}
 {{- if or .Values.existingSecret.name .Values.externalSecret.enabled }}

@@ -35,11 +35,11 @@ type commandSpec struct {
 }
 
 var commandSpecs = []commandSpec{
-	{name: "run", description: "Extract schemas and upload to Cloudflare Pages (default)"},
+	{name: "run", description: "Extract schemas and upload when credentials are configured (default)"},
 	{name: "extract", description: "Extract schemas from a Kubernetes cluster"},
 	{name: "convert", description: "Convert CRD YAML files to JSON Schema"},
 	{name: "upload", description: "Upload schemas to Cloudflare Pages"},
-	{name: "watch", description: "Watch for CRD changes and publish automatically"},
+	{name: "watch", description: "Watch for CRD changes and upload when credentials are configured"},
 	{name: "preview", description: "Serve a local preview of the documentation site"},
 }
 

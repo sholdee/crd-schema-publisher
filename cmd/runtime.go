@@ -215,7 +215,7 @@ func runAll(args []string) error {
 	result, err := runBuild(outputDir)
 	if err != nil {
 		return fmt.Errorf("%w\n\n"+
-			"The \"run\" command extracts schemas from a Kubernetes cluster and uploads to Cloudflare Pages.\n\n"+
+			"The \"run\" command extracts schemas from a Kubernetes cluster and uploads when Cloudflare credentials are configured.\n\n"+
 			"To extract schemas from a cluster:\n"+
 			"  crd-schema-publisher extract --output-dir ./schemas\n\n"+
 			"To convert CRD YAML files directly:\n"+

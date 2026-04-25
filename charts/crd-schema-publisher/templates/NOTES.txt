@@ -1,8 +1,12 @@
+{{- $cloudflareConfigured := or .Values.existingSecret.name .Values.externalSecret.enabled -}}
+{{- $persistentOutput := or .Values.persistence.enabled .Values.persistence.existingClaim -}}
+{{- $extraContainerBackend := not (empty .Values.extraContainers) -}}
+{{- $cronjobExtractOnlyEmptyDir := and (eq .Values.mode "cronjob") (not $cloudflareConfigured) (not $persistentOutput) (not $extraContainerBackend) -}}
 {{- if eq .Values.mode "controller" }}
 crd-schema-publisher is running in controller mode.
 
-The watcher will detect CRD changes and publish schemas automatically.
-Leader election ensures only one replica publishes at a time.
+The watcher will detect CRD changes and refresh schemas automatically.
+Leader election ensures only one replica performs work at a time.
 
 Health endpoints:
   /healthz  - liveness
@@ -11,18 +15,35 @@ Health endpoints:
 {{- else }}
 crd-schema-publisher is running in cronjob mode.
 
-Schemas will be extracted and published on schedule: {{ .Values.cronjob.schedule }}
+Schemas will be extracted on schedule: {{ .Values.cronjob.schedule }}
 {{- end }}
 
+{{- if $cloudflareConfigured }}
+Cloudflare credentials: configured
 Secret: {{ include "crd-schema-publisher.secretName" . }}
 {{- if .Values.existingSecret.name }}
   (using existing secret)
 {{- else if .Values.externalSecret.enabled }}
   (managed by ExternalSecret — wait for ESO to sync before the pod will start)
 {{- end }}
+{{- else }}
+Cloudflare credentials: not configured
+  (extract-only mode; upload will be skipped)
+{{- end }}
+
+{{- if $cronjobExtractOnlyEmptyDir }}
+
+WARNING: CronJob extract-only mode is using emptyDir output.
+Extracted schemas will be discarded when the Job pod exits.
+Configure Cloudflare credentials, persistence.enabled/persistence.existingClaim,
+or an extra container backend if you want the output retained.
+{{- end }}
 
 NOTE: This chart does not create its namespace. Use --create-namespace on first install:
   helm install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-schema-publisher \
     --namespace crd-schema-publisher \
-    --create-namespace \
-    --set existingSecret.name=<secret-name>
+    --create-namespace
+{{ if not $cloudflareConfigured }}
+To publish to Cloudflare Pages, add:
+  --set existingSecret.name=<secret-name>
+{{- end }}

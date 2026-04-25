@@ -27,7 +27,7 @@ Most CRD schema solutions rely on static catalogs — community-maintained repos
 - **Always accurate** — schemas reflect exactly what's installed in your cluster, including custom and internal CRDs, updated automatically when CRDs change
 - **Self-hosted** — run in extract-only mode and serve schemas however you like, or publish directly to Cloudflare Pages
 - **Single static binary** — no runtime dependencies, no interpreters, no package managers. One binary in a distroless nonroot container with no shell
-- **Controller-grade runtime** — watch mode uses informers, leader election, debounced publish cycles, and health probes. It's a proper workload, not a script on a timer
+- **Controller-grade runtime** — watch mode uses informers, leader election, debounced refresh cycles, and health probes. It's a proper workload, not a script on a timer
 - **No glue pipelines** — replaces multi-tool chains (CI runners, shell scripts, kubectl, CLI wrappers) with a single in-cluster binary. No external CI dependency, no cluster-admin runner pods, no scheduled workflow orchestration
 
 The JSON Schema conversion improves upon the widely-used [openapi2jsonschema.py](https://github.com/yannh/kubeconform/blob/master/scripts/openapi2jsonschema.py) — see [How It Works](#%EF%B8%8F-how-it-works) for details.
@@ -128,9 +128,7 @@ This installs in **controller mode** by default (real-time watch with leader ele
 
 #### Credentials
 
-Cloudflare credentials are **optional in controller mode**. Without them, the Deployment runs in extract-only mode — site generations are written under the output directory and the active snapshot is exposed at `OUTPUT_DIR/current`, but nothing is uploaded. This is useful when serving schemas locally (e.g., via a sidecar web server) instead of Cloudflare Pages.
-
-CronJob mode still expects Cloudflare credentials because it runs the default `run` command (`extract` + `upload`). Extract-only cronjobs are not chart-supported yet.
+Cloudflare credentials are **optional in both controller and CronJob modes**. Without them, the workload runs in extract-only mode — site generations are written under the output directory and the active snapshot is exposed at `OUTPUT_DIR/current`, but nothing is uploaded. This is useful when serving schemas locally (e.g., via a sidecar web server) instead of Cloudflare Pages.
 
 To publish to Cloudflare Pages, provide an API token with **Cloudflare Pages: Edit** permission and your account ID. Two secret management options are supported:
 
@@ -204,7 +202,7 @@ For users who prefer raw YAML without Helm, deploy manifests are available in [`
 
 ### Watch Mode (recommended)
 
-Reacts to CRD changes in real-time with debounced publish cycles. Supports leader election for safe rolling updates. The container runs with `args: ["watch"]` — see [`deploy/deployment.yaml`](deploy/deployment.yaml).
+Reacts to CRD changes in real-time with debounced schema refreshes, uploading only when Cloudflare credentials are configured. Supports leader election for safe rolling updates. The container runs with `args: ["watch"]` — see [`deploy/deployment.yaml`](deploy/deployment.yaml).
 
 ```bash
 kubectl apply -f deploy/common.yaml -f deploy/deployment.yaml
@@ -212,7 +210,9 @@ kubectl apply -f deploy/common.yaml -f deploy/deployment.yaml
 
 ### CronJob Mode
 
-Runs extract + upload on a schedule. Simpler, but schemas are only updated when the job runs. The example uses a daily schedule — adjust the `schedule` field as needed. Uses the default `run` command — see [`deploy/cronjob.yaml`](deploy/cronjob.yaml).
+Runs scheduled schema extraction, uploading to Cloudflare Pages only when credentials are configured. Simpler, but schemas are only updated when the job runs. The example uses a daily schedule — adjust the `schedule` field as needed. Uses the default `run` command — see [`deploy/cronjob.yaml`](deploy/cronjob.yaml).
+
+Without Cloudflare credentials, CronJob mode is extract-only. With the default `emptyDir` output volume, extracted schemas are discarded when the Job pod exits. Configure Cloudflare credentials, `persistence.enabled`/`persistence.existingClaim`, or an extra container backend if you want scheduled output to be retained.
 
 ```bash
 kubectl apply -f deploy/common.yaml -f deploy/cronjob.yaml
@@ -220,7 +220,7 @@ kubectl apply -f deploy/common.yaml -f deploy/cronjob.yaml
 
 Both modes share [`deploy/common.yaml`](deploy/common.yaml) which provides namespace, ServiceAccount, RBAC (ClusterRole for CRD read access), and a hardened security context (nonroot, read-only rootfs, dropped capabilities).
 
-The deploy manifests include a placeholder Secret named `crd-schema-publisher-cloudflare`. Edit the placeholder values in `common.yaml` directly, or replace the Secret with your own secrets management (e.g., ExternalSecret, Sealed Secret). If the Secret is omitted, the Deployment can still run in extract-only mode (site generations written under `OUTPUT_DIR/.generations` with the active snapshot exposed at `OUTPUT_DIR/current`, but not uploaded). The CronJob manifest still requires Cloudflare credentials because it uses the default `run` command.
+The deploy manifests include an empty placeholder Secret named `crd-schema-publisher-cloudflare`. Fill in the values in `common.yaml` directly, or replace the Secret with your own secrets management (e.g., ExternalSecret, Sealed Secret). If Cloudflare credentials are empty or omitted, workloads run in extract-only mode (site generations written under `OUTPUT_DIR/.generations` with the active snapshot exposed at `OUTPUT_DIR/current`, but not uploaded). In raw CronJob mode, the default `emptyDir` output is discarded when the Job pod exits unless you replace it with retained storage or a backend sync.
 
 ### Container Image
 
@@ -248,8 +248,8 @@ Deployment/runtime configuration is primarily via environment variables. For loc
 
 | Variable | Required | Default | Description |
 | -------- | -------- | ------- | ----------- |
-| `CLOUDFLARE_API_TOKEN` | Yes (run/upload) | — | Cloudflare API token with Pages permissions |
-| `CLOUDFLARE_ACCOUNT_ID` | Yes (run/upload) | — | Cloudflare account ID |
+| `CLOUDFLARE_API_TOKEN` | Upload only | — | Cloudflare API token with Pages permissions |
+| `CLOUDFLARE_ACCOUNT_ID` | Upload only | — | Cloudflare account ID |
 | `CF_PAGES_PROJECT` | No | `kubernetes-schemas` | Cloudflare Pages project name |
 | `OUTPUT_DIR` | No | `/output` | Site output root. The active snapshot is exposed at `OUTPUT_DIR/current` |
 | `KUBECTL_CONTEXT` | No | — | Kubernetes context name (local development only) |
@@ -268,11 +268,11 @@ Deployment/runtime configuration is primarily via environment variables. For loc
 crd-schema-publisher [command]
 
 Commands:
-  run       Extract schemas and upload to Cloudflare Pages (default)
+  run       Extract schemas and upload to Cloudflare Pages when credentials are configured (default)
   extract   Extract schemas from a Kubernetes cluster
   convert   Convert CRD YAML files to JSON Schema
   upload    Upload the active site from OUTPUT_DIR/current to Cloudflare Pages
-  watch     Watch for CRD changes and publish on each change (extract-only if no credentials)
+  watch     Watch for CRD changes and upload when credentials are configured
   preview   Serve a local preview of the documentation site
 ```
 

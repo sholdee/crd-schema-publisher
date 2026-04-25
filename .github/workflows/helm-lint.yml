@@ -24,6 +24,9 @@ jobs:
         run: helm template test charts/crd-schema-publisher --set existingSecret.name=test
 
       - name: Template (cronjob mode)
+        run: helm template test charts/crd-schema-publisher --set mode=cronjob
+
+      - name: Template (cronjob mode with Cloudflare)
         run: helm template test charts/crd-schema-publisher --set mode=cronjob --set existingSecret.name=test
 
       - name: Template (all features)
@@ -43,7 +46,7 @@ jobs:
       - name: Verify mode isolation
         run: |
           # Cronjob mode must not produce controller-only resources
-          ROLE_COUNT=$(helm template test charts/crd-schema-publisher --set mode=cronjob --set existingSecret.name=test | grep -c "^kind: Role$" || true)
+          ROLE_COUNT=$(helm template test charts/crd-schema-publisher --set mode=cronjob | grep -c "^kind: Role$" || true)
           if [[ "${ROLE_COUNT}" -ne 0 ]]; then
             echo "ERROR: cronjob mode should not produce Role resources"
             exit 1
@@ -72,6 +75,58 @@ jobs:
             exit 1
           fi
           echo "Network policy mutual exclusivity enforced"
+
+      - name: Verify optional Cloudflare env vars
+        run: |
+          CRON_EXTRACT_ONLY=$(helm template test charts/crd-schema-publisher --set mode=cronjob)
+          if grep -q "CLOUDFLARE_" <<< "${CRON_EXTRACT_ONLY}" || grep -q "CF_PAGES_PROJECT" <<< "${CRON_EXTRACT_ONLY}"; then
+            echo "ERROR: cronjob extract-only mode should not render Cloudflare env vars"
+            exit 1
+          fi
+          echo "CronJob extract-only mode omits Cloudflare env vars"
+
+          CRON_WITH_SECRET=$(helm template test charts/crd-schema-publisher --set mode=cronjob --set existingSecret.name=test)
+          if ! grep -q "CLOUDFLARE_API_TOKEN" <<< "${CRON_WITH_SECRET}" || ! grep -q "CLOUDFLARE_ACCOUNT_ID" <<< "${CRON_WITH_SECRET}" || ! grep -q "CF_PAGES_PROJECT" <<< "${CRON_WITH_SECRET}"; then
+            echo "ERROR: cronjob Cloudflare mode should render Cloudflare env vars"
+            exit 1
+          fi
+          echo "CronJob Cloudflare mode renders Cloudflare env vars"
+
+      - name: Verify cronjob extract-only emptyDir warning
+        run: |
+          WARNING_TEXT="WARNING: CronJob extract-only mode is using emptyDir output"
+
+          CRON_EXTRACT_ONLY_NOTES=$(helm install --dry-run --debug test charts/crd-schema-publisher --set mode=cronjob 2>/dev/null)
+          if ! grep -q "${WARNING_TEXT}" <<< "${CRON_EXTRACT_ONLY_NOTES}"; then
+            echo "ERROR: cronjob extract-only emptyDir mode should warn that output is discarded"
+            exit 1
+          fi
+          echo "CronJob extract-only emptyDir mode warns about discarded output"
+
+          CRON_WITH_SECRET_NOTES=$(helm install --dry-run --debug test charts/crd-schema-publisher --set mode=cronjob --set existingSecret.name=test 2>/dev/null)
+          if grep -q "${WARNING_TEXT}" <<< "${CRON_WITH_SECRET_NOTES}"; then
+            echo "ERROR: cronjob Cloudflare mode should not show emptyDir extract-only warning"
+            exit 1
+          fi
+          echo "CronJob Cloudflare mode omits extract-only emptyDir warning"
+
+          CRON_WITH_PERSISTENCE_NOTES=$(helm install --dry-run --debug test charts/crd-schema-publisher --set mode=cronjob --set persistence.enabled=true 2>/dev/null)
+          if grep -q "${WARNING_TEXT}" <<< "${CRON_WITH_PERSISTENCE_NOTES}"; then
+            echo "ERROR: cronjob persistent extract-only mode should not show emptyDir warning"
+            exit 1
+          fi
+          echo "CronJob persistent extract-only mode omits emptyDir warning"
+
+          CRON_WITH_BACKEND_NOTES=$(helm install --dry-run --debug test charts/crd-schema-publisher \
+            --set mode=cronjob \
+            --set 'extraContainers[0].name=backend' \
+            --set 'extraContainers[0].image=busybox' \
+            2>/dev/null)
+          if grep -q "${WARNING_TEXT}" <<< "${CRON_WITH_BACKEND_NOTES}"; then
+            echo "ERROR: cronjob backend extract-only mode should not show emptyDir warning"
+            exit 1
+          fi
+          echo "CronJob backend extract-only mode omits emptyDir warning"
 
       - name: Verify dashboard embedding
         run: |
@@ -126,5 +181,4 @@ jobs:
           echo "Validating cronjob mode..."
           helm template test charts/crd-schema-publisher \
             --set mode=cronjob \
-            --set existingSecret.name=test \
             | kubeconform "${SCHEMA_ARGS[@]}"

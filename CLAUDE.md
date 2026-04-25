@@ -62,19 +62,19 @@ go run ./cmd/main.go --help
 
 ### Subcommands
 
-- `run` (default) — extract + upload. Degrades gracefully: skips upload when Cloudflare credentials are missing, prints guidance when no kubeconfig is available. Accepts `--output-dir`; the output root must already exist.
+- `run` (default) — extract + optional upload. Degrades gracefully: skips upload when Cloudflare credentials are missing, prints guidance when no kubeconfig is available. Accepts `--output-dir`; the output root must already exist.
 - `extract` — extract CRDs and build a new site generation, exposed at `OUTPUT_DIR/current`. Requires an explicit output directory via `--output-dir` or `OUTPUT_DIR`; it does not fall back to `/output`. Supports `--kind`, `--group`, `--version` filters and CLI flags (`--output-dir`, `--context`, `--base-path`, `--skip-render`) that override env vars.
 - `convert` — convert CRD YAML files to JSON Schema without a cluster connection. Requires `--output-dir`. Reads from `--file` (comma-separated, `-` for stdin) and/or `--dir`. Writes flat output (no generation lifecycle). Optional `--render` for HTML docs. Supports the same `--kind`, `--group`, `--version` filters.
 - `upload` — upload the active site from `OUTPUT_DIR/current` to Cloudflare Pages. Accepts `--output-dir`; the output root must already exist.
-- `watch` — long-lived process: informer watches CRDs, debounces events, runs extract+publish cycles. Leader election for multi-replica safety. Accepts `--output-dir`; the output root must already exist.
+- `watch` — long-lived process: informer watches CRDs, debounces events, and runs extract plus optional upload cycles. Leader election for multi-replica safety. Accepts `--output-dir`; the output root must already exist.
 - `preview` — generate sample data by default, or with explicit `--output-dir` copy the active site into an isolated temp generation and serve it on localhost. Ambient `OUTPUT_DIR` is ignored. No cluster or credentials needed. Handles signal cleanup of temp directories.
 
 ### Configuration (env vars)
 
 | Var | Required | Default | Purpose |
 | --- | -------- | ------- | ------- |
-| `CLOUDFLARE_API_TOKEN` | Yes (run/upload) | — | CF API token |
-| `CLOUDFLARE_ACCOUNT_ID` | Yes (run/upload) | — | CF account ID |
+| `CLOUDFLARE_API_TOKEN` | Upload only | — | CF API token |
+| `CLOUDFLARE_ACCOUNT_ID` | Upload only | — | CF account ID |
 | `CF_PAGES_PROJECT` | No | `kubernetes-schemas` | CF Pages project name |
 | `OUTPUT_DIR` | No | `/output` | Site output root. Stable read path is `OUTPUT_DIR/current` |
 | `KUBECTL_CONTEXT` | No | — | K8s context (local dev only) |
@@ -123,7 +123,7 @@ go run ./cmd/main.go --help
 - **Image signing** uses cosign keyless mode via GitHub OIDC. Production images on main are signed; PR images are not. Base images (golang, distroless) are verified before every build.
 - **Supply chain hardening**: all GitHub Actions pinned by commit SHA (not version tag), Dockerfile base images pinned by digest, `go mod verify` runs in CI.
 - **Prometheus metrics** use stdlib-only text exposition format (no `prometheus/client_golang` dependency). Atomic counters and gauges in `metrics/` package, served at `/metrics` on the health server port. Metrics are always registered in watch mode — zero overhead when not scraped. Recording methods are nil-receiver safe so callers don't need nil checks. Float gauges use `math.Float64bits`/`math.Float64frombits` with `atomic.Int64` for lock-free storage.
-- **Helm chart** in `charts/crd-schema-publisher/` distributed as OCI artifact via GHCR. Two modes (`controller`/`cronjob`) with mode-isolated templates. Two-tier secret management: `existingSecret`, `externalSecret` (ESO). Controller mode gracefully degrades to extract-only without Cloudflare creds because it runs `watch` and simply omits the publisher; CronJob mode still expects Cloudflare creds because it runs the default `run` command. `values.schema.json` enforces secret mutual exclusivity via `if/then` (not `oneOf`, which breaks yaml-language-server with `additionalProperties: false`); template precedence in `_helpers.tpl` handles runtime resolution (`existingSecret.name` wins, else chart fullname). NetworkPolicy and CiliumNetworkPolicy are mutually exclusive (enforced via `fail` guard in `_helpers.tpl`). PrometheusRule only renders in controller mode. Chart version is CalVer SemVer: `YYYY.MDD.HMMSS` (no leading zeros on month or hour — e.g. `2026.413.65435`). Image and chart are always released together with the same CalVer version — both `version` and `appVersion` match the image tag. `Chart.yaml` version/appVersion fields are placeholder `0.0.0` — both overridden by the release workflow at package time. Dashboard embedded via `.Files.Get`. Pod anti-affinity presets in `_helpers.tpl`.
+- **Helm chart** in `charts/crd-schema-publisher/` distributed as OCI artifact via GHCR. Two modes (`controller`/`cronjob`) with mode-isolated templates. Two-tier optional secret management: `existingSecret`, `externalSecret` (ESO). Both controller and CronJob modes gracefully degrade to extract-only without Cloudflare creds: controller runs `watch` and omits the publisher, while CronJob runs the default `run` command and skips upload after extraction. `values.schema.json` enforces secret mutual exclusivity via `if/then` (not `oneOf`, which breaks yaml-language-server with `additionalProperties: false`); template precedence in `_helpers.tpl` handles runtime resolution (`existingSecret.name` wins, else chart fullname). NetworkPolicy and CiliumNetworkPolicy are mutually exclusive (enforced via `fail` guard in `_helpers.tpl`). PrometheusRule only renders in controller mode. Chart version is CalVer SemVer: `YYYY.MDD.HMMSS` (no leading zeros on month or hour — e.g. `2026.413.65435`). Image and chart are always released together with the same CalVer version — both `version` and `appVersion` match the image tag. `Chart.yaml` version/appVersion fields are placeholder `0.0.0` — both overridden by the release workflow at package time. Dashboard embedded via `.Files.Get`. Pod anti-affinity presets in `_helpers.tpl`.
 
 ### Dependencies (direct only)
 

@@ -31,11 +31,13 @@ spec:
                     secretKeyRef:
                       name: crd-schema-publisher-cloudflare
                       key: CLOUDFLARE_API_TOKEN
+                      optional: true
                 - name: CLOUDFLARE_ACCOUNT_ID
                   valueFrom:
                     secretKeyRef:
                       name: crd-schema-publisher-cloudflare
                       key: CLOUDFLARE_ACCOUNT_ID
+                      optional: true
                 - name: CF_PAGES_PROJECT
                   value: kubernetes-schemas
                 - name: OUTPUT_DIR
@@ -58,4 +60,6 @@ spec:
                   mountPath: /output
           volumes:
             - name: output
+              # Without Cloudflare credentials, extract-only output on emptyDir
+              # is discarded when the Job pod exits.
               emptyDir: {}

@@ -8,9 +8,9 @@ A statically-compiled Go binary that extracts CRD JSON schemas from a Kubernetes
 
 ```text
 charts/         Helm chart (OCI-distributed via GHCR, cosign-signed)
-cmd/            Entrypoint and subcommand dispatch (run/extract/upload/watch/preview)
+cmd/            Entrypoint and subcommand dispatch (run/extract/convert/upload/watch/preview)
 converter/      OpenAPI v3 -> JSON Schema transforms (ported from openapi2jsonschema.py)
-extractor/      client-go CRD listing, schema extraction, file writing, config builder
+extractor/      client-go CRD listing, schema extraction, file writing, config builder, file/YAML parsing
 index/          HTML index generation (deepspace theme, client-side search, starfield/flare effects)
 publisher/      Cloudflare Pages direct upload API client + BLAKE3 hashing
 renderer/       HTML schema page renderer (collapsible property trees, type badges, constraints)
@@ -37,26 +37,37 @@ golangci-lint run
 # Enable pre-commit hook
 git config core.hooksPath .githooks
 
-# Cross-compile (matches CI targets)
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o crd-schema-publisher ./cmd/
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o crd-schema-publisher ./cmd/
+# Cross-compile release binaries locally (matches release workflow targets)
+for pair in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+  GOOS="${pair%/*}" GOARCH="${pair#*/}"
+  CGO_ENABLED=0 GOOS="${GOOS}" GOARCH="${GOARCH}" \
+    go build -ldflags="-s -w" -o "crd-schema-publisher-${GOOS}-${GOARCH}" ./cmd/
+done
+
+# Generate release-style checksums
+sha256sum crd-schema-publisher-* > checksums-sha256.txt
 
 # Local extract (requires kubeconfig)
 KUBECTL_CONTEXT=my-context OUTPUT_DIR=./output go run ./cmd/ extract
 
 # Preview index UI locally (no cluster needed)
 go run ./cmd/ preview
+
+# Local subcommands must use the package path so Go compiles all cmd/*.go files.
+# Single-file invocation is supported only for top-level help/version smoke checks.
+go run ./cmd/main.go --help
 ```
 
 ## Architecture
 
 ### Subcommands
 
-- `run` (default) — extract + upload
-- `extract` — extract CRDs and build a new site generation, exposed at `OUTPUT_DIR/current`
-- `upload` — upload the active site from `OUTPUT_DIR/current` to Cloudflare Pages
-- `watch` — long-lived process: informer watches CRDs, debounces events, runs extract+publish cycles. Leader election for multi-replica safety.
-- `preview` — generate sample data or copy the active site into an isolated temp generation and serve it on localhost. No cluster or credentials needed. Handles signal cleanup of temp directories.
+- `run` (default) — extract + upload. Degrades gracefully: skips upload when Cloudflare credentials are missing, prints guidance when no kubeconfig is available. Accepts `--output-dir`; the output root must already exist.
+- `extract` — extract CRDs and build a new site generation, exposed at `OUTPUT_DIR/current`. Requires an explicit output directory via `--output-dir` or `OUTPUT_DIR`; it does not fall back to `/output`. Supports `--kind`, `--group`, `--version` filters and CLI flags (`--output-dir`, `--context`, `--base-path`, `--skip-render`) that override env vars.
+- `convert` — convert CRD YAML files to JSON Schema without a cluster connection. Requires `--output-dir`. Reads from `--file` (comma-separated, `-` for stdin) and/or `--dir`. Writes flat output (no generation lifecycle). Optional `--render` for HTML docs. Supports the same `--kind`, `--group`, `--version` filters.
+- `upload` — upload the active site from `OUTPUT_DIR/current` to Cloudflare Pages. Accepts `--output-dir`; the output root must already exist.
+- `watch` — long-lived process: informer watches CRDs, debounces events, runs extract+publish cycles. Leader election for multi-replica safety. Accepts `--output-dir`; the output root must already exist.
+- `preview` — generate sample data by default, or with explicit `--output-dir` copy the active site into an isolated temp generation and serve it on localhost. Ambient `OUTPUT_DIR` is ignored. No cluster or credentials needed. Handles signal cleanup of temp directories.
 
 ### Configuration (env vars)
 
@@ -76,6 +87,23 @@ go run ./cmd/ preview
 | `BASE_PATH` | No | — | URL path prefix for subpath deployments (e.g., `/iac` for GitHub Pages) |
 | `PREVIEW_ADDR` | No | `127.0.0.1:8989` | Listen address (preview mode) |
 
+### CLI Flags
+
+`extract`, `convert`, `run`, `watch`, `upload`, and `preview` all support command-specific flags. `extract` requires `--output-dir` or `OUTPUT_DIR` and does not default to `/output`. `convert` requires `--output-dir` and does not read `OUTPUT_DIR`. For runtime-oriented commands (`run`, `watch`, `upload`), `--output-dir` overrides `OUTPUT_DIR` but must point at a pre-created directory. `preview` ignores ambient `OUTPUT_DIR` and only uses real extracted output when `--output-dir` is passed explicitly.
+
+| Flag | Subcommands | Default | Purpose |
+| --- | --- | --- | --- |
+| `--output-dir` | run, extract, convert, upload, watch, preview | `convert`: required flag; `extract`: `$OUTPUT_DIR` (required if unset); `run`/`upload`/`watch`: `$OUTPUT_DIR` or `/output`; `preview`: none | Output directory |
+| `--context` | extract | `$KUBECTL_CONTEXT` | Kubernetes context |
+| `--base-path` | extract, convert | `$BASE_PATH` | URL path prefix |
+| `--skip-render` | extract | `$SKIP_RENDER` | Skip HTML rendering |
+| `--file` | convert | — | CRD YAML file(s), comma-separated. `-` for stdin |
+| `--dir` | convert | — | Directory of CRD YAML files (non-recursive) |
+| `--render` | convert | `false` | Render HTML docs |
+| `--kind` | extract, convert | — | Filter by kind (comma-separated, case-insensitive) |
+| `--group` | extract, convert | — | Filter by group (comma-separated, case-insensitive) |
+| `--version` | extract, convert | — | Filter by version (comma-separated, case-insensitive) |
+
 ### Key Design Decisions
 
 - **No CGO.** Binary is statically linked. BLAKE3 uses `github.com/zeebo/blake3` (pure Go).
@@ -85,6 +113,7 @@ go run ./cmd/ preview
 - **Schema renderer** generates interactive HTML documentation pages (collapsible `<details>`/`<summary>` property trees, type/required badges, YAML boilerplate). Uses `html/template` with recursive `{{define "properties"}}` for nested schemas. Schema-page path search behavior lives in the extracted `theme/schema_search.js` asset, which `RenderAll` emits into the output root as `schema-search.js` and the page bootstrap loads at runtime. Enabled by default; disable with `SKIP_RENDER=true`.
 - **Theme package** (`theme/`) holds shared CSS, HTML fragments, small JS helpers used by both index and renderer templates, and emitted static assets such as `schema-search.js`. CSS custom properties are the union of both pages' needs. The deepspace theme (starfield, flare, light/dark toggle) is defined once here.
 - **Output format** builds immutable site generations under `OUTPUT_DIR/.generations/<generation>/` and atomically switches `OUTPUT_DIR/current` to the active generation. Each generation contains both directory formats: `<group>/<kind>_<version>.json` (primary) and `master-standalone/<group>-<kind>-stable-<version>.json` (kubeval compatibility), plus rendered `.html` documentation pages, `index.html`, static assets, and an internal `_meta/kinds.json` manifest used to preserve exact CRD Kind casing for re-render/preview paths. Direct-volume consumers should read from `OUTPUT_DIR/current`, not the flat root. First-party Cloudflare, git, S3, and Caddy examples exclude `_meta/` from public output.
+- **Convert output cleanup** uses `_meta/convert-manifest.json` to remove only files generated by prior `convert` runs, then prunes empty generated directories. Files that existed before `convert` ran are preserved, even under generated directories. If the manifest exists but is corrupt, `convert` aborts instead of risking mixed stale-and-fresh output.
 - **Concurrency**: extractor uses 10 goroutines (buffered channel semaphore), publisher uses 3 concurrent upload workers, renderer uses 10 goroutines. These match the original tools' behavior.
 - **Watch mode uses first-trigger-immediate debounce.** The informer's initial List fires AddFunc for all existing CRDs, which signals the debounce loop. The first trigger fires immediately (zero delay), subsequent triggers are debounced. This produces exactly one publish cycle on startup — no explicit initial publish in runLeader.
 - **Watch mode uses full re-extract.** Simpler than incremental. Upload is already incremental via check-missing. Extraction of <200 CRDs is sub-second.
@@ -100,11 +129,14 @@ go run ./cmd/ preview
 
 | Dependency | Purpose |
 | --------- | ------- |
-| `k8s.io/client-go` | Kubernetes API access |
-| `k8s.io/apiextensions-apiserver` | CRD typed client |
 | `github.com/zeebo/blake3` | BLAKE3 hashing (pure Go) |
+| `gopkg.in/yaml.v3` | Streaming YAML document decoding for file/stdin conversion |
+| `k8s.io/apiextensions-apiserver` | CRD typed client and API types |
+| `k8s.io/apimachinery` | Shared Kubernetes API machinery used by clients and watchers |
+| `k8s.io/client-go` | Kubernetes API access, informer/watch plumbing, leader election |
+| `sigs.k8s.io/yaml` | YAML-to-Kubernetes-struct decoding for CRD conversion |
 
-No other external dependencies. Standard library for HTTP, JSON, HTML templates, MIME types.
+Everything else in `go.mod` is transitive. The project still leans heavily on the standard library for HTTP, JSON, HTML templates, MIME types, and the preview server.
 
 ## CI/CD
 
@@ -138,10 +170,11 @@ Pushes to main run `test` and `helm-lint` only (no Docker build, no release). PR
 | --- | --------- | ------- |
 | `test` | Always | Calls `test.yml` — re-runs all linting and Go tests as a safety net before building |
 | `helm-lint` | Always | Calls `helm-lint.yml` — re-runs all Helm validation before packaging |
+| `binaries` | After `test` and `build` pass | Cross-compiles static binaries for linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, generates `checksums-sha256.txt`, signs the checksum manifest with cosign keyless blob signing, uploads `dist/` as artifacts for the `release` job, and publishes GitHub/Sigstore build provenance for the binaries via the attestations service. |
 | `build` | After `test` passes | Multi-arch Docker build (amd64 + arm64), pushes `vYYYY.MDD.HMMSS` + `latest` to GHCR. Verifies distroless base image digest with cosign before building. |
 | `sign` | After `build` | Cosign keyless signing via GitHub OIDC |
 | `helm-package` | After `helm-lint`, `build`, and `sign` | Package chart with CalVer SemVer matching the image tag. Push OCI to GHCR, cosign sign. Image and chart always share the same version — no desync possible. |
-| `release` | After `build`, `sign`, `helm-package` | Creates git tag, GitHub Release with auto-generated notes, image digest, and chart OCI reference. Note: tag push will fail if the tagged commit includes workflow file changes — create the tag manually in that case. |
+| `release` | After `build`, `sign`, `helm-package`, `binaries` | Creates git tag, GitHub Release with auto-generated notes, image digest, chart OCI reference, signed checksum manifest, binary provenance link, and standalone binaries. Note: tag push will fail if the tagged commit includes workflow file changes — create the tag manually in that case. |
 
 App image and Helm chart are always released together with the same CalVer version. Releases are decoupled from CI — trigger the release workflow when changes warrant a new version. The release workflow re-runs all tests before building as a safety net. A concurrency group prevents simultaneous releases from racing.
 

@@ -31,16 +31,109 @@ func TestRunAll_SkipsUploadOnNoopBuild(t *testing.T) {
 	}
 
 	called := false
-	publishOutputFunc = func() error {
+	publishOutputFunc = func(string) error {
 		called = true
 		return nil
 	}
 
-	if err := runAll(); err != nil {
+	dir := t.TempDir()
+	t.Setenv("OUTPUT_DIR", dir)
+
+	if err := runAll(nil); err != nil {
 		t.Fatalf("runAll error: %v", err)
 	}
 	if called {
 		t.Fatal("expected publish to be skipped for no-op build")
+	}
+}
+
+func TestRunAll_RequiresPreexistingOutputDir(t *testing.T) {
+	clientOrig := buildClientFunc
+	defer func() {
+		buildClientFunc = clientOrig
+	}()
+
+	called := false
+	buildClientFunc = func(string) (*apiextensionsclient.Clientset, error) {
+		called = true
+		return apiextensionsclient.NewForConfig(&rest.Config{Host: "https://example.invalid"})
+	}
+
+	missing := filepath.Join(t.TempDir(), "missing")
+	t.Setenv("OUTPUT_DIR", missing)
+
+	err := runAll(nil)
+	if err == nil {
+		t.Fatal("expected runAll error")
+	}
+	if !strings.Contains(err.Error(), "must already exist") {
+		t.Fatalf("expected explicit missing output dir error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "Set OUTPUT_DIR or pass --output-dir") {
+		t.Fatalf("expected actionable error, got %v", err)
+	}
+	if called {
+		t.Fatal("expected runAll to fail before building kubernetes client")
+	}
+}
+
+func TestRunAll_OutputDirFlagOverridesEnvVar(t *testing.T) {
+	clientOrig := buildClientFunc
+	buildOrig := buildSiteFunc
+	publishOrig := publishOutputFunc
+	defer func() {
+		buildClientFunc = clientOrig
+		buildSiteFunc = buildOrig
+		publishOutputFunc = publishOrig
+	}()
+
+	var captured extractor.SiteBuildOptions
+	buildClientFunc = func(string) (*apiextensionsclient.Clientset, error) {
+		return apiextensionsclient.NewForConfig(&rest.Config{Host: "https://example.invalid"})
+	}
+	buildSiteFunc = func(opts extractor.SiteBuildOptions) (extractor.SiteBuildResult, error) {
+		captured = opts
+		return extractor.SiteBuildResult{Status: extractor.BuildResultNoop}, nil
+	}
+	publishOutputFunc = func(string) error {
+		t.Fatal("publish should not be called for noop build")
+		return nil
+	}
+
+	envDir := t.TempDir()
+	flagDir := t.TempDir()
+	t.Setenv("OUTPUT_DIR", envDir)
+
+	if err := runAll([]string{"--output-dir", flagDir}); err != nil {
+		t.Fatalf("runAll error: %v", err)
+	}
+	if captured.OutputDir != flagDir {
+		t.Fatalf("expected flag output dir %q, got %q", flagDir, captured.OutputDir)
+	}
+}
+
+func TestRunAll_RejectsUnexpectedPositionalArgs(t *testing.T) {
+	clientOrig := buildClientFunc
+	defer func() {
+		buildClientFunc = clientOrig
+	}()
+
+	called := false
+	buildClientFunc = func(string) (*apiextensionsclient.Clientset, error) {
+		called = true
+		return apiextensionsclient.NewForConfig(&rest.Config{Host: "https://example.invalid"})
+	}
+
+	dir := t.TempDir()
+	err := runAll([]string{"--output-dir", dir, "upload"})
+	if err == nil {
+		t.Fatal("expected runAll error")
+	}
+	if !strings.Contains(err.Error(), "unexpected arguments") {
+		t.Fatalf("expected unexpected arguments error, got %v", err)
+	}
+	if called {
+		t.Fatal("expected runAll to fail before building kubernetes client")
 	}
 }
 
@@ -51,7 +144,6 @@ func TestRunPreview_ValidatesExplicitOutputDir(t *testing.T) {
 	}()
 
 	dir := t.TempDir()
-	t.Setenv("OUTPUT_DIR", dir)
 	t.Setenv("SKIP_RENDER", "true")
 
 	validateOutputDirFunc = func(path string) error {
@@ -61,7 +153,7 @@ func TestRunPreview_ValidatesExplicitOutputDir(t *testing.T) {
 		return fmt.Errorf("unsafe output dir")
 	}
 
-	err := runPreview()
+	err := runPreview([]string{"--output-dir", dir})
 	if err == nil {
 		t.Fatal("expected runPreview error")
 	}
@@ -71,6 +163,142 @@ func TestRunPreview_ValidatesExplicitOutputDir(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(dir, "index.html")); !os.IsNotExist(err) {
 		t.Fatalf("expected preview to stop before mutating output dir, got err=%v", err)
+	}
+}
+
+func TestRunPreview_IgnoresOutputDirEnvWithoutFlag(t *testing.T) {
+	prepareOrig := preparePreviewSiteFunc
+	validateOrig := validateOutputDirFunc
+	defer func() {
+		preparePreviewSiteFunc = prepareOrig
+		validateOutputDirFunc = validateOrig
+	}()
+
+	envDir := t.TempDir()
+	t.Setenv("OUTPUT_DIR", envDir)
+	t.Setenv("PREVIEW_ADDR", "127.0.0.1:0")
+	t.Setenv("SKIP_RENDER", "true")
+
+	validateOutputDirFunc = func(path string) error {
+		t.Fatalf("did not expect validator to run for ambient OUTPUT_DIR %q", path)
+		return nil
+	}
+
+	called := false
+	preparePreviewSiteFunc = func(outputDir, basePath string, render bool) (string, func(), error) {
+		called = true
+		if outputDir != "" {
+			t.Fatalf("expected ambient OUTPUT_DIR to be ignored, got %q", outputDir)
+		}
+		return "", func() {}, fmt.Errorf("preview stub stop")
+	}
+
+	err := runPreview(nil)
+	if err == nil {
+		t.Fatal("expected runPreview error")
+	}
+	if err.Error() != "preview stub stop" {
+		t.Fatalf("expected stub error, got %v", err)
+	}
+	if !called {
+		t.Fatal("expected preparePreviewSite to be called")
+	}
+}
+
+func TestRunPreview_OutputDirFlagOverridesEnvVar(t *testing.T) {
+	validateOrig := validateOutputDirFunc
+	defer func() {
+		validateOutputDirFunc = validateOrig
+	}()
+
+	envDir := t.TempDir()
+	flagDir := t.TempDir()
+	t.Setenv("OUTPUT_DIR", envDir)
+	t.Setenv("SKIP_RENDER", "true")
+
+	validateOutputDirFunc = func(path string) error {
+		if path != flagDir {
+			t.Fatalf("expected validator to receive %q, got %q", flagDir, path)
+		}
+		return fmt.Errorf("preview stop")
+	}
+
+	err := runPreview([]string{"--output-dir", flagDir})
+	if err == nil {
+		t.Fatal("expected runPreview error")
+	}
+	if err.Error() != "preview stop" {
+		t.Fatalf("expected validator error, got %v", err)
+	}
+}
+
+func TestRunPreview_RejectsExplicitEmptyOutputDir(t *testing.T) {
+	err := runPreview([]string{"--output-dir", ""})
+	if err == nil {
+		t.Fatal("expected runPreview error")
+	}
+	if !strings.Contains(err.Error(), "must not be empty") {
+		t.Fatalf("expected empty output dir error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "Pass --output-dir") {
+		t.Fatalf("expected actionable guidance, got %v", err)
+	}
+	if strings.Contains(err.Error(), "Set OUTPUT_DIR") {
+		t.Fatalf("did not expect preview error to mention ambient OUTPUT_DIR, got %v", err)
+	}
+}
+
+func TestRunUpload_OutputDirFlagOverridesEnvVar(t *testing.T) {
+	envDir := t.TempDir()
+	missing := filepath.Join(t.TempDir(), "missing")
+	t.Setenv("OUTPUT_DIR", envDir)
+	t.Setenv("CLOUDFLARE_API_TOKEN", "")
+	t.Setenv("CLOUDFLARE_ACCOUNT_ID", "")
+
+	err := runUpload([]string{"--output-dir", missing})
+	if err == nil {
+		t.Fatal("expected runUpload error")
+	}
+	if !strings.Contains(err.Error(), "must already exist") {
+		t.Fatalf("expected missing output dir error, got %v", err)
+	}
+	if strings.Contains(err.Error(), "CLOUDFLARE_API_TOKEN") {
+		t.Fatalf("expected output-dir validation before credential checks, got %v", err)
+	}
+}
+
+func TestRunUpload_RejectsNonDirectoryOutputDirWithGuidance(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "output-file")
+	if err := os.WriteFile(file, []byte("not-a-dir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := runUpload([]string{"--output-dir", file})
+	if err == nil {
+		t.Fatal("expected runUpload error")
+	}
+	if !strings.Contains(err.Error(), "is not a directory") {
+		t.Fatalf("expected non-directory error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "Set OUTPUT_DIR or pass --output-dir") {
+		t.Fatalf("expected actionable guidance, got %v", err)
+	}
+}
+
+func TestRunWatch_OutputDirFlagOverridesEnvVar(t *testing.T) {
+	envDir := t.TempDir()
+	missing := filepath.Join(t.TempDir(), "missing")
+	t.Setenv("OUTPUT_DIR", envDir)
+
+	err := runWatch([]string{"--output-dir", missing})
+	if err == nil {
+		t.Fatal("expected runWatch error")
+	}
+	if !strings.Contains(err.Error(), "must already exist") {
+		t.Fatalf("expected missing output dir error, got %v", err)
+	}
+	if strings.Contains(err.Error(), "POD_NAME") || strings.Contains(err.Error(), "building kubeconfig") {
+		t.Fatalf("expected output-dir validation before runtime setup, got %v", err)
 	}
 }
 
@@ -249,6 +477,98 @@ func TestPreparePreviewSite_FailureDoesNotMutateExplicitOutputDir(t *testing.T) 
 		t.Fatalf("expected render error, got %v", err)
 	}
 	assertPreviewSourceUnchanged(t, rootDir)
+}
+
+func TestRunAll_SkipsUploadWhenNoCredentials(t *testing.T) {
+	clientOrig := buildClientFunc
+	buildOrig := buildSiteFunc
+	publishOrig := publishOutputFunc
+	defer func() {
+		buildClientFunc = clientOrig
+		buildSiteFunc = buildOrig
+		publishOutputFunc = publishOrig
+	}()
+
+	buildClientFunc = func(string) (*apiextensionsclient.Clientset, error) {
+		return apiextensionsclient.NewForConfig(&rest.Config{Host: "https://example.invalid"})
+	}
+	buildSiteFunc = func(extractor.SiteBuildOptions) (extractor.SiteBuildResult, error) {
+		return extractor.SiteBuildResult{Status: extractor.BuildResultBuilt, SchemaCount: 5}, nil
+	}
+
+	called := false
+	publishOutputFunc = func(string) error {
+		called = true
+		return nil
+	}
+
+	t.Setenv("CLOUDFLARE_API_TOKEN", "")
+	t.Setenv("CLOUDFLARE_ACCOUNT_ID", "")
+	t.Setenv("OUTPUT_DIR", t.TempDir())
+
+	if err := runAll(nil); err != nil {
+		t.Fatalf("runAll error: %v", err)
+	}
+	if called {
+		t.Fatal("expected publish to be skipped when credentials are missing")
+	}
+}
+
+func TestRunAll_UploadsWhenCredentialsPresent(t *testing.T) {
+	clientOrig := buildClientFunc
+	buildOrig := buildSiteFunc
+	publishOrig := publishOutputFunc
+	defer func() {
+		buildClientFunc = clientOrig
+		buildSiteFunc = buildOrig
+		publishOutputFunc = publishOrig
+	}()
+
+	buildClientFunc = func(string) (*apiextensionsclient.Clientset, error) {
+		return apiextensionsclient.NewForConfig(&rest.Config{Host: "https://example.invalid"})
+	}
+	buildSiteFunc = func(extractor.SiteBuildOptions) (extractor.SiteBuildResult, error) {
+		return extractor.SiteBuildResult{Status: extractor.BuildResultBuilt, SchemaCount: 5}, nil
+	}
+
+	called := false
+	publishOutputFunc = func(string) error {
+		called = true
+		return nil
+	}
+
+	t.Setenv("CLOUDFLARE_API_TOKEN", "test-token")
+	t.Setenv("CLOUDFLARE_ACCOUNT_ID", "test-account")
+	t.Setenv("OUTPUT_DIR", t.TempDir())
+
+	if err := runAll(nil); err != nil {
+		t.Fatalf("runAll error: %v", err)
+	}
+	if !called {
+		t.Fatal("expected publish to be called when credentials are present")
+	}
+}
+
+func TestRunAll_BuildError_PrintsGuidance(t *testing.T) {
+	clientOrig := buildClientFunc
+	defer func() {
+		buildClientFunc = clientOrig
+	}()
+
+	buildClientFunc = func(string) (*apiextensionsclient.Clientset, error) {
+		return nil, fmt.Errorf("unable to load kubeconfig")
+	}
+
+	t.Setenv("OUTPUT_DIR", t.TempDir())
+
+	err := runAll(nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "extract") || !strings.Contains(errMsg, "convert") {
+		t.Errorf("expected guidance mentioning extract and convert commands, got: %s", errMsg)
+	}
 }
 
 func TestPreparePreviewSite_RequiresCurrentForExplicitOutputDir(t *testing.T) {

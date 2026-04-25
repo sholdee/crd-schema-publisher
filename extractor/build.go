@@ -37,6 +37,7 @@ type SiteBuildOptions struct {
 	OutputDir string
 	BasePath  string
 	Render    bool
+	Filter    SchemaFilter
 }
 
 type SiteBuildResult struct {
@@ -56,6 +57,7 @@ func BuildSite(opts SiteBuildOptions) (SiteBuildResult, error) {
 	if err != nil {
 		return SiteBuildResult{}, fmt.Errorf("listing CRDs: %w", err)
 	}
+	crds = FilterCRDs(crds, opts.Filter)
 	if len(crds) == 0 {
 		return SiteBuildResult{Status: BuildResultNoop}, nil
 	}

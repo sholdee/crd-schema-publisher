@@ -6,9 +6,17 @@
 
 # crd-schema-publisher — CRD docs and IDE validation, straight from the cluster
 
-Reads CRD JSON schemas directly from your Kubernetes API server and publishes a browsable documentation site with search and interactive schema pages. Runs as a Kubernetes-native controller with real-time CRD watching, or as a CronJob for scheduled extraction. Exports schemas for IDE validation (yaml-language-server) and CI linting (kubeconform). Cloudflare Pages is the built-in backend; S3, git repos, and local serving supported via sidecar.
+Extracts CRD OpenAPI schemas from your Kubernetes API server or YAML files, converts them to JSON Schema, and publishes a searchable documentation site with interactive schema pages.
 
-> **Direct-volume consumers:** the active site now lives at `OUTPUT_DIR/current`. This is a breaking change for sidecars or scripts that read the shared output volume directly. Cloudflare Pages users do not need to change anything.
+Run it as:
+
+- a Kubernetes-native controller for real-time CRD watching
+- a CronJob for scheduled extraction
+- a local CLI for extracting from a live cluster or converting YAML files
+
+Exports schemas for IDE validation with yaml-language-server and CI linting with kubeconform. Cloudflare Pages is built in; S3, git repos, and local serving are supported via sidecar.
+
+> **Upgrading direct-volume deployments:** the active site now lives at `OUTPUT_DIR/current`. Existing sidecars or scripts that read the shared output volume directly must be updated. Cloudflare Pages users do not need to change anything.
 
 **[Live demo →](https://kube-schemas.shold.io)**
 
@@ -23,6 +31,85 @@ Most CRD schema solutions rely on static catalogs — community-maintained repos
 - **No glue pipelines** — replaces multi-tool chains (CI runners, shell scripts, kubectl, CLI wrappers) with a single in-cluster binary. No external CI dependency, no cluster-admin runner pods, no scheduled workflow orchestration
 
 The JSON Schema conversion improves upon the widely-used [openapi2jsonschema.py](https://github.com/yannh/kubeconform/blob/master/scripts/openapi2jsonschema.py) — see [How It Works](#%EF%B8%8F-how-it-works) for details.
+
+## ⚡ Quickstart
+
+### Deploy to a Cluster
+
+Install the Helm chart in controller mode for real-time CRD watching. Provide Cloudflare credentials to publish directly to Cloudflare Pages, or omit credentials to run extract-only and serve `OUTPUT_DIR/current` yourself.
+
+```bash
+helm install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-schema-publisher \
+  --namespace crd-schema-publisher \
+  --create-namespace \
+  --set existingSecret.name=crd-schema-publisher-cloudflare
+```
+
+See [Deploying](#-deploying) for credentials, raw manifests, CronJob mode, alternative backends, and chart verification.
+
+### Convert CRD YAML Locally
+
+Use the standalone binary or `go run ./cmd/` to convert CRD YAML files without a cluster connection.
+
+```bash
+# Convert one CRD YAML file
+crd-schema-publisher convert --file crd.yaml --output-dir ./schemas
+
+# Convert every YAML CRD in a directory
+crd-schema-publisher convert --dir ./crds/ --output-dir ./schemas
+
+# Pipe CRDs from kubectl
+kubectl get crds -o yaml | crd-schema-publisher convert --file - --output-dir ./schemas
+```
+
+See [Standalone Binary](#standalone-binary) for release downloads and [Configuration and CLI Reference](#configuration-and-cli-reference) for flags and command behavior.
+
+### Use Published Schemas
+
+Once published, your schemas are available at `https://<your-pages-domain>/<apigroup>/<kind>_<version>.json`.
+
+```yaml
+# yaml-language-server: $schema=https://kube-schemas.example.com/cert-manager.io/certificate_v1.json
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: example
+```
+
+See [Using Your Schemas](#-using-your-schemas) for IDE and kubeconform examples.
+
+## 📦 Installation
+
+### Standalone Binary
+
+Static binaries for Linux and macOS (amd64 + arm64) are attached to each [GitHub Release](https://github.com/sholdee/crd-schema-publisher/releases).
+
+```bash
+# Download the latest release (example: Linux amd64)
+curl -LO https://github.com/sholdee/crd-schema-publisher/releases/latest/download/crd-schema-publisher-linux-amd64
+chmod +x crd-schema-publisher-linux-amd64
+```
+
+### Verify Release Artifacts
+
+```bash
+# Verify the signed checksum manifest
+curl -LO https://github.com/sholdee/crd-schema-publisher/releases/latest/download/checksums-sha256.txt
+curl -LO https://github.com/sholdee/crd-schema-publisher/releases/latest/download/checksums-sha256.txt.sigstore.json
+cosign verify-blob checksums-sha256.txt \
+  --bundle checksums-sha256.txt.sigstore.json \
+  --certificate-identity 'https://github.com/sholdee/crd-schema-publisher/.github/workflows/release.yaml@refs/heads/main' \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
+
+# Verify the binary against the trusted checksum manifest
+sha256sum -c --ignore-missing checksums-sha256.txt
+
+# Optional: verify build provenance for the binary
+gh attestation verify ./crd-schema-publisher-linux-amd64 \
+  --repo sholdee/crd-schema-publisher \
+  --signer-workflow sholdee/crd-schema-publisher/.github/workflows/release.yaml \
+  --source-ref refs/heads/main
+```
 
 ## 🚀 Deploying
 
@@ -84,6 +171,21 @@ helm install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-schema-publis
 
 Each example is a self-contained values file — copy it, fill in your credentials, and install. See the comments in each file for what to customize.
 
+#### GitHub Pages subpath deployments
+
+When serving schemas from a GitHub Pages project path such as `https://user.github.io/iac/`, set the base path so generated HTML links include the subpath:
+
+```bash
+BASE_PATH=/iac
+```
+
+Or in the Helm chart:
+
+```yaml
+config:
+  basePath: "/iac"
+```
+
 If you already use the first-party `git-push` or `rclone-s3` examples, update them to read `/data/current`. Older example configs fail closed after upgrading to a new image: syncing stops, but existing remote content is not deleted or overwritten. Cloudflare Pages users do not need to change anything.
 
 #### Verification
@@ -128,7 +230,7 @@ Pre-built multi-arch images (amd64 + arm64) are published to GHCR:
 ghcr.io/sholdee/crd-schema-publisher:latest
 ```
 
-Releases are triggered manually via the release workflow, producing a date-based tag (`vYYYY.MDD.HMMSS` — e.g. `v2026.413.65435`) and `latest`, with auto-generated release notes including the image digest and OCI Helm chart reference. PR builds get `pr-N` tags for testing.
+Releases are triggered manually via the release workflow, producing a date-based tag (`vYYYY.MDD.HMMSS` — e.g. `v2026.413.65435`) and `latest`. Release notes include the image digest, OCI Helm chart reference, signed checksum manifest, binary provenance link, and standalone binary attachments. PR builds get `pr-N` tags for testing.
 
 Images use `gcr.io/distroless/static:nonroot` as the runtime base — no shell, no package manager, runs as UID 65534. Production images are signed with [cosign](https://docs.sigstore.dev/cosign/overview/) keyless signing via GitHub Actions OIDC:
 
@@ -138,9 +240,11 @@ cosign verify ghcr.io/sholdee/crd-schema-publisher:latest \
   --certificate-identity-regexp github.com/sholdee/crd-schema-publisher
 ```
 
-### Configuration
+## Configuration and CLI Reference
 
-All configuration is via environment variables. Variables marked *(watch)* apply only to watch mode deployment.
+### Environment Variables
+
+Deployment/runtime configuration is primarily via environment variables. For local CLI use, `extract`, `convert`, `run`, `watch`, `upload`, and `preview` also expose command-specific flags such as `--output-dir`. Variables marked *(watch)* apply only to watch mode deployment.
 
 | Variable | Required | Default | Description |
 | -------- | -------- | ------- | ----------- |
@@ -158,62 +262,32 @@ All configuration is via environment variables. Variables marked *(watch)* apply
 | `SKIP_RENDER` | No | — | Set to `true` to skip HTML schema page rendering |
 | `BASE_PATH` | No | — | URL path prefix for subpath deployments (e.g., `/iac` for GitHub Pages at `user.github.io/iac/`) |
 
-### Subpath Deployments (GitHub Pages)
+### Command Behavior
 
-When hosting schemas at a URL subpath (e.g., `https://user.github.io/iac/`), set `BASE_PATH` to the subpath:
+```text
+crd-schema-publisher [command]
 
-```bash
-BASE_PATH=/iac go run ./cmd/ extract
+Commands:
+  run       Extract schemas and upload to Cloudflare Pages (default)
+  extract   Extract schemas from a Kubernetes cluster
+  convert   Convert CRD YAML files to JSON Schema
+  upload    Upload the active site from OUTPUT_DIR/current to Cloudflare Pages
+  watch     Watch for CRD changes and publish on each change (extract-only if no credentials)
+  preview   Serve a local preview of the documentation site
 ```
 
-Or in the Helm chart:
+| Command(s) | Output directory behavior |
+| --- | --- |
+| `extract` | Requires explicit `--output-dir` or `OUTPUT_DIR`; does not fall back to `/output`. |
+| `convert` | Requires `--output-dir`; does not read `OUTPUT_DIR`. |
+| `run`, `watch`, `upload` | Accept `--output-dir`; output root must already exist. |
+| `preview` | Uses sample data by default; reads real extracted output only when `--output-dir` is passed explicitly. |
 
-```yaml
-config:
-  basePath: "/iac"
-```
-
-All generated HTML links will include the base path prefix. The preview server also respects `BASE_PATH`, mounting content at the subpath for local testing:
-
-```bash
-BASE_PATH=/iac go run ./cmd/ preview
-# → http://127.0.0.1:8989/iac/
-```
-
-### Monitoring
-
-In watch mode, the health server exposes a `/metrics` endpoint on `HEALTH_PORT` (default 8080) in Prometheus text format.
-
-| Metric | Type | Description |
-| ------ | ---- | ----------- |
-| `crdpublisher_publish_cycle_duration_seconds` | gauge | Duration of the most recent publish cycle |
-| `crdpublisher_publish_cycle_total` | counter | Publish cycles by result (`success`, `error`) |
-| `crdpublisher_crds_discovered` | gauge | CRDs found in the most recent cycle |
-| `crdpublisher_schemas_written` | gauge | Schemas written in the most recent cycle |
-| `crdpublisher_last_successful_publish_timestamp` | gauge | Unix epoch of the last successful publish |
-| `crdpublisher_watchdog_timestamp` | gauge | Unix epoch of the last debounce loop tick |
-| `crdpublisher_publish_skipped_total` | counter | Debounce skips (publish already in progress) |
-| `crdpublisher_leader` | gauge | Whether this pod is the current leader |
-
-The watchdog timestamp enables dead man's switch alerting — it updates on every debounce loop tick (regardless of whether a publish occurs), so `time() - crdpublisher_watchdog_timestamp` staying fresh proves the watcher is alive. The publish timestamp separately tracks when content was last pushed.
-
-The Helm chart includes a PodMonitor — enable it with `--set metrics.podMonitor.enabled=true`. For raw manifests or vanilla Prometheus Operator, create a PodMonitor:
-
-```yaml
-apiVersion: monitoring.coreos.com/v1
-kind: PodMonitor
-metadata:
-  name: crd-schema-publisher
-spec:
-  selector:
-    matchLabels:
-      app: crd-schema-publisher
-  podMetricsEndpoints:
-    - port: health
-      path: /metrics
-```
-
-For vanilla Prometheus, add `prometheus.io/*` annotations to the pod template or configure a static scrape target.
+| Command(s) | Filters and command-specific flags |
+| --- | --- |
+| `extract`, `convert` | Support comma-separated, case-insensitive `--kind`, `--group`, and `--version` filters. |
+| `extract` | Supports `--context`, `--base-path`, and `--skip-render`. |
+| `convert` | Supports `--file`, non-recursive `--dir` YAML loading, optional `--render`, and `--base-path` for rendered links. |
 
 ## 📋 Using Your Schemas
 
@@ -259,7 +333,46 @@ This validates built-in Kubernetes resources against the default schemas and CRD
 
 > **Note:** Schema files are written as lowercase (e.g., `certificate_v1.json`) while `{{.ResourceKind}}` expands to the original case (e.g., `Certificate`). This works on Cloudflare Pages because it serves paths case-insensitively — the same convention used by [datreeio/CRDs-catalog](https://github.com/datreeio/CRDs-catalog). If serving schemas from a case-sensitive host, use lowercase kind names in your template paths.
 
-## Output Structure
+## Operations
+
+### Monitoring
+
+In watch mode, the health server exposes a `/metrics` endpoint on `HEALTH_PORT` (default 8080) in Prometheus text format.
+
+| Metric | Type | Description |
+| ------ | ---- | ----------- |
+| `crdpublisher_publish_cycle_duration_seconds` | gauge | Duration of the most recent publish cycle |
+| `crdpublisher_publish_cycle_total` | counter | Publish cycles by result (`success`, `error`) |
+| `crdpublisher_crds_discovered` | gauge | CRDs found in the most recent cycle |
+| `crdpublisher_schemas_written` | gauge | Schemas written in the most recent cycle |
+| `crdpublisher_last_successful_publish_timestamp` | gauge | Unix epoch of the last successful publish |
+| `crdpublisher_watchdog_timestamp` | gauge | Unix epoch of the last debounce loop tick |
+| `crdpublisher_publish_skipped_total` | counter | Debounce skips (publish already in progress) |
+| `crdpublisher_leader` | gauge | Whether this pod is the current leader |
+
+The watchdog timestamp enables dead man's switch alerting — it updates on every debounce loop tick (regardless of whether a publish occurs), so `time() - crdpublisher_watchdog_timestamp` staying fresh proves the watcher is alive. The publish timestamp separately tracks when content was last pushed.
+
+The Helm chart includes a PodMonitor — enable it with `--set metrics.podMonitor.enabled=true`. For raw manifests or vanilla Prometheus Operator, create a PodMonitor:
+
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: crd-schema-publisher
+spec:
+  selector:
+    matchLabels:
+      app: crd-schema-publisher
+  podMetricsEndpoints:
+    - port: health
+      path: /metrics
+```
+
+For vanilla Prometheus, add `prometheus.io/*` annotations to the pod template or configure a static scrape target.
+
+### Output Structure
+
+Cluster-backed site generation (`run`, `extract`, `watch`) and preview temp generations use this layout:
 
 ```text
 <output-dir>/
@@ -280,18 +393,11 @@ This validates built-in Kubernetes resources against the default schemas and CRD
 
 Direct-volume consumers should read or serve `OUTPUT_DIR/current`, not the flat root of `OUTPUT_DIR`. First-party Cloudflare, git, S3, and Caddy examples exclude `_meta/` from published or served output.
 
+`convert` writes schema files directly into `--output-dir` instead of creating `.generations/current`. It records generated files in `_meta/convert-manifest.json` so reruns can remove stale generated artifacts while preserving files that existed before `convert` ran.
+
 ## ⚙️ How It Works
 
-```text
-crd-schema-publisher [command]
-
-Commands:
-  run       Extract schemas and upload to Cloudflare Pages (default)
-  extract   Extract schemas and generate the active site under OUTPUT_DIR/current
-  upload    Upload the active site from OUTPUT_DIR/current to Cloudflare Pages
-  watch     Watch for CRD changes and publish on each change (extract-only if no credentials)
-  preview   Generate a sample or active site snapshot and serve it locally
-```
+For cluster-backed commands (`run`, `extract`, and `watch`), the pipeline is:
 
 1. Connects to the Kubernetes API (in-cluster or via kubeconfig)
 2. Lists all CRDs and extracts `.spec.versions[].schema.openAPIV3Schema`
@@ -307,9 +413,42 @@ Commands:
 7. Atomically switches `OUTPUT_DIR/current` to the completed generation so sidecars read a stable snapshot
 8. Uploads the active generation to Cloudflare Pages via the direct upload API (BLAKE3 content hashing, batched uploads with retry)
 
+The `convert` command skips Kubernetes access and reads CRD YAML from `--file`, stdin (`--file -`), and/or a non-recursive `--dir`. It applies the same schema transforms and writes flat output directly to `--output-dir`; with `--render`, it also renders HTML pages and an index.
+
 ## 🔧 Development
 
 ### Run Locally
+
+Use the package path (`go run ./cmd/ <command>`) for local subcommands so Go compiles every file in `cmd/`. Single-file invocation (`go run ./cmd/main.go --help` or `--version`) is only kept for top-level smoke checks.
+
+```bash
+# Extract schemas from a local cluster (no upload)
+KUBECTL_CONTEXT=my-cluster OUTPUT_DIR=./output go run ./cmd/ extract
+# Writes the active snapshot under ./output/current
+
+# Full run with upload
+mkdir -p ./output
+KUBECTL_CONTEXT=my-cluster \
+  CLOUDFLARE_API_TOKEN=xxx \
+  CLOUDFLARE_ACCOUNT_ID=xxx \
+  go run ./cmd/ --output-dir ./output
+
+# Convert CRD YAML files to JSON Schema (no cluster needed)
+go run ./cmd/ convert --file crd.yaml --output-dir ./schemas
+
+# Convert all CRDs in a directory
+go run ./cmd/ convert --dir ./crds/ --output-dir ./schemas
+
+# Pipe from kubectl
+kubectl get crds -o yaml | go run ./cmd/ convert --file - --output-dir ./schemas
+
+# Filter by kind and group
+go run ./cmd/ extract --output-dir ./schemas --kind certificate,issuer --group cert-manager.io
+```
+
+### Preview the Site Locally
+
+Preview is useful for UI development and local inspection. It needs no cluster or credentials when using sample data.
 
 ```bash
 # Preview the index UI (no cluster or credentials needed)
@@ -317,18 +456,12 @@ go run ./cmd/ preview
 # open http://127.0.0.1:8989
 
 # Preview with real extracted schemas
-OUTPUT_DIR=./output go run ./cmd/ preview
+go run ./cmd/ preview --output-dir ./output
 # Serves the active snapshot from ./output/current
 
-# Extract schemas from a local cluster (no upload)
-KUBECTL_CONTEXT=my-cluster OUTPUT_DIR=./output go run ./cmd/ extract
-# Writes the active snapshot under ./output/current
-
-# Full run with upload
-KUBECTL_CONTEXT=my-cluster \
-  CLOUDFLARE_API_TOKEN=xxx \
-  CLOUDFLARE_ACCOUNT_ID=xxx \
-  go run ./cmd/
+# Preview a subpath deployment locally
+BASE_PATH=/iac go run ./cmd/ preview
+# open http://127.0.0.1:8989/iac/
 ```
 
 ### Build
@@ -337,8 +470,15 @@ KUBECTL_CONTEXT=my-cluster \
 # Native build
 go build -o crd-schema-publisher ./cmd/
 
-# Static cross-compile (matches CI)
+# Example static cross-compile
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o crd-schema-publisher ./cmd/
+
+# Build all release binaries locally
+for pair in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+  GOOS="${pair%/*}" GOARCH="${pair#*/}"
+  CGO_ENABLED=0 GOOS="${GOOS}" GOARCH="${GOARCH}" \
+    go build -ldflags="-s -w" -o "crd-schema-publisher-${GOOS}-${GOARCH}" ./cmd/
+done
 
 # Docker (multi-arch)
 docker buildx build --platform linux/amd64,linux/arm64 -t crd-schema-publisher .

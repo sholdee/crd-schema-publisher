@@ -47,19 +47,19 @@ helm install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-schema-publis
 
 See [Deploying](#-deploying) for credentials, raw manifests, CronJob mode, alternative backends, and chart verification.
 
-### Convert CRD YAML Locally
+### Generate Schemas with the CLI
 
-Use the standalone binary or `go run ./cmd/` to convert CRD YAML files without a cluster connection.
+Use the standalone binary or `go run ./cmd/` to extract schemas from a kubeconfig context or convert CRD YAML files without a cluster connection.
 
 ```bash
-# Convert one CRD YAML file
+# Extract from the current kubeconfig context
+crd-schema-publisher extract -o ./schemas
+
+# Extract from a specific context
+crd-schema-publisher extract --context my-cluster -o ./schemas
+
+# Convert CRD YAML without a cluster
 crd-schema-publisher convert -f crd.yaml -o ./schemas
-
-# Convert every YAML CRD in a directory
-crd-schema-publisher convert -d ./crds/ -o ./schemas
-
-# Pipe CRDs from kubectl
-kubectl get crds -o yaml | crd-schema-publisher convert -f - -o ./schemas
 ```
 
 See [Standalone Binary](#standalone-binary) for release downloads and [Configuration and CLI Reference](#configuration-and-cli-reference) for flags and command behavior.

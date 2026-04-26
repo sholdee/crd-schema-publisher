@@ -99,6 +99,25 @@
         "basePath": {
           "type": "string",
           "description": "URL path prefix for subpath deployments (e.g., /iac)"
+        },
+        "filter": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Optional schema filters applied to generated output",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "description": "Filter by CRD kind, comma-separated and case-insensitive"
+            },
+            "group": {
+              "type": "string",
+              "description": "Filter by API group, comma-separated and case-insensitive"
+            },
+            "version": {
+              "type": "string",
+              "description": "Filter by API version, comma-separated and case-insensitive"
+            }
+          }
         }
       }
     },

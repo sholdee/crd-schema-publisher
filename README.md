@@ -147,6 +147,20 @@ helm install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-schema-publis
 
 The default remote ref points to a `crd-schema-publisher-cloudflare` key with `api-token` and `account-id` properties — override via `externalSecret.data` if your provider uses different paths.
 
+#### Schema filtering
+
+To publish only part of the cluster CRD catalog, set `config.filter.group`, `config.filter.kind`, and/or `config.filter.version`. Values are comma-separated and case-insensitive.
+
+```bash
+helm install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-schema-publisher \
+  --namespace crd-schema-publisher \
+  --create-namespace \
+  --set config.filter.group=cert-manager.io \
+  --set-string 'config.filter.kind=Certificate\,Issuer'
+```
+
+Controller mode still watches all CRDs, then applies the filter to each generated output snapshot. If active filters match no CRDs, the next runtime build publishes an empty catalog instead of preserving a previous broader snapshot.
+
 #### Optional features
 
 Persistent output volume (`persistence`), extra volumes/volume mounts/containers (`extraVolumes`, `extraVolumeMounts`, `extraContainers`), PodMonitor, PrometheusRule, Grafana dashboard (sidecar ConfigMap), NetworkPolicy, CiliumNetworkPolicy, PodDisruptionBudget, pod anti-affinity presets, topology spread constraints, and templated extra objects. See [`values.yaml`](charts/crd-schema-publisher/values.yaml) for all options.
@@ -261,6 +275,11 @@ Deployment/runtime configuration is primarily via environment variables. For loc
 | `PREVIEW_ADDR` | No | `127.0.0.1:8989` | Listen address for preview server (preview mode) |
 | `SKIP_RENDER` | No | — | Set to `true` to skip HTML schema page rendering |
 | `BASE_PATH` | No | — | URL path prefix for subpath deployments (e.g., `/iac` for GitHub Pages at `user.github.io/iac/`) |
+| `SCHEMA_FILTER_KIND` | No | — | Restrict generated schemas to matching CRD kinds, comma-separated and case-insensitive (`run`, `extract`, `watch`) |
+| `SCHEMA_FILTER_GROUP` | No | — | Restrict generated schemas to matching API groups, comma-separated and case-insensitive (`run`, `extract`, `watch`) |
+| `SCHEMA_FILTER_VERSION` | No | — | Restrict generated schemas to matching API versions, comma-separated and case-insensitive (`run`, `extract`, `watch`) |
+
+Schema filters limit generated output only. In watch mode, the controller still watches all cluster CRDs and applies the filters during each publish cycle. If active filters match no CRDs, runtime builds publish an empty catalog instead of leaving stale schemas in place.
 
 ### Command Behavior
 
@@ -285,8 +304,9 @@ Commands:
 
 | Command(s) | Filters and command-specific flags |
 | --- | --- |
-| `extract`, `convert` | Support comma-separated, case-insensitive `--kind`, `--group`, and `--version` filters. |
+| `run`, `extract`, `watch` | Support comma-separated, case-insensitive `--kind`, `--group`, and `--version` filters. Defaults can also come from `SCHEMA_FILTER_KIND`, `SCHEMA_FILTER_GROUP`, and `SCHEMA_FILTER_VERSION`. |
 | `extract` | Supports `--context`, `--base-path`, and `--skip-render`. |
+| `convert` | Supports comma-separated, case-insensitive `--kind`, `--group`, and `--version` filters. |
 | `convert` | Supports `--file`, non-recursive `--dir` YAML loading, optional `--render`, and `--base-path` for rendered links. |
 
 ## 📋 Using Your Schemas
@@ -444,6 +464,9 @@ kubectl get crds -o yaml | go run ./cmd/ convert --file - --output-dir ./schemas
 
 # Filter by kind and group
 go run ./cmd/ extract --output-dir ./schemas --kind certificate,issuer --group cert-manager.io
+
+# Filter a runtime extraction through env vars
+SCHEMA_FILTER_GROUP=cert-manager.io go run ./cmd/ --output-dir ./output
 ```
 
 ### Preview the Site Locally

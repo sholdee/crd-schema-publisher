@@ -112,6 +112,95 @@ func TestRunAll_OutputDirFlagOverridesEnvVar(t *testing.T) {
 	}
 }
 
+func TestRunAll_UsesSchemaFilterEnvVars(t *testing.T) {
+	clientOrig := buildClientFunc
+	buildOrig := buildSiteFunc
+	publishOrig := publishOutputFunc
+	defer func() {
+		buildClientFunc = clientOrig
+		buildSiteFunc = buildOrig
+		publishOutputFunc = publishOrig
+	}()
+
+	var captured extractor.SiteBuildOptions
+	buildClientFunc = func(string) (*apiextensionsclient.Clientset, error) {
+		return apiextensionsclient.NewForConfig(&rest.Config{Host: "https://example.invalid"})
+	}
+	buildSiteFunc = func(opts extractor.SiteBuildOptions) (extractor.SiteBuildResult, error) {
+		captured = opts
+		return extractor.SiteBuildResult{Status: extractor.BuildResultNoop}, nil
+	}
+	publishOutputFunc = func(string) error {
+		t.Fatal("publish should not be called for noop build")
+		return nil
+	}
+
+	t.Setenv("OUTPUT_DIR", t.TempDir())
+	t.Setenv("SCHEMA_FILTER_KIND", "Certificate,Issuer")
+	t.Setenv("SCHEMA_FILTER_GROUP", "Cert-Manager.IO")
+	t.Setenv("SCHEMA_FILTER_VERSION", "V1")
+
+	if err := runAll(nil); err != nil {
+		t.Fatalf("runAll error: %v", err)
+	}
+	if got := strings.Join(captured.Filter.Kinds, ","); got != "certificate,issuer" {
+		t.Fatalf("expected env kind filter, got %q", got)
+	}
+	if got := strings.Join(captured.Filter.Groups, ","); got != "cert-manager.io" {
+		t.Fatalf("expected env group filter, got %q", got)
+	}
+	if got := strings.Join(captured.Filter.Versions, ","); got != "v1" {
+		t.Fatalf("expected env version filter, got %q", got)
+	}
+}
+
+func TestRunAll_FilterFlagsOverrideEnvVars(t *testing.T) {
+	clientOrig := buildClientFunc
+	buildOrig := buildSiteFunc
+	publishOrig := publishOutputFunc
+	defer func() {
+		buildClientFunc = clientOrig
+		buildSiteFunc = buildOrig
+		publishOutputFunc = publishOrig
+	}()
+
+	var captured extractor.SiteBuildOptions
+	buildClientFunc = func(string) (*apiextensionsclient.Clientset, error) {
+		return apiextensionsclient.NewForConfig(&rest.Config{Host: "https://example.invalid"})
+	}
+	buildSiteFunc = func(opts extractor.SiteBuildOptions) (extractor.SiteBuildResult, error) {
+		captured = opts
+		return extractor.SiteBuildResult{Status: extractor.BuildResultNoop}, nil
+	}
+	publishOutputFunc = func(string) error {
+		t.Fatal("publish should not be called for noop build")
+		return nil
+	}
+
+	t.Setenv("OUTPUT_DIR", t.TempDir())
+	t.Setenv("SCHEMA_FILTER_KIND", "Certificate")
+	t.Setenv("SCHEMA_FILTER_GROUP", "cert-manager.io")
+	t.Setenv("SCHEMA_FILTER_VERSION", "v1")
+
+	err := runAll([]string{
+		"--kind", "Issuer",
+		"--group", "issuers.example.io",
+		"--version", "v1alpha1",
+	})
+	if err != nil {
+		t.Fatalf("runAll error: %v", err)
+	}
+	if got := strings.Join(captured.Filter.Kinds, ","); got != "issuer" {
+		t.Fatalf("expected flag kind filter, got %q", got)
+	}
+	if got := strings.Join(captured.Filter.Groups, ","); got != "issuers.example.io" {
+		t.Fatalf("expected flag group filter, got %q", got)
+	}
+	if got := strings.Join(captured.Filter.Versions, ","); got != "v1alpha1" {
+		t.Fatalf("expected flag version filter, got %q", got)
+	}
+}
+
 func TestRunAll_RejectsUnexpectedPositionalArgs(t *testing.T) {
 	clientOrig := buildClientFunc
 	defer func() {

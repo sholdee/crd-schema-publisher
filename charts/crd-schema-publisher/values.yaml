@@ -40,6 +40,14 @@ config:
   skipRender: ""
   # -- URL path prefix for subpath deployments (e.g., /iac for GitHub Pages at user.github.io/iac/)
   basePath: ""
+  # -- Optional schema filters. Values are comma-separated and case-insensitive.
+  filter:
+    # -- Filter by CRD kind, e.g. Certificate,Issuer
+    kind: ""
+    # -- Filter by API group, e.g. cert-manager.io
+    group: ""
+    # -- Filter by API version, e.g. v1,v1beta1
+    version: ""
 
 # ---------------------------------------------------------------------------
 # Secrets — optional; configure at most one of the two options below

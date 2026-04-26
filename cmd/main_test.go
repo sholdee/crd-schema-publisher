@@ -146,13 +146,33 @@ func TestParseSubcommand_LeadingOutputDirEqualsDefaultsToRun(t *testing.T) {
 	}
 }
 
-func TestParseSubcommand_NonOutputFlagDoesNotDefaultToRun(t *testing.T) {
+func TestParseSubcommand_LeadingFilterFlagDefaultsToRun(t *testing.T) {
 	cmd, args := parseSubcommand([]string{"crd-schema-publisher", "--kind", "certificate"})
-	if cmd != "--kind" {
-		t.Errorf("expected raw leading flag command '--kind', got %q", cmd)
+	if cmd != "run" {
+		t.Errorf("expected default 'run' for leading filter flag, got %q", cmd)
 	}
-	if len(args) != 1 || args[0] != "certificate" {
-		t.Errorf("expected ['certificate'], got %v", args)
+	if len(args) != 2 || args[0] != "--kind" || args[1] != "certificate" {
+		t.Errorf("expected ['--kind', 'certificate'], got %v", args)
+	}
+}
+
+func TestParseSubcommand_LeadingVersionFilterFlagDefaultsToRun(t *testing.T) {
+	cmd, args := parseSubcommand([]string{"crd-schema-publisher", "--version", "v1"})
+	if cmd != "run" {
+		t.Errorf("expected default 'run' for leading version filter flag, got %q", cmd)
+	}
+	if len(args) != 2 || args[0] != "--version" || args[1] != "v1" {
+		t.Errorf("expected ['--version', 'v1'], got %v", args)
+	}
+}
+
+func TestParseSubcommand_NonRunFlagDoesNotDefaultToRun(t *testing.T) {
+	cmd, args := parseSubcommand([]string{"crd-schema-publisher", "--base-path", "/docs"})
+	if cmd != "--base-path" {
+		t.Errorf("expected raw leading flag command '--base-path', got %q", cmd)
+	}
+	if len(args) != 1 || args[0] != "/docs" {
+		t.Errorf("expected ['/docs'], got %v", args)
 	}
 }
 
@@ -251,6 +271,9 @@ func TestRunExtract_FallsBackToEnvVars(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("OUTPUT_DIR", tmpDir)
 	t.Setenv("KUBECTL_CONTEXT", "env-context")
+	t.Setenv("SCHEMA_FILTER_KIND", "Certificate,Issuer")
+	t.Setenv("SCHEMA_FILTER_GROUP", "Cert-Manager.IO")
+	t.Setenv("SCHEMA_FILTER_VERSION", "V1")
 
 	err := runExtract([]string{})
 	if err != nil {
@@ -258,6 +281,15 @@ func TestRunExtract_FallsBackToEnvVars(t *testing.T) {
 	}
 	if capturedOpts.OutputDir != tmpDir {
 		t.Errorf("expected env OUTPUT_DIR %q, got %q", tmpDir, capturedOpts.OutputDir)
+	}
+	if got := strings.Join(capturedOpts.Filter.Kinds, ","); got != "certificate,issuer" {
+		t.Errorf("expected env kind filter, got %q", got)
+	}
+	if got := strings.Join(capturedOpts.Filter.Groups, ","); got != "cert-manager.io" {
+		t.Errorf("expected env group filter, got %q", got)
+	}
+	if got := strings.Join(capturedOpts.Filter.Versions, ","); got != "v1" {
+		t.Errorf("expected env version filter, got %q", got)
 	}
 }
 

@@ -120,6 +120,40 @@ func TestBuildSite_ZeroCRDsIsNoopAndPreservesOutput(t *testing.T) {
 	}
 }
 
+func TestBuildSite_FilterNoMatchesBuildsEmptyGenerationAndSwitchesCurrent(t *testing.T) {
+	outputDir := t.TempDir()
+	seedActiveGeneration(t, outputDir, map[string]string{
+		"index.html":               "old index",
+		"example.io/stale_v1.json": "{}",
+	})
+	before := currentTarget(t, outputDir)
+
+	result, err := BuildSite(SiteBuildOptions{
+		Lister:    &fakeLister{crds: []apiextensionsv1.CustomResourceDefinition{fakeCRD()}},
+		OutputDir: outputDir,
+		Filter:    ParseFilter("missing", "", ""),
+	})
+	if err != nil {
+		t.Fatalf("BuildSite error: %v", err)
+	}
+	if result.Status != BuildResultBuilt {
+		t.Fatalf("expected BuildResultBuilt, got %q", result.Status)
+	}
+	if result.CRDCount != 0 || result.SchemaCount != 0 {
+		t.Fatalf("expected empty filtered result, got CRDCount=%d SchemaCount=%d", result.CRDCount, result.SchemaCount)
+	}
+	after := currentTarget(t, outputDir)
+	if after == before {
+		t.Fatalf("expected current to switch from stale generation %q", before)
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "current", "index.html")); err != nil {
+		t.Fatalf("expected empty generation index: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "current", "example.io", "stale_v1.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected stale schema to be absent from empty filtered generation, got err=%v", err)
+	}
+}
+
 func TestBuildSite_SuccessCreatesGenerationAndSwitchesCurrent(t *testing.T) {
 	outputDir := t.TempDir()
 	seedActiveGeneration(t, outputDir, map[string]string{

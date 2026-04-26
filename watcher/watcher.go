@@ -41,6 +41,7 @@ type Config struct {
 	HealthPort string
 	Metrics    *metrics.Metrics    // nil = no metrics recording
 	CRDLister  extractor.CRDLister // nil = derive from Client
+	Filter     extractor.SchemaFilter
 }
 
 // Run starts the watcher with leader election and health server.
@@ -264,6 +265,7 @@ func publishCycle(cfg Config) (retErr error) {
 		OutputDir: cfg.OutputDir,
 		BasePath:  cfg.BasePath,
 		Render:    os.Getenv("SKIP_RENDER") != "true",
+		Filter:    cfg.Filter,
 	})
 	if err != nil {
 		return err

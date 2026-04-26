@@ -58,7 +58,7 @@ func BuildSite(opts SiteBuildOptions) (SiteBuildResult, error) {
 		return SiteBuildResult{}, fmt.Errorf("listing CRDs: %w", err)
 	}
 	crds = FilterCRDs(crds, opts.Filter)
-	if len(crds) == 0 {
+	if len(crds) == 0 && !opts.Filter.Active() {
 		return SiteBuildResult{Status: BuildResultNoop}, nil
 	}
 

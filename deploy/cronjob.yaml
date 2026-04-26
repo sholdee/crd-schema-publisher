@@ -42,6 +42,13 @@ spec:
                   value: kubernetes-schemas
                 - name: OUTPUT_DIR
                   value: /output
+                # Optional schema filters. Values are comma-separated and case-insensitive.
+                # - name: SCHEMA_FILTER_GROUP
+                #   value: cert-manager.io
+                # - name: SCHEMA_FILTER_KIND
+                #   value: Certificate,Issuer
+                # - name: SCHEMA_FILTER_VERSION
+                #   value: v1
               resources:
                 requests:
                   cpu: 50m

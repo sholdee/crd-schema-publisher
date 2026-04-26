@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sholdee/crd-schema-publisher/extractor"
 	"github.com/sholdee/crd-schema-publisher/metrics"
 	"github.com/sholdee/crd-schema-publisher/publisher"
 
@@ -237,6 +238,41 @@ func TestPublishCycle_HappyPath(t *testing.T) {
 	indexPath := filepath.Join(dir, "current", "index.html")
 	if _, err := os.Stat(indexPath); os.IsNotExist(err) {
 		t.Fatalf("expected index.html at %s", indexPath)
+	}
+}
+
+func TestPublishCycle_AppliesConfiguredFilter(t *testing.T) {
+	t.Setenv("SKIP_RENDER", "true")
+	dir := t.TempDir()
+	keepGen := filepath.Join(dir, ".generations", "seed")
+	if err := os.MkdirAll(filepath.Join(keepGen, "example.io"), 0o755); err != nil {
+		t.Fatalf("mkdir seed generation: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(keepGen, "index.html"), []byte("old index"), 0o644); err != nil {
+		t.Fatalf("write seed index: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(keepGen, "example.io", "test_v1.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write seed schema: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(".generations", "seed"), filepath.Join(dir, "current")); err != nil {
+		t.Fatalf("symlink current: %v", err)
+	}
+
+	cfg := Config{
+		OutputDir: dir,
+		CRDLister: &fakeLister{crds: []apiextensionsv1.CustomResourceDefinition{testCRD()}},
+		Filter:    extractor.ParseFilter("missing", "", ""),
+	}
+
+	if err := publishCycle(cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "current", "index.html")); err != nil {
+		t.Fatalf("expected empty filtered generation index: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "current", "example.io", "test_v1.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected stale schema to be absent after filtered publish cycle, got err=%v", err)
 	}
 }
 

@@ -112,6 +112,20 @@ Optional Secret refs + config vars that apply to all modes.
 - name: BASE_PATH
   value: {{ .Values.config.basePath | quote }}
 {{- end }}
+{{- with .Values.config.filter }}
+{{- if .kind }}
+- name: SCHEMA_FILTER_KIND
+  value: {{ .kind | quote }}
+{{- end }}
+{{- if .group }}
+- name: SCHEMA_FILTER_GROUP
+  value: {{ .group | quote }}
+{{- end }}
+{{- if .version }}
+- name: SCHEMA_FILTER_VERSION
+  value: {{ .version | quote }}
+{{- end }}
+{{- end }}
 {{- end }}
 
 {{/*

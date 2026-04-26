@@ -20,6 +20,10 @@ func ParseFilter(kinds, groups, versions string) SchemaFilter {
 	}
 }
 
+func (f SchemaFilter) Active() bool {
+	return f.Kinds != nil || f.Groups != nil || f.Versions != nil
+}
+
 func parseCSV(s string) []string {
 	s = strings.TrimSpace(s)
 	if s == "" {

@@ -82,13 +82,25 @@ func parseSubcommand(osArgs []string) (string, []string) {
 	if arg == "--help" || arg == "-h" {
 		return "help", nil
 	}
-	if arg == "--version" || arg == "-v" {
+	if arg == "--version" && len(osArgs) == 2 {
 		return "version", nil
 	}
-	if arg == "--output-dir" || strings.HasPrefix(arg, "--output-dir=") {
+	if arg == "-v" {
+		return "version", nil
+	}
+	if isDefaultRunFlag(arg) {
 		return "run", osArgs[1:]
 	}
 	return arg, osArgs[2:]
+}
+
+func isDefaultRunFlag(arg string) bool {
+	for _, name := range []string{"output-dir", "kind", "group", "version"} {
+		if arg == "--"+name || strings.HasPrefix(arg, "--"+name+"=") {
+			return true
+		}
+	}
+	return false
 }
 
 func handleCmdError(cmd string, err error) {

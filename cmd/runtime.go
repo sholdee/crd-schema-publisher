@@ -18,6 +18,17 @@ import (
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 )
 
+const (
+	schemaFilterKindEnv    = "SCHEMA_FILTER_KIND"
+	schemaFilterGroupEnv   = "SCHEMA_FILTER_GROUP"
+	schemaFilterVersionEnv = "SCHEMA_FILTER_VERSION"
+)
+
+type runtimeCommandOptions struct {
+	OutputDir string
+	Filter    extractor.SchemaFilter
+}
+
 func init() {
 	registerCommand("run", runAll)
 	registerCommand("extract", runExtract)
@@ -36,9 +47,9 @@ func runExtract(args []string) error {
 	basePath := fs.String("base-path", os.Getenv("BASE_PATH"), "URL path prefix for subpath deployments")
 	kubeContext := fs.String("context", os.Getenv("KUBECTL_CONTEXT"), "Kubernetes context")
 	skipRender := fs.Bool("skip-render", os.Getenv("SKIP_RENDER") == "true", "skip HTML rendering")
-	kind := fs.String("kind", "", "filter by kind (comma-separated, case-insensitive)")
-	group := fs.String("group", "", "filter by group (comma-separated, case-insensitive)")
-	version := fs.String("version", "", "filter by version (comma-separated, case-insensitive)")
+	kind := fs.String("kind", os.Getenv(schemaFilterKindEnv), "filter by kind (comma-separated, case-insensitive)")
+	group := fs.String("group", os.Getenv(schemaFilterGroupEnv), "filter by group (comma-separated, case-insensitive)")
+	version := fs.String("version", os.Getenv(schemaFilterVersionEnv), "filter by version (comma-separated, case-insensitive)")
 
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -77,7 +88,26 @@ func runExtract(args []string) error {
 	return nil
 }
 
-func runBuild(outputDir string) (extractor.SiteBuildResult, error) {
+func parseRuntimeCommandArgs(cmd string, args []string, fallbackOutputDir string) (runtimeCommandOptions, error) {
+	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
+	outputDir := fs.String("output-dir", fallbackOutputDir, "output directory")
+	kind := fs.String("kind", os.Getenv(schemaFilterKindEnv), "filter by kind (comma-separated, case-insensitive)")
+	group := fs.String("group", os.Getenv(schemaFilterGroupEnv), "filter by group (comma-separated, case-insensitive)")
+	version := fs.String("version", os.Getenv(schemaFilterVersionEnv), "filter by version (comma-separated, case-insensitive)")
+	if err := fs.Parse(args); err != nil {
+		return runtimeCommandOptions{}, err
+	}
+	if extras := fs.Args(); len(extras) > 0 {
+		return runtimeCommandOptions{}, fmt.Errorf("unexpected arguments for %s: %s", cmd, strings.Join(extras, " "))
+	}
+
+	return runtimeCommandOptions{
+		OutputDir: *outputDir,
+		Filter:    extractor.ParseFilter(*kind, *group, *version),
+	}, nil
+}
+
+func runBuild(outputDir string, filter extractor.SchemaFilter) (extractor.SiteBuildResult, error) {
 	basePath := normalizeBasePath(os.Getenv("BASE_PATH"))
 	kubeContext := os.Getenv("KUBECTL_CONTEXT")
 
@@ -92,6 +122,7 @@ func runBuild(outputDir string) (extractor.SiteBuildResult, error) {
 		OutputDir: outputDir,
 		BasePath:  basePath,
 		Render:    os.Getenv("SKIP_RENDER") != "true",
+		Filter:    filter,
 	})
 	if err != nil {
 		return extractor.SiteBuildResult{}, err
@@ -134,11 +165,11 @@ func runUpload(args []string) error {
 }
 
 func runWatch(args []string) error {
-	outputDir, _, err := parseOutputDirArg("watch", args, getEnv("OUTPUT_DIR", "/output"))
+	opts, err := parseRuntimeCommandArgs("watch", args, getEnv("OUTPUT_DIR", "/output"))
 	if err != nil {
 		return err
 	}
-	if err := requireExistingOutputDir(outputDir, "Set OUTPUT_DIR or pass --output-dir to a pre-created directory"); err != nil {
+	if err := requireExistingOutputDir(opts.OutputDir, "Set OUTPUT_DIR or pass --output-dir to a pre-created directory"); err != nil {
 		return err
 	}
 	basePath := normalizeBasePath(os.Getenv("BASE_PATH"))
@@ -192,7 +223,7 @@ func runWatch(args []string) error {
 	return watcher.Run(ctx, watcher.Config{
 		Client:     client,
 		KubeConfig: cfg,
-		OutputDir:  outputDir,
+		OutputDir:  opts.OutputDir,
 		BasePath:   basePath,
 		Publisher:  pub,
 		Debounce:   time.Duration(debounceSeconds) * time.Second,
@@ -200,19 +231,20 @@ func runWatch(args []string) error {
 		LeaseName:  leaseName,
 		PodName:    podName,
 		HealthPort: healthPort,
+		Filter:     opts.Filter,
 	})
 }
 
 func runAll(args []string) error {
-	outputDir, _, err := parseOutputDirArg("run", args, getEnv("OUTPUT_DIR", "/output"))
+	opts, err := parseRuntimeCommandArgs("run", args, getEnv("OUTPUT_DIR", "/output"))
 	if err != nil {
 		return err
 	}
-	if err := requireExistingOutputDir(outputDir, "Set OUTPUT_DIR or pass --output-dir to a pre-created directory"); err != nil {
+	if err := requireExistingOutputDir(opts.OutputDir, "Set OUTPUT_DIR or pass --output-dir to a pre-created directory"); err != nil {
 		return err
 	}
 
-	result, err := runBuild(outputDir)
+	result, err := runBuild(opts.OutputDir, opts.Filter)
 	if err != nil {
 		return fmt.Errorf("%w\n\n"+
 			"The \"run\" command extracts schemas from a Kubernetes cluster and uploads when Cloudflare credentials are configured.\n\n"+
@@ -233,7 +265,7 @@ func runAll(args []string) error {
 		return nil
 	}
 
-	if err := publishOutputFunc(outputDir); err != nil {
+	if err := publishOutputFunc(opts.OutputDir); err != nil {
 		return fmt.Errorf("upload: %w", err)
 	}
 	return nil

@@ -95,12 +95,20 @@ func parseSubcommand(osArgs []string) (string, []string) {
 }
 
 func isDefaultRunFlag(arg string) bool {
+	if arg == "-o" || strings.HasPrefix(arg, "-o=") {
+		return true
+	}
 	for _, name := range []string{"output-dir", "kind", "group", "version"} {
 		if arg == "--"+name || strings.HasPrefix(arg, "--"+name+"=") {
 			return true
 		}
 	}
 	return false
+}
+
+func stringFlagWithAlias(fs *flag.FlagSet, target *string, name, alias, value, usage string) {
+	fs.StringVar(target, name, value, usage)
+	fs.StringVar(target, alias, value, usage)
 }
 
 func handleCmdError(cmd string, err error) {
@@ -151,7 +159,8 @@ func requireEnv(key string) (string, error) {
 
 func parseOutputDirArg(cmd string, args []string, fallback string) (string, bool, error) {
 	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
-	outputDir := fs.String("output-dir", fallback, "output directory")
+	var outputDir string
+	stringFlagWithAlias(fs, &outputDir, "output-dir", "o", fallback, "output directory")
 	if err := fs.Parse(args); err != nil {
 		return "", false, err
 	}
@@ -160,11 +169,11 @@ func parseOutputDirArg(cmd string, args []string, fallback string) (string, bool
 	}
 	explicit := false
 	fs.Visit(func(f *flag.Flag) {
-		if f.Name == "output-dir" {
+		if f.Name == "output-dir" || f.Name == "o" {
 			explicit = true
 		}
 	})
-	return *outputDir, explicit, nil
+	return outputDir, explicit, nil
 }
 
 func requireExistingOutputDir(outputDir, guidance string) error {

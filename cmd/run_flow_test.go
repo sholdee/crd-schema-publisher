@@ -112,6 +112,41 @@ func TestRunAll_OutputDirFlagOverridesEnvVar(t *testing.T) {
 	}
 }
 
+func TestRunAll_OutputDirShortFlagOverridesEnvVar(t *testing.T) {
+	clientOrig := buildClientFunc
+	buildOrig := buildSiteFunc
+	publishOrig := publishOutputFunc
+	defer func() {
+		buildClientFunc = clientOrig
+		buildSiteFunc = buildOrig
+		publishOutputFunc = publishOrig
+	}()
+
+	var captured extractor.SiteBuildOptions
+	buildClientFunc = func(string) (*apiextensionsclient.Clientset, error) {
+		return apiextensionsclient.NewForConfig(&rest.Config{Host: "https://example.invalid"})
+	}
+	buildSiteFunc = func(opts extractor.SiteBuildOptions) (extractor.SiteBuildResult, error) {
+		captured = opts
+		return extractor.SiteBuildResult{Status: extractor.BuildResultNoop}, nil
+	}
+	publishOutputFunc = func(string) error {
+		t.Fatal("publish should not be called for noop build")
+		return nil
+	}
+
+	envDir := t.TempDir()
+	flagDir := t.TempDir()
+	t.Setenv("OUTPUT_DIR", envDir)
+
+	if err := runAll([]string{"-o", flagDir}); err != nil {
+		t.Fatalf("runAll error: %v", err)
+	}
+	if captured.OutputDir != flagDir {
+		t.Fatalf("expected short output dir %q, got %q", flagDir, captured.OutputDir)
+	}
+}
+
 func TestRunAll_UsesSchemaFilterEnvVars(t *testing.T) {
 	clientOrig := buildClientFunc
 	buildOrig := buildSiteFunc

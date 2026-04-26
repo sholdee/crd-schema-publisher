@@ -186,9 +186,12 @@ func loadCRDs(fileList, dir string) ([]apiextensionsv1.CustomResourceDefinition,
 
 func runConvert(args []string) error {
 	fs := flag.NewFlagSet("convert", flag.ContinueOnError)
-	fileFlag := fs.String("file", "", "CRD YAML file(s), comma-separated (use - for stdin)")
-	dirFlag := fs.String("dir", "", "directory containing CRD YAML files")
-	outputDir := fs.String("output-dir", "", "output directory for JSON schemas (required)")
+	var fileFlag string
+	stringFlagWithAlias(fs, &fileFlag, "file", "f", "", "CRD YAML file(s), comma-separated (use - for stdin)")
+	var dirFlag string
+	stringFlagWithAlias(fs, &dirFlag, "dir", "d", "", "directory containing CRD YAML files")
+	var outputDir string
+	stringFlagWithAlias(fs, &outputDir, "output-dir", "o", "", "output directory for JSON schemas (required)")
 	basePath := fs.String("base-path", os.Getenv("BASE_PATH"), "URL path prefix for subpath deployments")
 	render := fs.Bool("render", false, "render HTML documentation pages")
 	kind := fs.String("kind", "", "filter by kind (comma-separated, case-insensitive)")
@@ -199,24 +202,24 @@ func runConvert(args []string) error {
 		return err
 	}
 
-	if *outputDir == "" {
+	if outputDir == "" {
 		return fmt.Errorf("--output-dir is required")
 	}
-	if err := extractor.ValidateOutputDir(*outputDir); err != nil {
+	if err := extractor.ValidateOutputDir(outputDir); err != nil {
 		return err
 	}
-	if *fileFlag == "" && *dirFlag == "" {
+	if fileFlag == "" && dirFlag == "" {
 		return fmt.Errorf("at least one of --file or --dir is required")
 	}
 
-	crds, err := loadCRDs(*fileFlag, *dirFlag)
+	crds, err := loadCRDs(fileFlag, dirFlag)
 	if err != nil {
 		return err
 	}
 
 	crds = extractor.FilterCRDs(crds, extractor.ParseFilter(*kind, *group, *version))
 
-	if err := cleanConvertArtifacts(*outputDir); err != nil {
+	if err := cleanConvertArtifacts(outputDir); err != nil {
 		return fmt.Errorf("preparing output directory: %w", err)
 	}
 
@@ -225,27 +228,27 @@ func runConvert(args []string) error {
 		return nil
 	}
 
-	preExisting := snapshotFiles(*outputDir)
+	preExisting := snapshotFiles(outputDir)
 
-	count, err := extractor.WriteSchemas(crds, *outputDir)
+	count, err := extractor.WriteSchemas(crds, outputDir)
 	if err != nil {
 		return fmt.Errorf("writing schemas: %w", err)
 	}
 
 	normalizedBasePath := normalizeBasePath(*basePath)
 	if *render {
-		if err := renderer.RenderAll(*outputDir, normalizedBasePath); err != nil {
+		if err := renderer.RenderAll(outputDir, normalizedBasePath); err != nil {
 			return fmt.Errorf("rendering schemas: %w", err)
 		}
-		if err := index.Generate(*outputDir, normalizedBasePath); err != nil {
+		if err := index.Generate(outputDir, normalizedBasePath); err != nil {
 			return fmt.Errorf("generating index: %w", err)
 		}
 	}
 
-	if err := writeConvertManifest(*outputDir, preExisting); err != nil {
+	if err := writeConvertManifest(outputDir, preExisting); err != nil {
 		return fmt.Errorf("writing convert manifest: %w", err)
 	}
 
-	slog.Info("convert complete", "count", count, "dir", *outputDir)
+	slog.Info("convert complete", "count", count, "dir", outputDir)
 	return nil
 }

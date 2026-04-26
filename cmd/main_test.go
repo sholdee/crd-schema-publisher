@@ -136,6 +136,16 @@ func TestParseSubcommand_LeadingFlagDefaultsToRun(t *testing.T) {
 	}
 }
 
+func TestParseSubcommand_LeadingOutputDirShortDefaultsToRun(t *testing.T) {
+	cmd, args := parseSubcommand([]string{"crd-schema-publisher", "-o", "/tmp/out"})
+	if cmd != "run" {
+		t.Errorf("expected default 'run' for -o, got %q", cmd)
+	}
+	if len(args) != 2 || args[0] != "-o" || args[1] != "/tmp/out" {
+		t.Errorf("expected ['-o', '/tmp/out'], got %v", args)
+	}
+}
+
 func TestParseSubcommand_LeadingOutputDirEqualsDefaultsToRun(t *testing.T) {
 	cmd, args := parseSubcommand([]string{"crd-schema-publisher", "--output-dir=/tmp/out"})
 	if cmd != "run" {
@@ -216,6 +226,19 @@ func TestVersionDefault(t *testing.T) {
 	}
 }
 
+func TestParseOutputDirArg_ShortOutputDirMarksExplicit(t *testing.T) {
+	outputDir, explicit, err := parseOutputDirArg("preview", []string{"-o", "/tmp/out"}, "/fallback")
+	if err != nil {
+		t.Fatalf("parseOutputDirArg error: %v", err)
+	}
+	if outputDir != "/tmp/out" {
+		t.Fatalf("expected short output dir /tmp/out, got %q", outputDir)
+	}
+	if !explicit {
+		t.Fatal("expected -o to mark output dir explicit")
+	}
+}
+
 func TestRunExtract_FlagsOverrideEnvVars(t *testing.T) {
 	clientOrig := buildClientFunc
 	buildOrig := buildSiteFunc
@@ -248,6 +271,35 @@ func TestRunExtract_FlagsOverrideEnvVars(t *testing.T) {
 	}
 	if capturedOpts.OutputDir != tmpDir {
 		t.Errorf("expected flag output-dir %q, got %q", tmpDir, capturedOpts.OutputDir)
+	}
+}
+
+func TestRunExtract_OutputDirShortFlagOverridesEnvVar(t *testing.T) {
+	clientOrig := buildClientFunc
+	buildOrig := buildSiteFunc
+	defer func() {
+		buildClientFunc = clientOrig
+		buildSiteFunc = buildOrig
+	}()
+
+	var capturedOpts extractor.SiteBuildOptions
+	buildClientFunc = func(string) (*apiextensionsclient.Clientset, error) {
+		return apiextensionsclient.NewForConfig(&rest.Config{Host: "https://example.invalid"})
+	}
+	buildSiteFunc = func(opts extractor.SiteBuildOptions) (extractor.SiteBuildResult, error) {
+		capturedOpts = opts
+		return extractor.SiteBuildResult{Status: extractor.BuildResultNoop}, nil
+	}
+
+	t.Setenv("OUTPUT_DIR", "/env-output")
+
+	tmpDir := t.TempDir()
+	err := runExtract([]string{"-o", tmpDir})
+	if err != nil {
+		t.Fatalf("runExtract error: %v", err)
+	}
+	if capturedOpts.OutputDir != tmpDir {
+		t.Errorf("expected short output-dir %q, got %q", tmpDir, capturedOpts.OutputDir)
 	}
 }
 
@@ -555,7 +607,7 @@ spec:
 		t.Fatal(err)
 	}
 
-	err := runConvert([]string{"--file", singleFile, "--dir", inputDir, "--output-dir", outputDir})
+	err := runConvert([]string{"-f", singleFile, "-d", inputDir, "-o", outputDir})
 	if err != nil {
 		t.Fatalf("runConvert error: %v", err)
 	}

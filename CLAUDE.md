@@ -62,12 +62,12 @@ go run ./cmd/main.go --help
 
 ### Subcommands
 
-- `run` (default) — extract + optional upload. Degrades gracefully: skips upload when Cloudflare credentials are missing, prints guidance when no kubeconfig is available. Accepts `--output-dir`, `--kind`, `--group`, and `--version`; the output root must already exist.
-- `extract` — extract CRDs and build a new site generation, exposed at `OUTPUT_DIR/current`. Requires an explicit output directory via `--output-dir` or `OUTPUT_DIR`; it does not fall back to `/output`. Supports `--kind`, `--group`, `--version` filters and CLI flags (`--output-dir`, `--context`, `--base-path`, `--skip-render`) that override env vars.
-- `convert` — convert CRD YAML files to JSON Schema without a cluster connection. Requires `--output-dir`. Reads from `--file` (comma-separated, `-` for stdin) and/or `--dir`. Writes flat output (no generation lifecycle). Optional `--render` for HTML docs. Supports the same `--kind`, `--group`, `--version` filters.
-- `upload` — upload the active site from `OUTPUT_DIR/current` to Cloudflare Pages. Accepts `--output-dir`; the output root must already exist.
-- `watch` — long-lived process: informer watches CRDs, debounces events, and runs extract plus optional upload cycles. Leader election for multi-replica safety. Accepts `--output-dir`, `--kind`, `--group`, and `--version`; the output root must already exist. Filters are applied to generated output, not to the informer watch scope.
-- `preview` — generate sample data by default, or with explicit `--output-dir` copy the active site into an isolated temp generation and serve it on localhost. Ambient `OUTPUT_DIR` is ignored. No cluster or credentials needed. Handles signal cleanup of temp directories.
+- `run` (default) — extract + optional upload. Degrades gracefully: skips upload when Cloudflare credentials are missing, prints guidance when no kubeconfig is available. Accepts `--output-dir`/`-o`, `--kind`, `--group`, and `--version`; the output root must already exist.
+- `extract` — extract CRDs and build a new site generation, exposed at `OUTPUT_DIR/current`. Requires an explicit output directory via `--output-dir`/`-o` or `OUTPUT_DIR`; it does not fall back to `/output`. Supports `--kind`, `--group`, `--version` filters and CLI flags (`--output-dir`/`-o`, `--context`, `--base-path`, `--skip-render`) that override env vars.
+- `convert` — convert CRD YAML files to JSON Schema without a cluster connection. Requires `--output-dir`/`-o`. Reads from `--file`/`-f` (comma-separated, `-` for stdin) and/or `--dir`/`-d`. Writes flat output (no generation lifecycle). Optional `--render` for HTML docs. Supports the same `--kind`, `--group`, `--version` filters.
+- `upload` — upload the active site from `OUTPUT_DIR/current` to Cloudflare Pages. Accepts `--output-dir`/`-o`; the output root must already exist.
+- `watch` — long-lived process: informer watches CRDs, debounces events, and runs extract plus optional upload cycles. Leader election for multi-replica safety. Accepts `--output-dir`/`-o`, `--kind`, `--group`, and `--version`; the output root must already exist. Filters are applied to generated output, not to the informer watch scope.
+- `preview` — generate sample data by default, or with explicit `--output-dir`/`-o` copy the active site into an isolated temp generation and serve it on localhost. Ambient `OUTPUT_DIR` is ignored. No cluster or credentials needed. Handles signal cleanup of temp directories.
 
 ### Configuration (env vars)
 
@@ -92,16 +92,16 @@ go run ./cmd/main.go --help
 
 ### CLI Flags
 
-`extract`, `convert`, `run`, `watch`, `upload`, and `preview` all support command-specific flags. `extract` requires `--output-dir` or `OUTPUT_DIR` and does not default to `/output`. `convert` requires `--output-dir` and does not read `OUTPUT_DIR`. For runtime-oriented commands (`run`, `watch`, `upload`), `--output-dir` overrides `OUTPUT_DIR` but must point at a pre-created directory. `preview` ignores ambient `OUTPUT_DIR` and only uses real extracted output when `--output-dir` is passed explicitly.
+`extract`, `convert`, `run`, `watch`, `upload`, and `preview` all support command-specific flags. `extract` requires `--output-dir`/`-o` or `OUTPUT_DIR` and does not default to `/output`. `convert` requires `--output-dir`/`-o` and does not read `OUTPUT_DIR`. For runtime-oriented commands (`run`, `watch`, `upload`), `--output-dir`/`-o` overrides `OUTPUT_DIR` but must point at a pre-created directory. `preview` ignores ambient `OUTPUT_DIR` and only uses real extracted output when `--output-dir`/`-o` is passed explicitly.
 
 | Flag | Subcommands | Default | Purpose |
 | --- | --- | --- | --- |
-| `--output-dir` | run, extract, convert, upload, watch, preview | `convert`: required flag; `extract`: `$OUTPUT_DIR` (required if unset); `run`/`upload`/`watch`: `$OUTPUT_DIR` or `/output`; `preview`: none | Output directory |
+| `--output-dir`, `-o` | run, extract, convert, upload, watch, preview | `convert`: required flag; `extract`: `$OUTPUT_DIR` (required if unset); `run`/`upload`/`watch`: `$OUTPUT_DIR` or `/output`; `preview`: none | Output directory |
 | `--context` | extract | `$KUBECTL_CONTEXT` | Kubernetes context |
 | `--base-path` | extract, convert | `$BASE_PATH` | URL path prefix |
 | `--skip-render` | extract | `$SKIP_RENDER` | Skip HTML rendering |
-| `--file` | convert | — | CRD YAML file(s), comma-separated. `-` for stdin |
-| `--dir` | convert | — | Directory of CRD YAML files (non-recursive) |
+| `--file`, `-f` | convert | — | CRD YAML file(s), comma-separated. `-` for stdin |
+| `--dir`, `-d` | convert | — | Directory of CRD YAML files (non-recursive) |
 | `--render` | convert | `false` | Render HTML docs |
 | `--kind` | run, extract, convert, watch | `run`/`extract`/`watch`: `$SCHEMA_FILTER_KIND`; `convert`: — | Filter by kind (comma-separated, case-insensitive) |
 | `--group` | run, extract, convert, watch | `run`/`extract`/`watch`: `$SCHEMA_FILTER_GROUP`; `convert`: — | Filter by group (comma-separated, case-insensitive) |

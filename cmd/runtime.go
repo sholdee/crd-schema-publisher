@@ -43,7 +43,8 @@ func init() {
 
 func runExtract(args []string) error {
 	fs := flag.NewFlagSet("extract", flag.ContinueOnError)
-	outputDir := fs.String("output-dir", os.Getenv("OUTPUT_DIR"), "output directory")
+	var outputDir string
+	stringFlagWithAlias(fs, &outputDir, "output-dir", "o", os.Getenv("OUTPUT_DIR"), "output directory")
 	basePath := fs.String("base-path", os.Getenv("BASE_PATH"), "URL path prefix for subpath deployments")
 	kubeContext := fs.String("context", os.Getenv("KUBECTL_CONTEXT"), "Kubernetes context")
 	skipRender := fs.Bool("skip-render", os.Getenv("SKIP_RENDER") == "true", "skip HTML rendering")
@@ -57,7 +58,7 @@ func runExtract(args []string) error {
 	if extras := fs.Args(); len(extras) > 0 {
 		return fmt.Errorf("unexpected arguments for extract: %s", strings.Join(extras, " "))
 	}
-	if err := requireConfiguredOutputDir(*outputDir, "Provide a writable directory for extracted schemas"); err != nil {
+	if err := requireConfiguredOutputDir(outputDir, "Provide a writable directory for extracted schemas"); err != nil {
 		return err
 	}
 
@@ -71,7 +72,7 @@ func runExtract(args []string) error {
 
 	result, err := buildSiteFunc(extractor.SiteBuildOptions{
 		Lister:    client.ApiextensionsV1().CustomResourceDefinitions(),
-		OutputDir: *outputDir,
+		OutputDir: outputDir,
 		BasePath:  normalizeBasePath(*basePath),
 		Render:    !*skipRender,
 		Filter:    filter,
@@ -84,13 +85,14 @@ func runExtract(args []string) error {
 		return nil
 	}
 
-	slog.Info("extract complete", "count", result.SchemaCount, "dir", *outputDir)
+	slog.Info("extract complete", "count", result.SchemaCount, "dir", outputDir)
 	return nil
 }
 
 func parseRuntimeCommandArgs(cmd string, args []string, fallbackOutputDir string) (runtimeCommandOptions, error) {
 	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
-	outputDir := fs.String("output-dir", fallbackOutputDir, "output directory")
+	var outputDir string
+	stringFlagWithAlias(fs, &outputDir, "output-dir", "o", fallbackOutputDir, "output directory")
 	kind := fs.String("kind", os.Getenv(schemaFilterKindEnv), "filter by kind (comma-separated, case-insensitive)")
 	group := fs.String("group", os.Getenv(schemaFilterGroupEnv), "filter by group (comma-separated, case-insensitive)")
 	version := fs.String("version", os.Getenv(schemaFilterVersionEnv), "filter by version (comma-separated, case-insensitive)")
@@ -102,7 +104,7 @@ func parseRuntimeCommandArgs(cmd string, args []string, fallbackOutputDir string
 	}
 
 	return runtimeCommandOptions{
-		OutputDir: *outputDir,
+		OutputDir: outputDir,
 		Filter:    extractor.ParseFilter(*kind, *group, *version),
 	}, nil
 }

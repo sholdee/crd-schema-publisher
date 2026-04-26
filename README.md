@@ -53,13 +53,13 @@ Use the standalone binary or `go run ./cmd/` to convert CRD YAML files without a
 
 ```bash
 # Convert one CRD YAML file
-crd-schema-publisher convert --file crd.yaml --output-dir ./schemas
+crd-schema-publisher convert -f crd.yaml -o ./schemas
 
 # Convert every YAML CRD in a directory
-crd-schema-publisher convert --dir ./crds/ --output-dir ./schemas
+crd-schema-publisher convert -d ./crds/ -o ./schemas
 
 # Pipe CRDs from kubectl
-kubectl get crds -o yaml | crd-schema-publisher convert --file - --output-dir ./schemas
+kubectl get crds -o yaml | crd-schema-publisher convert -f - -o ./schemas
 ```
 
 See [Standalone Binary](#standalone-binary) for release downloads and [Configuration and CLI Reference](#configuration-and-cli-reference) for flags and command behavior.
@@ -258,7 +258,7 @@ cosign verify ghcr.io/sholdee/crd-schema-publisher:latest \
 
 ### Environment Variables
 
-Deployment/runtime configuration is primarily via environment variables. For local CLI use, `extract`, `convert`, `run`, `watch`, `upload`, and `preview` also expose command-specific flags such as `--output-dir`. Variables marked *(watch)* apply only to watch mode deployment.
+Deployment/runtime configuration is primarily via environment variables. For local CLI use, `extract`, `convert`, `run`, `watch`, `upload`, and `preview` also expose command-specific flags such as `--output-dir`/`-o`. Variables marked *(watch)* apply only to watch mode deployment.
 
 | Variable | Required | Default | Description |
 | -------- | -------- | ------- | ----------- |
@@ -297,17 +297,17 @@ Commands:
 
 | Command(s) | Output directory behavior |
 | --- | --- |
-| `extract` | Requires explicit `--output-dir` or `OUTPUT_DIR`; does not fall back to `/output`. |
-| `convert` | Requires `--output-dir`; does not read `OUTPUT_DIR`. |
-| `run`, `watch`, `upload` | Accept `--output-dir`; output root must already exist. |
-| `preview` | Uses sample data by default; reads real extracted output only when `--output-dir` is passed explicitly. |
+| `extract` | Requires explicit `--output-dir`/`-o` or `OUTPUT_DIR`; does not fall back to `/output`. |
+| `convert` | Requires `--output-dir`/`-o`; does not read `OUTPUT_DIR`. |
+| `run`, `watch`, `upload` | Accept `--output-dir`/`-o`; output root must already exist. |
+| `preview` | Uses sample data by default; reads real extracted output only when `--output-dir`/`-o` is passed explicitly. |
 
 | Command(s) | Filters and command-specific flags |
 | --- | --- |
 | `run`, `extract`, `watch` | Support comma-separated, case-insensitive `--kind`, `--group`, and `--version` filters. Defaults can also come from `SCHEMA_FILTER_KIND`, `SCHEMA_FILTER_GROUP`, and `SCHEMA_FILTER_VERSION`. |
 | `extract` | Supports `--context`, `--base-path`, and `--skip-render`. |
 | `convert` | Supports comma-separated, case-insensitive `--kind`, `--group`, and `--version` filters. |
-| `convert` | Supports `--file`, non-recursive `--dir` YAML loading, optional `--render`, and `--base-path` for rendered links. |
+| `convert` | Supports `--file`/`-f`, non-recursive `--dir`/`-d` YAML loading, optional `--render`, and `--base-path` for rendered links. |
 
 ## 📋 Using Your Schemas
 
@@ -433,7 +433,7 @@ For cluster-backed commands (`run`, `extract`, and `watch`), the pipeline is:
 7. Atomically switches `OUTPUT_DIR/current` to the completed generation so sidecars read a stable snapshot
 8. Uploads the active generation to Cloudflare Pages via the direct upload API (BLAKE3 content hashing, batched uploads with retry)
 
-The `convert` command skips Kubernetes access and reads CRD YAML from `--file`, stdin (`--file -`), and/or a non-recursive `--dir`. It applies the same schema transforms and writes flat output directly to `--output-dir`; with `--render`, it also renders HTML pages and an index.
+The `convert` command skips Kubernetes access and reads CRD YAML from `--file`/`-f`, stdin (`-f -`), and/or a non-recursive `--dir`/`-d`. It applies the same schema transforms and writes flat output directly to `--output-dir`/`-o`; with `--render`, it also renders HTML pages and an index.
 
 ## 🔧 Development
 
@@ -454,13 +454,13 @@ KUBECTL_CONTEXT=my-cluster \
   go run ./cmd/ --output-dir ./output
 
 # Convert CRD YAML files to JSON Schema (no cluster needed)
-go run ./cmd/ convert --file crd.yaml --output-dir ./schemas
+go run ./cmd/ convert -f crd.yaml -o ./schemas
 
 # Convert all CRDs in a directory
-go run ./cmd/ convert --dir ./crds/ --output-dir ./schemas
+go run ./cmd/ convert -d ./crds/ -o ./schemas
 
 # Pipe from kubectl
-kubectl get crds -o yaml | go run ./cmd/ convert --file - --output-dir ./schemas
+kubectl get crds -o yaml | go run ./cmd/ convert -f - -o ./schemas
 
 # Filter by kind and group
 go run ./cmd/ extract --output-dir ./schemas --kind certificate,issuer --group cert-manager.io

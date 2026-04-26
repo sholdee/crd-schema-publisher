@@ -1,6 +1,9 @@
 package main
 
 import (
+	"errors"
+	"flag"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -75,6 +78,34 @@ func TestPrintUsage_ContainsAllCommands(t *testing.T) {
 			t.Errorf("usage output missing command %q", cmd.name)
 		}
 	}
+}
+
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	defer func() {
+		os.Stderr = old
+	}()
+
+	fn()
+
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }
 
 func TestRegisteredCommandsMatchAdvertisedCommands(t *testing.T) {
@@ -617,6 +648,34 @@ spec:
 	}
 	if _, err := os.Stat(filepath.Join(outputDir, "cert-manager.io", "issuer_v1.json")); err != nil {
 		t.Fatal("expected Issuer schema from --dir")
+	}
+}
+
+func TestRunConvert_HelpCombinesAliasFlags(t *testing.T) {
+	output := captureStderr(t, func() {
+		err := runConvert([]string{"--help"})
+		if !errors.Is(err, flag.ErrHelp) {
+			t.Fatalf("expected flag.ErrHelp, got %v", err)
+		}
+	})
+
+	for _, expected := range []string{
+		"-f, --file",
+		"-d, --dir",
+		"-o, --output-dir",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected help output to contain %q:\n%s", expected, output)
+		}
+	}
+	if count := strings.Count(output, "CRD YAML file(s), comma-separated"); count != 1 {
+		t.Fatalf("expected file help text once, got %d:\n%s", count, output)
+	}
+	if count := strings.Count(output, "directory containing CRD YAML files"); count != 1 {
+		t.Fatalf("expected dir help text once, got %d:\n%s", count, output)
+	}
+	if count := strings.Count(output, "output directory for JSON schemas"); count != 1 {
+		t.Fatalf("expected output-dir help text once, got %d:\n%s", count, output)
 	}
 }
 

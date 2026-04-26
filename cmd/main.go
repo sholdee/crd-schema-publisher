@@ -106,9 +106,61 @@ func isDefaultRunFlag(arg string) bool {
 	return false
 }
 
+type flagAlias struct {
+	name  string
+	alias string
+}
+
+var flagAliases = map[*flag.FlagSet][]flagAlias{}
+
+func newCommandFlagSet(name string) *flag.FlagSet {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.Usage = func() {
+		printFlagDefaults(fs)
+	}
+	return fs
+}
+
 func stringFlagWithAlias(fs *flag.FlagSet, target *string, name, alias, value, usage string) {
 	fs.StringVar(target, name, value, usage)
 	fs.StringVar(target, alias, value, usage)
+	flagAliases[fs] = append(flagAliases[fs], flagAlias{name: name, alias: alias})
+}
+
+func printFlagDefaults(fs *flag.FlagSet) {
+	output := fs.Output()
+	fmt.Fprintf(output, "Usage of %s:\n", fs.Name())
+
+	aliases := map[string]string{}
+	aliasNames := map[string]bool{}
+	for _, a := range flagAliases[fs] {
+		aliases[a.name] = a.alias
+		aliasNames[a.alias] = true
+	}
+
+	fs.VisitAll(func(f *flag.Flag) {
+		if aliasNames[f.Name] {
+			return
+		}
+
+		name, usage := flag.UnquoteUsage(f)
+		displayName := "--" + f.Name
+		if alias, ok := aliases[f.Name]; ok {
+			displayName = "-" + alias + ", " + displayName
+		}
+		if name != "" {
+			displayName += " " + name
+		}
+
+		fmt.Fprintf(output, "  %s\n", displayName)
+		if usage != "" {
+			fmt.Fprintf(output, "\t%s", usage)
+			if f.DefValue != "" && f.DefValue != "false" {
+				fmt.Fprintf(output, " (default %q)", f.DefValue)
+			}
+			fmt.Fprintln(output)
+		}
+	})
 }
 
 func handleCmdError(cmd string, err error) {
@@ -158,7 +210,7 @@ func requireEnv(key string) (string, error) {
 }
 
 func parseOutputDirArg(cmd string, args []string, fallback string) (string, bool, error) {
-	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
+	fs := newCommandFlagSet(cmd)
 	var outputDir string
 	stringFlagWithAlias(fs, &outputDir, "output-dir", "o", fallback, "output directory")
 	if err := fs.Parse(args); err != nil {

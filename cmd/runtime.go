@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -42,7 +41,7 @@ func init() {
 }
 
 func runExtract(args []string) error {
-	fs := flag.NewFlagSet("extract", flag.ContinueOnError)
+	fs := newCommandFlagSet("extract")
 	var outputDir string
 	stringFlagWithAlias(fs, &outputDir, "output-dir", "o", os.Getenv("OUTPUT_DIR"), "output directory")
 	basePath := fs.String("base-path", os.Getenv("BASE_PATH"), "URL path prefix for subpath deployments")
@@ -90,7 +89,7 @@ func runExtract(args []string) error {
 }
 
 func parseRuntimeCommandArgs(cmd string, args []string, fallbackOutputDir string) (runtimeCommandOptions, error) {
-	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
+	fs := newCommandFlagSet(cmd)
 	var outputDir string
 	stringFlagWithAlias(fs, &outputDir, "output-dir", "o", fallbackOutputDir, "output directory")
 	kind := fs.String("kind", os.Getenv(schemaFilterKindEnv), "filter by kind (comma-separated, case-insensitive)")

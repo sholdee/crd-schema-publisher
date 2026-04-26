@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -185,7 +184,7 @@ func loadCRDs(fileList, dir string) ([]apiextensionsv1.CustomResourceDefinition,
 }
 
 func runConvert(args []string) error {
-	fs := flag.NewFlagSet("convert", flag.ContinueOnError)
+	fs := newCommandFlagSet("convert")
 	var fileFlag string
 	stringFlagWithAlias(fs, &fileFlag, "file", "f", "", "CRD YAML file(s), comma-separated (use - for stdin)")
 	var dirFlag string

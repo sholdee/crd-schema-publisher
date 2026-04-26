@@ -284,14 +284,21 @@ func TestWriteSchemas_IntOrString(t *testing.T) {
 	if !ok {
 		t.Fatal("expected port property in output")
 	}
+	assertIntOrStringPortSchema(t, port)
+}
+
+func assertIntOrStringPortSchema(t *testing.T, port map[string]interface{}) {
+	t.Helper()
 	oneOf, ok := port["oneOf"].([]interface{})
 	if !ok {
 		t.Fatalf("expected oneOf array in port, got: %v", port)
 	}
-	if len(oneOf) != 2 {
-		t.Fatalf("expected 2 oneOf entries, got %d", len(oneOf))
+	if len(oneOf) != 3 {
+		t.Fatalf("expected 3 oneOf entries, got %d", len(oneOf))
 	}
-	// Verify the two types are string and integer
+	// Verify the three types are string, integer, and null. The property is
+	// optional, so nullable is represented as a oneOf branch instead of a
+	// conflicting sibling type.
 	types := make(map[string]bool)
 	for _, item := range oneOf {
 		m, ok := item.(map[string]interface{})
@@ -302,12 +309,15 @@ func TestWriteSchemas_IntOrString(t *testing.T) {
 			types[tp] = true
 		}
 	}
-	if !types["string"] || !types["integer"] {
-		t.Fatalf("expected oneOf to contain string and integer types, got: %v", oneOf)
+	if !types["string"] || !types["integer"] || !types["null"] {
+		t.Fatalf("expected oneOf to contain string, integer, and null types, got: %v", oneOf)
 	}
 	// Verify format was removed
 	if _, hasFormat := port["format"]; hasFormat {
 		t.Fatal("expected format to be removed from port field")
+	}
+	if _, hasType := port["type"]; hasType {
+		t.Fatalf("expected sibling type to be removed from int-or-string field, got %v", port["type"])
 	}
 }
 

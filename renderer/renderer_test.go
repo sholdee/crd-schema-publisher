@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -20,9 +21,6 @@ func testTemplate(t *testing.T) *template.Template {
 				return n.Items
 			}
 			return n
-		},
-		"safeHTML": func(s string) template.HTML {
-			return template.HTML(template.HTMLEscapeString(s))
 		},
 	}
 	tmpl, err := template.New("schema").Funcs(funcMap).Parse(schemaTemplate)
@@ -103,6 +101,19 @@ func TestDisplayType_IntOrString(t *testing.T) {
 		OneOf: []*SchemaNode{
 			{Type: "string"},
 			{Type: "integer"},
+		},
+	}
+	if got := n.DisplayType(); got != "string | integer" {
+		t.Errorf("DisplayType() = %q, want %q", got, "string | integer")
+	}
+}
+
+func TestDisplayType_NullableIntOrStringOneOf(t *testing.T) {
+	n := &SchemaNode{
+		OneOf: []*SchemaNode{
+			{Type: "string"},
+			{Type: "integer"},
+			{Type: "null"},
 		},
 	}
 	if got := n.DisplayType(); got != "string | integer" {
@@ -207,6 +218,33 @@ func TestConstraints(t *testing.T) {
 	}
 }
 
+func TestConstraints_OneOfBranchConstraints(t *testing.T) {
+	min := 1.0
+	max := 65535.0
+	node := &SchemaNode{
+		OneOf: []*SchemaNode{
+			{Type: "string", Pattern: "^[a-z]+$"},
+			{Type: "integer", Minimum: &min, Maximum: &max},
+			{Type: "null"},
+		},
+	}
+
+	got := node.Constraints()
+	expected := []string{
+		"string pattern: ^[a-z]+$",
+		"integer minimum: 1",
+		"integer maximum: 65535",
+	}
+	if len(got) != len(expected) {
+		t.Fatalf("Constraints() returned %d items, want %d: %v", len(got), len(expected), got)
+	}
+	for i, c := range got {
+		if c != expected[i] {
+			t.Errorf("constraint %d: got %q, want %q", i, c, expected[i])
+		}
+	}
+}
+
 func TestRenderSchema_BasicOutput(t *testing.T) {
 	schema := `{
 		"type": "object",
@@ -301,7 +339,8 @@ func TestRenderSchema_BasicOutput(t *testing.T) {
 		{"data-text=\"Number of replicas minimum: 1 maximum: 10\"", "search text metadata"},
 		{"minimum: 1", "constraint display"},
 		{"maximum: 10", "constraint display"},
-		{"pattern: ^[a-z]+$", "constraint display"},
+		{"<span class=\"schema-constraint-label\">pattern:</span>", "constraint label display"},
+		{"<code class=\"schema-constraint-value\">^[a-z]&#43;$</code>", "constraint value display"},
 		{"#q=", "URL hash search state"},
 		{"query.indexOf('.') === 0", "leading-dot path-only detection"},
 		{"if (pathOnly && !query) {", "dot-only path query guard"},
@@ -517,6 +556,76 @@ func TestRenderSchema_IntOrString(t *testing.T) {
 	}
 }
 
+func TestRenderSchema_NullableIntOrString(t *testing.T) {
+	schema := `{
+		"type": "object",
+		"properties": {
+			"port": {
+				"oneOf": [{"type": "string"}, {"type": "integer"}, {"type": "null"}],
+				"description": "Port number or name"
+			}
+		}
+	}`
+
+	tmpDir := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(tmpDir, "test.io"), 0o755)
+	_ = os.WriteFile(filepath.Join(tmpDir, "test.io", "thing_v1.json"), []byte(schema), 0o644)
+
+	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "test.io", "thing_v1.json"), "test.io", "thing_v1.json", "")
+	if err != nil {
+		t.Fatalf("renderSchemaFile error: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(tmpDir, "test.io", "thing_v1.html"))
+	html := string(data)
+
+	if !strings.Contains(html, "string | integer") {
+		t.Error("should show 'string | integer' for nullable oneOf int-or-string")
+	}
+	if strings.Contains(html, "string | integer | null") {
+		t.Error("should omit null from the display type like nullable type arrays")
+	}
+}
+
+func TestRenderSchema_IntOrStringBranchConstraints(t *testing.T) {
+	schema := `{
+		"type": "object",
+		"properties": {
+			"port": {
+				"oneOf": [
+					{"type": "string", "pattern": "^[a-z]+$"},
+					{"type": "integer", "minimum": 1, "maximum": 65535},
+					{"type": "null"}
+				],
+				"description": "Port number or name"
+			}
+		}
+	}`
+
+	tmpDir := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(tmpDir, "test.io"), 0o755)
+	_ = os.WriteFile(filepath.Join(tmpDir, "test.io", "thing_v1.json"), []byte(schema), 0o644)
+
+	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "test.io", "thing_v1.json"), "test.io", "thing_v1.json", "")
+	if err != nil {
+		t.Fatalf("renderSchemaFile error: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(tmpDir, "test.io", "thing_v1.html"))
+	html := string(data)
+
+	if !strings.Contains(html, `<span class="schema-constraint-label">string pattern:</span>`) ||
+		!strings.Contains(html, `<code class="schema-constraint-value">^[a-z]&#43;$</code>`) {
+		t.Error("should show string branch constraints")
+	}
+	if !strings.Contains(html, `<span class="schema-constraint-label">integer minimum:</span>`) ||
+		!strings.Contains(html, `<code class="schema-constraint-value">1</code>`) ||
+		!strings.Contains(html, `<span class="schema-constraint-label">integer maximum:</span>`) ||
+		!strings.Contains(html, `<code class="schema-constraint-value">65535</code>`) {
+		t.Error("should show integer branch constraints")
+	}
+}
+
 func TestRenderSchema_EnumValues(t *testing.T) {
 	schema := `{
 		"type": "object",
@@ -546,6 +655,42 @@ func TestRenderSchema_EnumValues(t *testing.T) {
 	}
 	if !strings.Contains(html, "enum:") {
 		t.Error("should label enum constraint")
+	}
+}
+
+func TestRenderSchema_LongConstraintsWrapAndCollapse(t *testing.T) {
+	longPattern := `^(0|8|EchoReply|DestinationUnreachable|Redirect|Echo|RouterAdvertisement|RouterSelection|TimeExceeded|ParameterProblem|Timestamp|TimestampReply|Photuris|ExtendedEchoRequest|ExtendedEcho Reply|PacketTooBig|ParameterProblem|EchoRequest|MulticastListenerQuery|MulticastListenerReport|MulticastListenerDone)$`
+	schema := `{
+		"type": "object",
+		"properties": {
+			"icmpType": {
+				"type": "string",
+				"pattern": ` + strconv.Quote(longPattern) + `,
+				"description": "ICMP type"
+			}
+		}
+	}`
+
+	tmpDir := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(tmpDir, "test.io"), 0o755)
+	_ = os.WriteFile(filepath.Join(tmpDir, "test.io", "thing_v1.json"), []byte(schema), 0o644)
+
+	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "test.io", "thing_v1.json"), "test.io", "thing_v1.json", "")
+	if err != nil {
+		t.Fatalf("renderSchemaFile error: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(tmpDir, "test.io", "thing_v1.html"))
+	html := string(data)
+
+	if !strings.Contains(html, "overflow-wrap: anywhere") {
+		t.Error("constraint values should be allowed to wrap instead of widening the page")
+	}
+	if !strings.Contains(html, `class="schema-constraint schema-constraint-long"`) {
+		t.Error("long constraint values should render as collapsible details")
+	}
+	if !strings.Contains(html, longPattern) {
+		t.Error("long constraint should preserve the full value in the rendered page")
 	}
 }
 

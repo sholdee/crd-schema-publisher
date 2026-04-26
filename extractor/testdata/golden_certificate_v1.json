@@ -47,11 +47,10 @@
             },
             {
               "type": "integer"
+            },
+            {
+              "type": "null"
             }
-          ],
-          "type": [
-            "string",
-            "null"
           ]
         },
         "secretName": {

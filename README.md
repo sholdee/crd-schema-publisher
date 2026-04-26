@@ -402,8 +402,8 @@ For cluster-backed commands (`run`, `extract`, and `watch`), the pipeline is:
 1. Connects to the Kubernetes API (in-cluster or via kubeconfig)
 2. Lists all CRDs and extracts `.spec.versions[].schema.openAPIV3Schema`
 3. Applies three JSON Schema transforms (improved from [openapi2jsonschema.py](https://github.com/yannh/kubeconform/blob/master/scripts/openapi2jsonschema.py)):
-   - Adds `additionalProperties: false` to objects with `properties` — recurses into each property sub-schema individually, fixing a bug in the original where CRD fields named `properties` or other JSON Schema keywords corrupt the output
-   - Replaces `int-or-string` format with `oneOf [string, integer]` while preserving existing keys
+   - Adds `additionalProperties: false` to structural child objects with `properties` — recurses into schema-valued locations only, preserving validation overlays and literal `default`/`enum` data while fixing a bug in the original where CRD fields named `properties` or other JSON Schema keywords corrupt the output
+   - Replaces Kubernetes int-or-string markers with a non-conflicting `oneOf` union, preserving safe metadata and moving type-specific assertions into the matching string or integer branch
    - Allows null for optional fields (per-field precision, not per-parent)
 
    These improve on the Python original's handling of nullable fields, int-or-string types, root objects, and keyword-colliding property names. A frozen golden test locks converter output to prevent regressions.

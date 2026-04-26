@@ -16,6 +16,9 @@ import (
 const (
 	metadataDirName   = "_meta"
 	kindsManifestName = "kinds.json"
+
+	longConstraintValueThreshold = 180
+	constraintPreviewLength      = 120
 )
 
 // SchemaNode represents a JSON Schema node for rendering.
@@ -63,12 +66,10 @@ func (n *SchemaNode) UnmarshalJSON(data []byte) error {
 
 // DisplayType returns a human-readable type string for the schema node.
 func (n *SchemaNode) DisplayType() string {
-	if len(n.OneOf) == 2 && n.Type == nil {
-		types := make([]string, 0, 2)
-		for _, o := range n.OneOf {
-			types = append(types, o.DisplayType())
+	if n.Type == nil {
+		if typ := n.displayOneOfType(); typ != "" {
+			return typ
 		}
-		return strings.Join(types, " | ")
 	}
 
 	raw := n.resolveType()
@@ -88,6 +89,27 @@ func (n *SchemaNode) DisplayType() string {
 	return raw
 }
 
+func (n *SchemaNode) displayOneOfType() string {
+	if len(n.OneOf) == 0 {
+		return ""
+	}
+
+	types := make([]string, 0, len(n.OneOf))
+	seen := make(map[string]bool, len(n.OneOf))
+	for _, o := range n.OneOf {
+		typ := o.DisplayType()
+		if typ == "null" || seen[typ] {
+			continue
+		}
+		seen[typ] = true
+		types = append(types, typ)
+	}
+	if len(types) == 0 {
+		return "null"
+	}
+	return strings.Join(types, " | ")
+}
+
 // PropertyEntry is a name+node pair for sorted iteration.
 type PropertyEntry struct {
 	Name string
@@ -104,6 +126,14 @@ type RenderProperty struct {
 	Required   bool
 	Node       *SchemaNode
 	Children   []RenderProperty
+}
+
+type RenderConstraint struct {
+	Label   string
+	Value   string
+	Text    string
+	Preview string
+	Long    bool
 }
 
 // Expandable returns true when the property renders as an expandable details row.
@@ -144,6 +174,65 @@ func (n *SchemaNode) SortedProperties() []PropertyEntry {
 
 // Constraints returns human-readable constraint strings for display.
 func (n *SchemaNode) Constraints() []string {
+	cs := n.localConstraints()
+	for _, branch := range n.OneOf {
+		branchType := branch.DisplayType()
+		if branchType == "null" {
+			continue
+		}
+		for _, c := range branch.flattenedConstraints() {
+			cs = append(cs, branchType+" "+c)
+		}
+	}
+	return cs
+}
+
+func (n *SchemaNode) RenderConstraints() []RenderConstraint {
+	rawConstraints := n.Constraints()
+	constraints := make([]RenderConstraint, 0, len(rawConstraints))
+	for _, raw := range rawConstraints {
+		constraints = append(constraints, newRenderConstraint(raw))
+	}
+	return constraints
+}
+
+func newRenderConstraint(raw string) RenderConstraint {
+	label, value, ok := strings.Cut(raw, ": ")
+	if !ok {
+		label = ""
+		value = raw
+	}
+	long := len([]rune(value)) > longConstraintValueThreshold
+	preview := value
+	if long {
+		preview = truncateRunes(value, constraintPreviewLength) + "..."
+	}
+	return RenderConstraint{
+		Label:   label,
+		Value:   value,
+		Text:    raw,
+		Preview: preview,
+		Long:    long,
+	}
+}
+
+func truncateRunes(s string, limit int) string {
+	runes := []rune(s)
+	if len(runes) <= limit {
+		return s
+	}
+	return string(runes[:limit])
+}
+
+func (n *SchemaNode) flattenedConstraints() []string {
+	cs := n.localConstraints()
+	for _, sub := range n.AllOf {
+		cs = append(cs, sub.flattenedConstraints()...)
+	}
+	return cs
+}
+
+func (n *SchemaNode) localConstraints() []string {
 	var cs []string
 	if len(n.Enum) > 0 {
 		vals := make([]string, len(n.Enum))
@@ -467,9 +556,6 @@ func RenderAll(outputDir, basePath string) error {
 			}
 			return n
 		},
-		"safeHTML": func(s string) template.HTML {
-			return template.HTML(template.HTMLEscapeString(s))
-		},
 	}
 
 	tmpl, err := template.New("schema").Funcs(funcMap).Parse(schemaTemplate)
@@ -635,7 +721,7 @@ var schemaTemplate = `<!DOCTYPE html>
   .prop > summary::before { content: "\25B8"; color: var(--fg-muted); font-size: 0.7rem; }
   .prop[open] > summary::before { content: "\25BE"; color: var(--accent); }
   .prop > summary:hover { background: var(--bg-hover); }
-  .prop-content { padding: 0.5rem 0.75rem 0.75rem; padding-left: 1.5rem; }
+  .prop-content { padding: 0.5rem 0.75rem 0.75rem; padding-left: 1.5rem; min-width: 0; }
   .prop-leaf {
     padding: 0.5rem 0.75rem;
     font-size: 0.85rem; display: flex; align-items: flex-start; gap: 0.5rem;
@@ -667,6 +753,21 @@ var schemaTemplate = `<!DOCTYPE html>
   .leaf-constraints {
     color: var(--fg-muted); font-size: 0.75rem; margin-top: 0.15rem;
     font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+  }
+  .schema-constraint { max-width: 100%; min-width: 0; }
+  .schema-constraint code {
+    white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
+  }
+  .schema-constraint-label { font-weight: 700; color: var(--fg-muted); }
+  .schema-constraint-value { color: var(--fg-muted); }
+  .schema-constraint-long > summary {
+    cursor: pointer; display: flex; align-items: baseline; gap: 0.35rem;
+    min-width: 0;
+  }
+  .schema-constraint-long > summary code { min-width: 0; }
+  .schema-constraint-long[open] .schema-constraint-preview { display: none; }
+  .schema-constraint-full {
+    display: block; margin-top: 0.25rem; padding-left: 0.75rem;
   }
 </style>
 ` + theme.HeadScript + `
@@ -703,6 +804,16 @@ metadata:
     <button id="copy-url" data-url="{{.JSONPath}}">Copy schema URL</button>
   </div>
 </div>
+{{- define "constraint"}}
+{{- if .Long}}
+<details class="schema-constraint schema-constraint-long" title="{{.Text}}">
+  <summary>{{if .Label}}<span class="schema-constraint-label">{{.Label}}:</span>{{end}} <code class="schema-constraint-value schema-constraint-preview">{{.Preview}}</code></summary>
+  <code class="schema-constraint-value schema-constraint-full">{{.Value}}</code>
+</details>
+{{- else}}
+<div class="schema-constraint" title="{{.Text}}">{{if .Label}}<span class="schema-constraint-label">{{.Label}}:</span>{{end}} <code class="schema-constraint-value">{{.Value}}</code></div>
+{{- end}}
+{{- end}}
 {{- define "property"}}
 {{- if .Expandable}}
 <details class="prop" data-prop-row data-path="{{.Path}}" data-path-key="{{.PathKey}}" data-parent-path="{{.ParentPath}}" data-name="{{.Name}}" data-text="{{.SearchText}}">
@@ -713,7 +824,7 @@ metadata:
 </summary>
 <div class="prop-content">
   {{- if .Node.Description}}<div class="prop-desc">{{.Node.Description}}</div>{{end}}
-  {{- range .Node.Constraints}}<div class="prop-constraints">{{safeHTML .}}</div>{{end}}
+  {{- range .Node.RenderConstraints}}<div class="prop-constraints">{{template "constraint" .}}</div>{{end}}
   <div class="prop-children">
   {{- range .Children}}{{template "property" .}}{{end}}
   </div>
@@ -726,7 +837,7 @@ metadata:
   {{- if .Required}} <span class="required-badge">required</span>{{end}}
   <div class="leaf-desc">
     {{- if .Node.Description}}{{.Node.Description}}{{end}}
-    {{- range .Node.Constraints}}<div class="leaf-constraints">{{safeHTML .}}</div>{{end}}
+    {{- range .Node.RenderConstraints}}<div class="leaf-constraints">{{template "constraint" .}}</div>{{end}}
   </div>
 </div>
 {{- end}}

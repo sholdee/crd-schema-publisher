@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sholdee/crd-schema-publisher/diagnostics"
 	"github.com/sholdee/crd-schema-publisher/extractor"
 	"github.com/sholdee/crd-schema-publisher/metrics"
 	"github.com/sholdee/crd-schema-publisher/publisher"
@@ -42,6 +43,7 @@ type Config struct {
 	Metrics    *metrics.Metrics    // nil = no metrics recording
 	CRDLister  extractor.CRDLister // nil = derive from Client
 	Filter     extractor.SchemaFilter
+	Profiler   diagnostics.Snapshotter
 }
 
 // Run starts the watcher with leader election and health server.
@@ -266,6 +268,7 @@ func publishCycle(cfg Config) (retErr error) {
 		BasePath:  cfg.BasePath,
 		Render:    os.Getenv("SKIP_RENDER") != "true",
 		Filter:    cfg.Filter,
+		Profiler:  cfg.Profiler,
 	})
 	if err != nil {
 		return err
@@ -281,6 +284,9 @@ func publishCycle(cfg Config) (retErr error) {
 
 	// Upload (if publisher configured)
 	if cfg.Publisher != nil {
+		if cfg.Publisher.Profiler == nil {
+			cfg.Publisher.Profiler = cfg.Profiler
+		}
 		if err := cfg.Publisher.Publish(cfg.OutputDir); err != nil {
 			return fmt.Errorf("publishing: %w", err)
 		}

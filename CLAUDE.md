@@ -84,6 +84,9 @@ go run ./cmd/main.go --help
 | `LEASE_NAME` | No | `crd-schema-publisher` | Name of the Lease resource (watch mode) |
 | `HEALTH_PORT` | No | `8080` | Port for liveness/readiness probes (watch mode) |
 | `SKIP_RENDER` | No | — | Set to `true` to skip HTML schema page rendering |
+| `PROFILE_DIR` | No | — | Directory for opt-in heap profiles and phase memory logs |
+| `UPLOAD_BUCKET_SIZE_BYTES` | No | `41943040` | CF upload bucket size in bytes |
+| `UPLOAD_CONCURRENCY` | No | `3` | Concurrent CF upload buckets |
 | `BASE_PATH` | No | — | URL path prefix for subpath deployments (e.g., `/iac` for GitHub Pages) |
 | `SCHEMA_FILTER_KIND` | No | — | Restrict generated schemas to matching CRD kinds, comma-separated and case-insensitive (`run`, `extract`, `watch`) |
 | `SCHEMA_FILTER_GROUP` | No | — | Restrict generated schemas to matching API groups, comma-separated and case-insensitive (`run`, `extract`, `watch`) |

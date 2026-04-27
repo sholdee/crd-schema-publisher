@@ -1,9 +1,14 @@
 package publisher
 
 import (
+	"bytes"
+	"encoding/base64"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/zeebo/blake3"
 )
 
 func TestHashFile_MatchesWrangler(t *testing.T) {
@@ -81,5 +86,21 @@ func TestHashFile_DifferentContentDifferentHash(t *testing.T) {
 	hash2, _ := HashFile(path2)
 	if hash1 == hash2 {
 		t.Fatal("different content should produce different hashes")
+	}
+}
+
+func TestHashReaderWithExtension_MatchesWranglerAlgorithm(t *testing.T) {
+	content := []byte("streamed content with enough bytes to cross an encoder boundary")
+	got, err := HashReaderWithExtension(bytes.NewReader(content), "json")
+	if err != nil {
+		t.Fatalf("HashReaderWithExtension returned error: %v", err)
+	}
+
+	hasher := blake3.New()
+	_, _ = hasher.WriteString(base64.StdEncoding.EncodeToString(content) + "json")
+	want := hex.EncodeToString(hasher.Sum(nil))[:32]
+
+	if got != want {
+		t.Fatalf("HashReaderWithExtension() = %q, want %q", got, want)
 	}
 }

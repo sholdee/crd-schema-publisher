@@ -108,6 +108,18 @@ Optional Secret refs + config vars that apply to all modes.
 - name: SKIP_RENDER
   value: {{ .Values.config.skipRender | quote }}
 {{- end }}
+{{- if .Values.config.profileDir }}
+- name: PROFILE_DIR
+  value: {{ .Values.config.profileDir | quote }}
+{{- end }}
+{{- if .Values.config.uploadBucketSizeBytes }}
+- name: UPLOAD_BUCKET_SIZE_BYTES
+  value: {{ .Values.config.uploadBucketSizeBytes | quote }}
+{{- end }}
+{{- if .Values.config.uploadConcurrency }}
+- name: UPLOAD_CONCURRENCY
+  value: {{ .Values.config.uploadConcurrency | quote }}
+{{- end }}
 {{- if .Values.config.basePath }}
 - name: BASE_PATH
   value: {{ .Values.config.basePath | quote }}

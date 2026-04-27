@@ -38,6 +38,12 @@ config:
   leaseName: crd-schema-publisher
   # -- Set to "true" to skip HTML schema page rendering
   skipRender: ""
+  # -- Directory for opt-in heap profiles and phase memory logs
+  profileDir: ""
+  # -- Override Cloudflare upload bucket size in bytes. Empty uses the app default (40 MiB).
+  uploadBucketSizeBytes: ""
+  # -- Override concurrent Cloudflare upload buckets. Empty uses the app default (3).
+  uploadConcurrency: ""
   # -- URL path prefix for subpath deployments (e.g., /iac for GitHub Pages at user.github.io/iac/)
   basePath: ""
   # -- Optional schema filters. Values are comma-separated and case-insensitive.

@@ -96,6 +96,24 @@
           ],
           "description": "Set to true to skip HTML schema page rendering"
         },
+        "profileDir": {
+          "type": "string",
+          "description": "Directory for opt-in heap profiles and phase memory logs"
+        },
+        "uploadBucketSizeBytes": {
+          "type": [
+            "string",
+            "integer"
+          ],
+          "description": "Override Cloudflare upload bucket size in bytes. Empty uses the app default (40 MiB)."
+        },
+        "uploadConcurrency": {
+          "type": [
+            "string",
+            "integer"
+          ],
+          "description": "Override concurrent Cloudflare upload buckets. Empty uses the app default (3)."
+        },
         "basePath": {
           "type": "string",
           "description": "URL path prefix for subpath deployments (e.g., /iac)"

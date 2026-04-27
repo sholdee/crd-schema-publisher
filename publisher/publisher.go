@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/sholdee/crd-schema-publisher/diagnostics"
 )
 
 const (
@@ -29,13 +31,21 @@ const (
 )
 
 type Publisher struct {
-	APIToken    string
-	AccountID   string
-	ProjectName string
-	BaseURL     string
-	AssetsURL   string
-	HTTPClient  *http.Client
-	SleepFunc   func(time.Duration)
+	APIToken              string
+	AccountID             string
+	ProjectName           string
+	BaseURL               string
+	AssetsURL             string
+	HTTPClient            *http.Client
+	SleepFunc             func(time.Duration)
+	Profiler              diagnostics.Snapshotter
+	UploadBucketSizeBytes int64
+	UploadConcurrency     int
+}
+
+type uploadBucket struct {
+	files []*fileEntry
+	size  int64
 }
 
 func (p *Publisher) sleepFunc() func(time.Duration) {
@@ -81,13 +91,16 @@ func (p *Publisher) httpClient() *http.Client {
 }
 
 func (p *Publisher) Publish(dir string) error {
+	p.snapshot("upload.start", "dir", dir)
 	if err := p.ensureProject(); err != nil {
 		return fmt.Errorf("ensuring project: %w", err)
 	}
+	p.snapshot("upload.after-ensure-project", "dir", dir)
 	files, err := p.collectActiveFiles(dir)
 	if err != nil {
 		return err
 	}
+	p.snapshot("upload.after-collect-files", "file_count", len(files))
 	if len(files) == 0 {
 		return fmt.Errorf("no files found in %s", dir)
 	}
@@ -99,30 +112,54 @@ func (p *Publisher) Publish(dir string) error {
 	}
 
 	hashToFile, uniqueHashes := buildUploadPlan(files)
+	p.snapshot("upload.after-upload-plan", "file_count", len(files), "unique_hashes", len(uniqueHashes))
 
 	missing, err := p.checkMissing(jwt, uniqueHashes)
 	if err != nil {
 		return fmt.Errorf("checking missing: %w", err)
 	}
+	p.snapshot("upload.after-check-missing", "missing", len(missing), "cached", len(uniqueHashes)-len(missing))
 	slog.Info("uploading files", "new", len(missing), "cached", len(uniqueHashes)-len(missing))
 
+	uploaded := 0
 	if len(missing) > 0 {
 		toUpload := selectUploadFiles(hashToFile, missing)
 		if err := p.uploadFiles(jwt, toUpload); err != nil {
 			return fmt.Errorf("uploading files: %w", err)
 		}
+		uploaded = len(toUpload)
 	}
+	p.snapshot("upload.after-upload-files", "uploaded", uploaded)
 
 	if err := p.upsertHashes(jwt, uniqueHashes); err != nil {
 		return fmt.Errorf("upserting hashes: %w", err)
 	}
+	p.snapshot("upload.after-upsert-hashes", "unique_hashes", len(uniqueHashes))
 
 	url, err := p.createDeployment(buildManifest(files))
 	if err != nil {
 		return fmt.Errorf("creating deployment: %w", err)
 	}
+	p.snapshot("upload.after-create-deployment", "file_count", len(files))
 	slog.Info("deployment successful", "url", url)
 	return nil
+}
+
+func (p *Publisher) snapshot(phase string, attrs ...any) {
+	if p.Profiler != nil {
+		p.Profiler.Snapshot(phase, attrs...)
+	}
+}
+
+func (p *Publisher) uploadConfig() UploadConfig {
+	cfg := DefaultUploadConfig()
+	if p.UploadBucketSizeBytes > 0 {
+		cfg.BucketSizeBytes = p.UploadBucketSizeBytes
+	}
+	if p.UploadConcurrency > 0 {
+		cfg.Concurrency = p.UploadConcurrency
+	}
+	return cfg
 }
 
 func (p *Publisher) collectActiveFiles(dir string) ([]*fileEntry, error) {
@@ -308,37 +345,20 @@ func (p *Publisher) checkMissing(jwt string, hashes []string) ([]string, error) 
 }
 
 func (p *Publisher) uploadFiles(jwt string, files []*fileEntry) error {
-	type bucket struct {
-		files []*fileEntry
-		size  int64
-	}
-	var buckets []bucket
-	current := bucket{}
-	for _, f := range files {
-		if len(current.files) >= maxBucketFiles || current.size+f.size > maxBucketSize {
-			if len(current.files) > 0 {
-				buckets = append(buckets, current)
-			}
-			current = bucket{}
-		}
-		current.files = append(current.files, f)
-		current.size += f.size
-	}
-	if len(current.files) > 0 {
-		buckets = append(buckets, current)
-	}
+	buckets := p.planUploadBuckets(files)
+	concurrency := p.uploadConfig().Concurrency
 
-	sem := make(chan struct{}, uploadConcurrency)
+	sem := make(chan struct{}, concurrency)
 	var mu sync.Mutex
 	var firstErr error
 	var wg sync.WaitGroup
 	for i, b := range buckets {
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(idx int, b bucket) {
+		go func(idx int, b uploadBucket) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			if err := p.uploadBucket(jwt, b.files); err != nil {
+			if err := p.uploadBucketWithIndex(jwt, b.files, idx); err != nil {
 				mu.Lock()
 				if firstErr == nil {
 					firstErr = fmt.Errorf("bucket %d: %w", idx, err)
@@ -351,29 +371,39 @@ func (p *Publisher) uploadFiles(jwt string, files []*fileEntry) error {
 	return firstErr
 }
 
-func (p *Publisher) uploadBucket(jwt string, files []*fileEntry) error {
-	type uploadItem struct {
-		Key      string            `json:"key"`
-		Value    string            `json:"value"`
-		Metadata map[string]string `json:"metadata"`
-		Base64   bool              `json:"base64"`
-	}
-	var payload []uploadItem
+func (p *Publisher) planUploadBuckets(files []*fileEntry) []uploadBucket {
+	maxSize := p.uploadConfig().BucketSizeBytes
+	var buckets []uploadBucket
+	current := uploadBucket{}
 	for _, f := range files {
-		content, err := os.ReadFile(f.absPath)
-		if err != nil {
-			return err
+		if len(current.files) >= maxBucketFiles || current.size+f.size > maxSize {
+			if len(current.files) > 0 {
+				buckets = append(buckets, current)
+			}
+			current = uploadBucket{}
 		}
-		payload = append(payload, uploadItem{
-			Key:      f.hash,
-			Value:    base64.StdEncoding.EncodeToString(content),
-			Metadata: map[string]string{"contentType": f.contentType},
-			Base64:   true,
-		})
+		current.files = append(current.files, f)
+		current.size += f.size
 	}
-	body, err := json.Marshal(payload)
+	if len(current.files) > 0 {
+		buckets = append(buckets, current)
+	}
+	return buckets
+}
+
+func (p *Publisher) uploadBucket(jwt string, files []*fileEntry) error {
+	return p.uploadBucketWithIndex(jwt, files, -1)
+}
+
+func (p *Publisher) uploadBucketWithIndex(jwt string, files []*fileEntry, bucketIndex int) error {
+	body, err := buildUploadBucketBody(files)
 	if err != nil {
 		return fmt.Errorf("marshaling upload payload: %w", err)
+	}
+	if bucketIndex >= 0 {
+		p.snapshot(fmt.Sprintf("upload.bucket.%d.after-marshal", bucketIndex), "files", len(files), "body_bytes", len(body))
+	} else {
+		p.snapshot("upload.bucket.after-marshal", "files", len(files), "body_bytes", len(body))
 	}
 	url := fmt.Sprintf("%s/pages/assets/upload", p.assetsURL())
 	var lastErr error
@@ -413,6 +443,89 @@ func (p *Publisher) uploadBucket(jwt string, files []*fileEntry) error {
 	}
 	return fmt.Errorf("upload failed after %d retries: %w", maxUploadRetries, lastErr)
 }
+
+func buildUploadBucketBody(files []*fileEntry) ([]byte, error) {
+	var body bytes.Buffer
+	if size := estimateUploadBucketBodySize(files); size > 0 {
+		body.Grow(size)
+	}
+
+	body.WriteByte('[')
+	for i, f := range files {
+		if i > 0 {
+			body.WriteByte(',')
+		}
+		if err := writeUploadItem(&body, f); err != nil {
+			return nil, err
+		}
+	}
+	body.WriteByte(']')
+
+	return body.Bytes(), nil
+}
+
+func writeUploadItem(body *bytes.Buffer, f *fileEntry) error {
+	body.WriteString(`{"key":`)
+	if err := writeJSONString(body, f.hash); err != nil {
+		return err
+	}
+	body.WriteString(`,"value":"`)
+	if err := writeBase64File(body, f.absPath); err != nil {
+		return err
+	}
+	body.WriteString(`","metadata":{"contentType":`)
+	if err := writeJSONString(body, f.contentType); err != nil {
+		return err
+	}
+	body.WriteString(`},"base64":true}`)
+	return nil
+}
+
+func writeJSONString(body *bytes.Buffer, value string) error {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	_, _ = body.Write(encoded)
+	return nil
+}
+
+func writeBase64File(body *bytes.Buffer, path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = file.Close() }()
+
+	encoder := base64.NewEncoder(base64.StdEncoding, body)
+	if _, err := io.Copy(encoder, file); err != nil {
+		_ = encoder.Close()
+		return err
+	}
+	return encoder.Close()
+}
+
+func estimateUploadBucketBodySize(files []*fileEntry) int {
+	total := 2
+	if len(files) > 1 {
+		total += len(files) - 1
+	}
+	const uploadItemStaticSize = len(`{"key":"","value":"","metadata":{"contentType":""},"base64":true}`)
+	for _, f := range files {
+		if f.size > int64(maxInt) {
+			return 0
+		}
+		encodedLen := base64.StdEncoding.EncodedLen(int(f.size))
+		next := total + uploadItemStaticSize + len(f.hash) + encodedLen + len(f.contentType)
+		if next < total {
+			return 0
+		}
+		total = next
+	}
+	return total
+}
+
+const maxInt = int(^uint(0) >> 1)
 
 func (p *Publisher) upsertHashes(jwt string, hashes []string) error {
 	body, err := json.Marshal(map[string][]string{"hashes": hashes})

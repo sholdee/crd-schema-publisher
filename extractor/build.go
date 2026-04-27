@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sholdee/crd-schema-publisher/diagnostics"
 	"github.com/sholdee/crd-schema-publisher/index"
 	"github.com/sholdee/crd-schema-publisher/renderer"
 )
@@ -38,6 +39,7 @@ type SiteBuildOptions struct {
 	BasePath  string
 	Render    bool
 	Filter    SchemaFilter
+	Profiler  diagnostics.Snapshotter
 }
 
 type SiteBuildResult struct {
@@ -47,6 +49,7 @@ type SiteBuildResult struct {
 }
 
 func BuildSite(opts SiteBuildOptions) (SiteBuildResult, error) {
+	snapshot(opts.Profiler, "build.start", "output_dir", opts.OutputDir, "render", opts.Render)
 	if err := ValidateOutputDir(opts.OutputDir); err != nil {
 		return SiteBuildResult{}, err
 	}
@@ -57,7 +60,9 @@ func BuildSite(opts SiteBuildOptions) (SiteBuildResult, error) {
 	if err != nil {
 		return SiteBuildResult{}, fmt.Errorf("listing CRDs: %w", err)
 	}
+	snapshot(opts.Profiler, "build.after-list-crds", "crd_count", len(crds))
 	crds = FilterCRDs(crds, opts.Filter)
+	snapshot(opts.Profiler, "build.after-filter-crds", "crd_count", len(crds), "filter_active", opts.Filter.Active())
 	if len(crds) == 0 && !opts.Filter.Active() {
 		return SiteBuildResult{Status: BuildResultNoop}, nil
 	}
@@ -77,33 +82,45 @@ func BuildSite(opts SiteBuildOptions) (SiteBuildResult, error) {
 	if err != nil {
 		return SiteBuildResult{}, fmt.Errorf("writing schemas: %w", err)
 	}
+	snapshot(opts.Profiler, "build.after-write-schemas", "schema_count", count, "generation", generationName)
 
 	if opts.Render {
 		if err := renderAllFunc(generationDir, opts.BasePath); err != nil {
 			return SiteBuildResult{}, fmt.Errorf("rendering schemas: %w", err)
 		}
+		snapshot(opts.Profiler, "build.after-render", "schema_count", count, "generation", generationName)
 	}
 
 	if err := generateIndexFunc(generationDir, opts.BasePath); err != nil {
 		return SiteBuildResult{}, fmt.Errorf("generating index: %w", err)
 	}
+	snapshot(opts.Profiler, "build.after-index", "schema_count", count, "generation", generationName)
 
 	if err := activateGenerationFunc(opts.OutputDir, generationName); err != nil {
 		return SiteBuildResult{}, fmt.Errorf("activating generation: %w", err)
 	}
+	snapshot(opts.Profiler, "build.after-activate", "generation", generationName)
 	keepGeneration = true
-	if err := cleanLegacyRootFunc(opts.OutputDir); err != nil {
+	if err := cleanLegacyRootFunc(opts.OutputDir, diagnostics.PreservePaths(opts.Profiler)...); err != nil {
 		return SiteBuildResult{}, fmt.Errorf("cleaning legacy root: %w", err)
 	}
+	snapshot(opts.Profiler, "build.after-clean-legacy-root", "generation", generationName)
 	if err := pruneGenerationsFunc(opts.OutputDir, generationName, previousGeneration); err != nil {
 		return SiteBuildResult{}, fmt.Errorf("pruning generations: %w", err)
 	}
+	snapshot(opts.Profiler, "build.after-prune-generations", "generation", generationName)
 
 	return SiteBuildResult{
 		Status:      BuildResultBuilt,
 		CRDCount:    len(crds),
 		SchemaCount: count,
 	}, nil
+}
+
+func snapshot(profiler diagnostics.Snapshotter, phase string, attrs ...any) {
+	if profiler != nil {
+		profiler.Snapshot(phase, attrs...)
+	}
 }
 
 func ValidateOutputDir(outputDir string) error {
@@ -179,7 +196,7 @@ func activateGeneration(outputDir, generationName string) error {
 	return nil
 }
 
-func cleanLegacyRoot(outputDir string) error {
+func cleanLegacyRoot(outputDir string, preservePaths ...string) error {
 	entries, err := os.ReadDir(outputDir)
 	if err != nil {
 		return err
@@ -189,11 +206,42 @@ func cleanLegacyRoot(outputDir string) error {
 		if name == generationsDirName || name == currentLinkName {
 			continue
 		}
+		if shouldPreserveRootEntry(outputDir, name, preservePaths) {
+			continue
+		}
 		if err := os.RemoveAll(filepath.Join(outputDir, name)); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func shouldPreserveRootEntry(outputDir, name string, preservePaths []string) bool {
+	if len(preservePaths) == 0 {
+		return false
+	}
+	entryPath, err := filepath.Abs(filepath.Join(outputDir, name))
+	if err != nil {
+		return false
+	}
+	for _, preservePath := range preservePaths {
+		preservePath = strings.TrimSpace(preservePath)
+		if preservePath == "" {
+			continue
+		}
+		preserveAbs, err := filepath.Abs(preservePath)
+		if err != nil {
+			continue
+		}
+		rel, err := filepath.Rel(entryPath, preserveAbs)
+		if err != nil {
+			continue
+		}
+		if rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
+			return true
+		}
+	}
+	return false
 }
 
 func currentGenerationName(outputDir string) string {

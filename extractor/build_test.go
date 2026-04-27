@@ -4,11 +4,22 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/sholdee/crd-schema-publisher/diagnostics"
+
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
+
+type recordingSnapshotter struct {
+	phases []string
+}
+
+func (r *recordingSnapshotter) Snapshot(phase string, attrs ...any) {
+	r.phases = append(r.phases, phase)
+}
 
 func seedActiveGeneration(t *testing.T, outputDir string, files map[string]string) string {
 	t.Helper()
@@ -38,6 +49,63 @@ func seedActiveGeneration(t *testing.T, outputDir string, files map[string]strin
 	}
 
 	return generationDir
+}
+
+func TestBuildSite_ProfilesBuildPhases(t *testing.T) {
+	outputDir := t.TempDir()
+	profiler := &recordingSnapshotter{}
+
+	result, err := BuildSite(SiteBuildOptions{
+		Lister:    &fakeLister{crds: []apiextensionsv1.CustomResourceDefinition{fakeCRD()}},
+		OutputDir: outputDir,
+		Render:    true,
+		Profiler:  profiler,
+	})
+	if err != nil {
+		t.Fatalf("BuildSite error: %v", err)
+	}
+	if result.Status != BuildResultBuilt {
+		t.Fatalf("expected BuildResultBuilt, got %q", result.Status)
+	}
+
+	for _, phase := range []string{
+		"build.start",
+		"build.after-list-crds",
+		"build.after-filter-crds",
+		"build.after-write-schemas",
+		"build.after-render",
+		"build.after-index",
+		"build.after-activate",
+		"build.after-clean-legacy-root",
+		"build.after-prune-generations",
+	} {
+		if !slices.Contains(profiler.phases, phase) {
+			t.Fatalf("expected profile phase %q in %v", phase, profiler.phases)
+		}
+	}
+}
+
+func TestBuildSite_PreservesProfilesUnderOutputDir(t *testing.T) {
+	outputDir := t.TempDir()
+	profileDir := filepath.Join(outputDir, "profile")
+
+	_, err := BuildSite(SiteBuildOptions{
+		Lister:    &fakeLister{crds: []apiextensionsv1.CustomResourceDefinition{fakeCRD()}},
+		OutputDir: outputDir,
+		Render:    true,
+		Profiler:  diagnostics.NewProfiler(profileDir),
+	})
+	if err != nil {
+		t.Fatalf("BuildSite error: %v", err)
+	}
+
+	matches, err := filepath.Glob(filepath.Join(profileDir, "*-heap-build-after-render.pprof"))
+	if err != nil {
+		t.Fatalf("glob profile dir: %v", err)
+	}
+	if len(matches) == 0 {
+		t.Fatalf("expected build.after-render profile to survive cleanup under %s", profileDir)
+	}
 }
 
 func currentTarget(t *testing.T, outputDir string) string {

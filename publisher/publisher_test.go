@@ -1,12 +1,15 @@
 package publisher
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -121,6 +124,84 @@ func tempFileEntry(t *testing.T) *fileEntry {
 	return &fileEntry{
 		relPath: "test.json", absPath: path,
 		hash: "abc123", size: 13, contentType: "application/json",
+	}
+}
+
+type recordingSnapshotter struct {
+	phases []string
+}
+
+func (r *recordingSnapshotter) Snapshot(phase string, attrs ...any) {
+	r.phases = append(r.phases, phase)
+}
+
+func TestPublish_ProfilesUploadPhases(t *testing.T) {
+	var calls []string
+	server := httptest.NewServer(fullFlowHandler(t, &calls))
+	defer server.Close()
+
+	tmpDir := seedCurrentGeneration(t)
+	profiler := &recordingSnapshotter{}
+
+	p := &Publisher{
+		APIToken: "fake-token", AccountID: "fake-account", ProjectName: "test-project",
+		BaseURL: server.URL + "/client/v4", AssetsURL: server.URL + "/client/v4",
+		Profiler: profiler,
+	}
+	if err := p.Publish(tmpDir); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, phase := range []string{
+		"upload.start",
+		"upload.after-ensure-project",
+		"upload.after-collect-files",
+		"upload.after-upload-plan",
+		"upload.after-check-missing",
+		"upload.bucket.0.after-marshal",
+		"upload.after-upload-files",
+		"upload.after-upsert-hashes",
+		"upload.after-create-deployment",
+	} {
+		if !slices.Contains(profiler.phases, phase) {
+			t.Fatalf("expected profile phase %q in %v", phase, profiler.phases)
+		}
+	}
+}
+
+func TestPublish_ProfilesCachedUploadBoundary(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/projects/test-project"):
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "result": map[string]interface{}{"name": "test-project"}})
+		case r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/upload-token"):
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "result": map[string]interface{}{"jwt": "fake-jwt-token"}})
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/check-missing"):
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "result": []string{}})
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/upsert-hashes"):
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "result": nil})
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/deployments"):
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "result": map[string]interface{}{"url": "https://test.pages.dev"}})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	tmpDir := seedCurrentGeneration(t)
+	profiler := &recordingSnapshotter{}
+
+	p := &Publisher{
+		APIToken: "fake-token", AccountID: "fake-account", ProjectName: "test-project",
+		BaseURL: server.URL + "/client/v4", AssetsURL: server.URL + "/client/v4",
+		Profiler: profiler,
+	}
+	if err := p.Publish(tmpDir); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !slices.Contains(profiler.phases, "upload.after-upload-files") {
+		t.Fatalf("expected upload.after-upload-files in cached upload phases %v", profiler.phases)
 	}
 }
 
@@ -386,4 +467,115 @@ func TestPublish_UsesCurrentAndSkipsKindFiles(t *testing.T) {
 	}
 
 	assertCurrentManifest(t, manifest)
+}
+
+func TestUploadConfigFromEnv_DefaultsMatchCurrentConstants(t *testing.T) {
+	t.Setenv(uploadBucketSizeBytesEnv, "")
+	t.Setenv(uploadConcurrencyEnv, "")
+
+	cfg, err := UploadConfigFromEnv()
+	if err != nil {
+		t.Fatalf("UploadConfigFromEnv returned error: %v", err)
+	}
+	if cfg.BucketSizeBytes != maxBucketSize {
+		t.Fatalf("BucketSizeBytes = %d, want %d", cfg.BucketSizeBytes, maxBucketSize)
+	}
+	if cfg.Concurrency != uploadConcurrency {
+		t.Fatalf("Concurrency = %d, want %d", cfg.Concurrency, uploadConcurrency)
+	}
+}
+
+func TestUploadConfigFromEnv_ParsesOverrides(t *testing.T) {
+	t.Setenv(uploadBucketSizeBytesEnv, "10485760")
+	t.Setenv(uploadConcurrencyEnv, "1")
+
+	cfg, err := UploadConfigFromEnv()
+	if err != nil {
+		t.Fatalf("UploadConfigFromEnv returned error: %v", err)
+	}
+	if cfg.BucketSizeBytes != 10*1024*1024 {
+		t.Fatalf("BucketSizeBytes = %d, want %d", cfg.BucketSizeBytes, 10*1024*1024)
+	}
+	if cfg.Concurrency != 1 {
+		t.Fatalf("Concurrency = %d, want 1", cfg.Concurrency)
+	}
+}
+
+func TestUploadConfigFromEnv_RejectsInvalidValues(t *testing.T) {
+	t.Setenv(uploadBucketSizeBytesEnv, "0")
+	t.Setenv(uploadConcurrencyEnv, "1")
+
+	_, err := UploadConfigFromEnv()
+	if err == nil {
+		t.Fatal("expected invalid bucket size error")
+	}
+	if !strings.Contains(err.Error(), uploadBucketSizeBytesEnv) {
+		t.Fatalf("expected error to mention %s, got %v", uploadBucketSizeBytesEnv, err)
+	}
+}
+
+func TestPlanUploadBuckets_UsesConfiguredBucketSize(t *testing.T) {
+	files := []*fileEntry{
+		{relPath: "a", hash: "a", size: 6},
+		{relPath: "b", hash: "b", size: 5},
+		{relPath: "c", hash: "c", size: 4},
+	}
+	p := &Publisher{UploadBucketSizeBytes: 10, UploadConcurrency: 1}
+
+	buckets := p.planUploadBuckets(files)
+	if len(buckets) != 2 {
+		t.Fatalf("expected 2 buckets, got %d", len(buckets))
+	}
+	if got := len(buckets[0].files); got != 1 {
+		t.Fatalf("first bucket file count = %d, want 1", got)
+	}
+	if got := len(buckets[1].files); got != 2 {
+		t.Fatalf("second bucket file count = %d, want 2", got)
+	}
+}
+
+func TestBuildUploadBucketBody_WritesExpectedPayload(t *testing.T) {
+	dir := t.TempDir()
+	firstPath := filepath.Join(dir, "first.json")
+	secondPath := filepath.Join(dir, "second.html")
+	if err := os.WriteFile(firstPath, []byte(`{"a":1}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(secondPath, []byte(`<html></html>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	body, err := buildUploadBucketBody([]*fileEntry{
+		{hash: "hash-json", absPath: firstPath, size: 7, contentType: "application/json"},
+		{hash: "hash-html", absPath: secondPath, size: 13, contentType: "text/html; charset=utf-8"},
+	})
+	if err != nil {
+		t.Fatalf("buildUploadBucketBody returned error: %v", err)
+	}
+
+	var payload []struct {
+		Key      string            `json:"key"`
+		Value    string            `json:"value"`
+		Metadata map[string]string `json:"metadata"`
+		Base64   bool              `json:"base64"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+
+	if len(payload) != 2 {
+		t.Fatalf("payload length = %d, want 2", len(payload))
+	}
+	if payload[0].Key != "hash-json" || payload[0].Value != base64.StdEncoding.EncodeToString([]byte(`{"a":1}`)) {
+		t.Fatalf("unexpected first payload item: %+v", payload[0])
+	}
+	if payload[0].Metadata["contentType"] != "application/json" || !payload[0].Base64 {
+		t.Fatalf("unexpected first metadata/base64: %+v", payload[0])
+	}
+	if payload[1].Key != "hash-html" || payload[1].Value != base64.StdEncoding.EncodeToString([]byte(`<html></html>`)) {
+		t.Fatalf("unexpected second payload item: %+v", payload[1])
+	}
+	if payload[1].Metadata["contentType"] != "text/html; charset=utf-8" || !payload[1].Base64 {
+		t.Fatalf("unexpected second metadata/base64: %+v", payload[1])
+	}
 }

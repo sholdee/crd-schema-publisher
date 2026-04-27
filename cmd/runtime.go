@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/sholdee/crd-schema-publisher/diagnostics"
 	"github.com/sholdee/crd-schema-publisher/extractor"
 	"github.com/sholdee/crd-schema-publisher/publisher"
 	"github.com/sholdee/crd-schema-publisher/watcher"
@@ -75,6 +76,7 @@ func runExtract(args []string) error {
 		BasePath:  normalizeBasePath(*basePath),
 		Render:    !*skipRender,
 		Filter:    filter,
+		Profiler:  diagnostics.NewFromEnv(),
 	})
 	if err != nil {
 		return err
@@ -124,6 +126,7 @@ func runBuild(outputDir string, filter extractor.SchemaFilter) (extractor.SiteBu
 		BasePath:  basePath,
 		Render:    os.Getenv("SKIP_RENDER") != "true",
 		Filter:    filter,
+		Profiler:  diagnostics.NewFromEnv(),
 	})
 	if err != nil {
 		return extractor.SiteBuildResult{}, err
@@ -155,11 +158,18 @@ func runUpload(args []string) error {
 		return err
 	}
 	projectName := getEnv("CF_PAGES_PROJECT", "kubernetes-schemas")
+	uploadConfig, err := publisher.UploadConfigFromEnv()
+	if err != nil {
+		return err
+	}
 
 	p := &publisher.Publisher{
-		APIToken:    apiToken,
-		AccountID:   accountID,
-		ProjectName: projectName,
+		APIToken:              apiToken,
+		AccountID:             accountID,
+		ProjectName:           projectName,
+		Profiler:              diagnostics.NewFromEnv(),
+		UploadBucketSizeBytes: uploadConfig.BucketSizeBytes,
+		UploadConcurrency:     uploadConfig.Concurrency,
 	}
 
 	return p.Publish(outputDir)
@@ -207,14 +217,22 @@ func runWatch(args []string) error {
 		return fmt.Errorf("building apiextensions client: %w", err)
 	}
 
+	profiler := diagnostics.NewFromEnv()
 	var pub *publisher.Publisher
 	apiToken := os.Getenv("CLOUDFLARE_API_TOKEN")
 	accountID := os.Getenv("CLOUDFLARE_ACCOUNT_ID")
 	if apiToken != "" && accountID != "" {
+		uploadConfig, err := publisher.UploadConfigFromEnv()
+		if err != nil {
+			return err
+		}
 		pub = &publisher.Publisher{
-			APIToken:    apiToken,
-			AccountID:   accountID,
-			ProjectName: getEnv("CF_PAGES_PROJECT", "kubernetes-schemas"),
+			APIToken:              apiToken,
+			AccountID:             accountID,
+			ProjectName:           getEnv("CF_PAGES_PROJECT", "kubernetes-schemas"),
+			Profiler:              profiler,
+			UploadBucketSizeBytes: uploadConfig.BucketSizeBytes,
+			UploadConcurrency:     uploadConfig.Concurrency,
 		}
 	}
 
@@ -233,6 +251,7 @@ func runWatch(args []string) error {
 		PodName:    podName,
 		HealthPort: healthPort,
 		Filter:     opts.Filter,
+		Profiler:   profiler,
 	})
 }
 

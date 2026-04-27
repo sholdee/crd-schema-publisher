@@ -274,6 +274,8 @@ Deployment/runtime configuration is primarily via environment variables. For loc
 | `HEALTH_PORT` | No | `8080` | Port for liveness/readiness probes (watch mode) |
 | `PREVIEW_ADDR` | No | `127.0.0.1:8989` | Listen address for preview server (preview mode) |
 | `SKIP_RENDER` | No | — | Set to `true` to skip HTML schema page rendering |
+| `UPLOAD_BUCKET_SIZE_BYTES` | No | `41943040` | Cloudflare upload bucket size in bytes. Lower values reduce peak upload memory at the cost of more requests |
+| `UPLOAD_CONCURRENCY` | No | `3` | Concurrent Cloudflare upload buckets. Lower values reduce peak upload memory at the cost of slower cache-miss uploads |
 | `BASE_PATH` | No | — | URL path prefix for subpath deployments (e.g., `/iac` for GitHub Pages at `user.github.io/iac/`) |
 | `SCHEMA_FILTER_KIND` | No | — | Restrict generated schemas to matching CRD kinds, comma-separated and case-insensitive (`run`, `extract`, `watch`) |
 | `SCHEMA_FILTER_GROUP` | No | — | Restrict generated schemas to matching API groups, comma-separated and case-insensitive (`run`, `extract`, `watch`) |

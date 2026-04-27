@@ -673,6 +673,20 @@ func TestRunAll_UploadsWhenCredentialsPresent(t *testing.T) {
 	}
 }
 
+func TestRunUpload_RejectsInvalidUploadConfig(t *testing.T) {
+	t.Setenv("CLOUDFLARE_API_TOKEN", "test-token")
+	t.Setenv("CLOUDFLARE_ACCOUNT_ID", "test-account")
+	t.Setenv("UPLOAD_BUCKET_SIZE_BYTES", "0")
+
+	err := runUpload([]string{"--output-dir", t.TempDir()})
+	if err == nil {
+		t.Fatal("expected runUpload error")
+	}
+	if !strings.Contains(err.Error(), "UPLOAD_BUCKET_SIZE_BYTES") {
+		t.Fatalf("expected upload config error, got %v", err)
+	}
+}
+
 func TestRunAll_BuildError_PrintsGuidance(t *testing.T) {
 	clientOrig := buildClientFunc
 	defer func() {

@@ -171,14 +171,34 @@ Validate built-in static site serving options.
 {{- end }}
 
 {{/*
+Render the GrafanaDashboard instanceSelector.
+User-provided matchLabels or matchExpressions take precedence. The default
+selector is intentionally separate from instanceSelector so Helm does not
+deep-merge fallback labels into custom user selectors.
+*/}}
+{{- define "crd-schema-publisher.grafanaDashboardInstanceSelector" -}}
+{{- $selector := .Values.grafana.dashboard.operator.instanceSelector | default dict -}}
+{{- $defaultSelector := .Values.grafana.dashboard.operator.defaultInstanceSelector | default dict -}}
+{{- if or (hasKey $selector "matchLabels") (hasKey $selector "matchExpressions") -}}
+{{- toYaml $selector -}}
+{{- else if (get $defaultSelector "enabled") -}}
+matchLabels:
+  dashboards: grafana
+{{- else -}}
+{}
+{{- end -}}
+{{- end }}
+
+{{/*
 Validate Grafana dashboard options.
 */}}
 {{- define "crd-schema-publisher.validateGrafanaDashboard" -}}
 {{- if and .Values.grafana.dashboard.enabled .Values.grafana.dashboard.operator.enabled }}
 {{- fail "grafana.dashboard.enabled and grafana.dashboard.operator.enabled are mutually exclusive - enable only one dashboard provisioning mode" }}
 {{- end }}
-{{- if and .Values.grafana.dashboard.operator.folderRef .Values.grafana.dashboard.operator.folderUID }}
-{{- fail "grafana.dashboard.operator.folderRef and grafana.dashboard.operator.folderUID are mutually exclusive - set only one" }}
+{{- $folderTargets := list .Values.grafana.dashboard.operator.folder .Values.grafana.dashboard.operator.folderRef .Values.grafana.dashboard.operator.folderUID | compact -}}
+{{- if gt (len $folderTargets) 1 }}
+{{- fail "grafana.dashboard.operator.folder, grafana.dashboard.operator.folderRef, and grafana.dashboard.operator.folderUID are mutually exclusive - set only one" }}
 {{- end }}
 {{- end }}
 

@@ -288,7 +288,6 @@ jobs:
           OPERATOR_RENDER=$(helm template test charts/crd-schema-publisher \
             --set existingSecret.name=test \
             --set grafana.dashboard.operator.enabled=true \
-            --set-string grafana.dashboard.operator.instanceSelector.matchLabels.dashboards=grafana \
             --set-string 'grafana.dashboard.operator.datasources[0].inputName=DS_PROMETHEUS' \
             --set-string 'grafana.dashboard.operator.datasources[0].datasourceName=VictoriaMetrics')
 
@@ -306,6 +305,81 @@ jobs:
           DASHBOARD_KEY=$(yq 'select(.kind == "GrafanaDashboard") | .spec.configMapRef.key' <<< "${OPERATOR_RENDER}")
           if [[ "${DASHBOARD_KEY}" != "crd-schema-publisher.json" ]]; then
             echo "ERROR: GrafanaDashboard should reference crd-schema-publisher.json"
+            exit 1
+          fi
+
+          DEFAULT_SELECTOR=$(yq 'select(.kind == "GrafanaDashboard") | .spec.instanceSelector.matchLabels.dashboards' <<< "${OPERATOR_RENDER}")
+          if [[ "${DEFAULT_SELECTOR}" != "grafana" ]]; then
+            echo "ERROR: GrafanaDashboard should render the default dashboards=grafana selector when no selector is provided"
+            exit 1
+          fi
+
+          CUSTOM_SELECTOR_RENDER=$(helm template test charts/crd-schema-publisher \
+            --set existingSecret.name=test \
+            --set grafana.dashboard.operator.enabled=true \
+            --set-string 'grafana.dashboard.operator.instanceSelector.matchLabels.grafana\.internal/instance=home')
+
+          CUSTOM_SELECTOR=$(yq 'select(.kind == "GrafanaDashboard") | .spec.instanceSelector.matchLabels."grafana.internal/instance"' <<< "${CUSTOM_SELECTOR_RENDER}")
+          if [[ "${CUSTOM_SELECTOR}" != "home" ]]; then
+            echo "ERROR: GrafanaDashboard should render custom instanceSelector.matchLabels"
+            exit 1
+          fi
+
+          UNWANTED_DEFAULT_SELECTOR=$(yq 'select(.kind == "GrafanaDashboard") | .spec.instanceSelector.matchLabels.dashboards' <<< "${CUSTOM_SELECTOR_RENDER}")
+          if [[ "${UNWANTED_DEFAULT_SELECTOR}" != "null" ]]; then
+            echo "ERROR: custom instanceSelector.matchLabels should not be ANDed with the default dashboards=grafana selector"
+            exit 1
+          fi
+
+          EXPRESSION_SELECTOR_RENDER=$(helm template test charts/crd-schema-publisher \
+            --set existingSecret.name=test \
+            --set grafana.dashboard.operator.enabled=true \
+            --set-string 'grafana.dashboard.operator.instanceSelector.matchExpressions[0].key=grafana.internal/instance' \
+            --set-string 'grafana.dashboard.operator.instanceSelector.matchExpressions[0].operator=In' \
+            --set-string 'grafana.dashboard.operator.instanceSelector.matchExpressions[0].values[0]=home')
+
+          EXPRESSION_SELECTOR_KEY=$(yq 'select(.kind == "GrafanaDashboard") | .spec.instanceSelector.matchExpressions[0].key' <<< "${EXPRESSION_SELECTOR_RENDER}")
+          if [[ "${EXPRESSION_SELECTOR_KEY}" != "grafana.internal/instance" ]]; then
+            echo "ERROR: GrafanaDashboard should render custom instanceSelector.matchExpressions"
+            exit 1
+          fi
+
+          EXPRESSION_UNWANTED_DEFAULT_SELECTOR=$(yq 'select(.kind == "GrafanaDashboard") | .spec.instanceSelector.matchLabels.dashboards' <<< "${EXPRESSION_SELECTOR_RENDER}")
+          if [[ "${EXPRESSION_UNWANTED_DEFAULT_SELECTOR}" != "null" ]]; then
+            echo "ERROR: custom instanceSelector.matchExpressions should not be ANDed with the default dashboards=grafana selector"
+            exit 1
+          fi
+
+          MATCH_ALL_RENDER=$(helm template test charts/crd-schema-publisher \
+            --set existingSecret.name=test \
+            --set grafana.dashboard.operator.enabled=true \
+            --set grafana.dashboard.operator.defaultInstanceSelector.enabled=false)
+
+          MATCH_ALL_SELECTOR_KEY_COUNT=$(yq 'select(.kind == "GrafanaDashboard") | .spec.instanceSelector | keys | length' <<< "${MATCH_ALL_RENDER}")
+          if [[ "${MATCH_ALL_SELECTOR_KEY_COUNT}" != "0" ]]; then
+            echo "ERROR: disabling the default selector with no custom selector should render instanceSelector: {}"
+            exit 1
+          fi
+
+          NULL_DEFAULT_SELECTOR_RENDER=$(helm template test charts/crd-schema-publisher \
+            --set existingSecret.name=test \
+            --set grafana.dashboard.operator.enabled=true \
+            --set-json grafana.dashboard.operator.defaultInstanceSelector=null)
+
+          NULL_DEFAULT_SELECTOR_KEY_COUNT=$(yq 'select(.kind == "GrafanaDashboard") | .spec.instanceSelector | keys | length' <<< "${NULL_DEFAULT_SELECTOR_RENDER}")
+          if [[ "${NULL_DEFAULT_SELECTOR_KEY_COUNT}" != "0" ]]; then
+            echo "ERROR: null defaultInstanceSelector should render instanceSelector: {}"
+            exit 1
+          fi
+
+          FOLDER_RENDER=$(helm template test charts/crd-schema-publisher \
+            --set existingSecret.name=test \
+            --set grafana.dashboard.operator.enabled=true \
+            --set-string grafana.dashboard.operator.folder=Platform)
+
+          DASHBOARD_FOLDER=$(yq 'select(.kind == "GrafanaDashboard") | .spec.folder' <<< "${FOLDER_RENDER}")
+          if [[ "${DASHBOARD_FOLDER}" != "Platform" ]]; then
+            echo "ERROR: grafana.dashboard.operator.folder should render GrafanaDashboard spec.folder"
             exit 1
           fi
 
@@ -348,6 +422,22 @@ jobs:
             --set grafana.dashboard.operator.folderUID=folder-uid \
             2>/dev/null; then
             echo "ERROR: folderRef and folderUID should be mutually exclusive"
+            exit 1
+          fi
+
+          if helm template test charts/crd-schema-publisher \
+            --set grafana.dashboard.operator.folder=Platform \
+            --set grafana.dashboard.operator.folderRef=folder-ref \
+            2>/dev/null; then
+            echo "ERROR: folder and folderRef should be mutually exclusive"
+            exit 1
+          fi
+
+          if helm template test charts/crd-schema-publisher \
+            --set grafana.dashboard.operator.folder=Platform \
+            --set grafana.dashboard.operator.folderUID=folder-uid \
+            2>/dev/null; then
+            echo "ERROR: folder and folderUID should be mutually exclusive"
             exit 1
           fi
 

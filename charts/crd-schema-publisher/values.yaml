@@ -300,12 +300,15 @@ grafana:
     operator:
       # -- Install the Grafana dashboard as a Grafana Operator GrafanaDashboard
       enabled: false
-      # -- Grafana Operator instance selector used by the GrafanaDashboard
-      instanceSelector:
-        matchLabels:
-          dashboards: grafana
+      # -- Grafana Operator instance selector used by the GrafanaDashboard. When empty, defaultInstanceSelector is used.
+      instanceSelector: {}
+      # -- Render the fallback dashboards=grafana selector when instanceSelector has no matchLabels or matchExpressions
+      defaultInstanceSelector:
+        enabled: true
       # -- Grafana Operator dashboard resync period
       resyncPeriod: 10m
+      # -- Grafana folder title for dashboard placement
+      folder: ""
       # -- GrafanaFolder resource name for dashboard placement
       folderRef: ""
       # -- Grafana folder UID for dashboard placement

@@ -429,7 +429,23 @@ helm upgrade --install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-sch
   --set grafana.dashboard.operator.enabled=true
 ```
 
-Operator mode renders a `GrafanaDashboard` that references the embedded dashboard `ConfigMap`. Use `grafana.dashboard.operator.instanceSelector` if your Grafana instance uses labels other than the default `dashboards: grafana`, and use `grafana.dashboard.operator.folderRef` or `grafana.dashboard.operator.folderUID` to place the dashboard in a specific folder. If your Grafana datasource name is not resolved automatically, map the bundled dashboard input with:
+Operator mode renders a `GrafanaDashboard` that references the embedded dashboard `ConfigMap`. It selects Grafana instances with `dashboards: grafana` by default. Custom `grafana.dashboard.operator.instanceSelector` values replace that fallback instead of being merged with it:
+
+```yaml
+grafana:
+  dashboard:
+    operator:
+      enabled: true
+      instanceSelector:
+        matchLabels:
+          grafana.internal/instance: home
+```
+
+To intentionally match all Grafana instances visible to the operator, set `grafana.dashboard.operator.defaultInstanceSelector.enabled=false`.
+
+Use `grafana.dashboard.operator.folder` for a Grafana folder title, `grafana.dashboard.operator.folderRef` for a `GrafanaFolder` resource reference, or `grafana.dashboard.operator.folderUID` for an existing Grafana folder UID. Set only one folder option.
+
+If your Grafana datasource name is not resolved automatically, map the bundled dashboard input with:
 
 ```yaml
 grafana:

@@ -588,7 +588,7 @@
                 },
                 "instanceSelector": {
                   "type": "object",
-                  "description": "Grafana Operator instance selector used by the GrafanaDashboard",
+                  "description": "Grafana Operator instance selector used by the GrafanaDashboard. When empty, defaultInstanceSelector is used.",
                   "additionalProperties": false,
                   "properties": {
                     "matchLabels": {
@@ -632,9 +632,24 @@
                     }
                   }
                 },
+                "defaultInstanceSelector": {
+                  "type": "object",
+                  "description": "Fallback Grafana Operator instance selector controls used only when instanceSelector has no matchLabels or matchExpressions",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "description": "Render the fallback dashboards=grafana selector when instanceSelector is empty"
+                    }
+                  }
+                },
                 "resyncPeriod": {
                   "type": "string",
                   "description": "Grafana Operator dashboard resync period"
+                },
+                "folder": {
+                  "type": "string",
+                  "description": "Grafana folder title for dashboard placement"
                 },
                 "folderRef": {
                   "type": "string",

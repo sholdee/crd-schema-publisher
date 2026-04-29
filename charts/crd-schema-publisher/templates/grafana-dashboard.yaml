@@ -14,12 +14,15 @@ metadata:
   {{- end }}
 spec:
   instanceSelector:
-    {{- toYaml .Values.grafana.dashboard.operator.instanceSelector | nindent 4 }}
+    {{- include "crd-schema-publisher.grafanaDashboardInstanceSelector" . | nindent 4 }}
   {{- if .Values.grafana.dashboard.operator.resyncPeriod }}
   resyncPeriod: {{ .Values.grafana.dashboard.operator.resyncPeriod | quote }}
   {{- end }}
   {{- if .Values.grafana.dashboard.operator.allowCrossNamespaceImport }}
   allowCrossNamespaceImport: true
+  {{- end }}
+  {{- if .Values.grafana.dashboard.operator.folder }}
+  folder: {{ .Values.grafana.dashboard.operator.folder | quote }}
   {{- end }}
   {{- if .Values.grafana.dashboard.operator.folderRef }}
   folderRef: {{ .Values.grafana.dashboard.operator.folderRef | quote }}

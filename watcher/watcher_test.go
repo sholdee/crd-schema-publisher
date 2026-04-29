@@ -1,8 +1,11 @@
 package watcher
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -368,6 +371,77 @@ func TestPublishCycle_UploadError(t *testing.T) {
 	}
 	if got := err.Error(); !strings.Contains(got, "publishing") {
 		t.Fatalf("expected error containing 'publishing', got: %s", got)
+	}
+}
+
+func TestActiveSiteReadyRequiresCurrentIndex(t *testing.T) {
+	dir := t.TempDir()
+	if activeSiteReady(dir) {
+		t.Fatal("expected site to be unready before current/index.html exists")
+	}
+
+	generationDir := filepath.Join(dir, ".generations", "ready")
+	if err := os.MkdirAll(generationDir, 0o755); err != nil {
+		t.Fatalf("mkdir generation: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(generationDir, "index.html"), []byte("ok"), 0o644); err != nil {
+		t.Fatalf("write index: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(".generations", "ready"), filepath.Join(dir, "current")); err != nil {
+		t.Fatalf("symlink current: %v", err)
+	}
+
+	if !activeSiteReady(dir) {
+		t.Fatal("expected site to be ready when current/index.html exists")
+	}
+}
+
+func TestSiteReadyCheckerLogsOnceWhenSiteBecomesReady(t *testing.T) {
+	var logs bytes.Buffer
+	orig := slog.Default()
+	defer slog.SetDefault(orig)
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+
+	dir := t.TempDir()
+	checkReady := newSiteReadyChecker(dir)
+	if checkReady() {
+		t.Fatal("expected site to be unready before current/index.html exists")
+	}
+	if logs.Len() != 0 {
+		t.Fatalf("expected no readiness log before site is ready, got %q", logs.String())
+	}
+
+	generationDir := filepath.Join(dir, ".generations", "ready")
+	if err := os.MkdirAll(generationDir, 0o755); err != nil {
+		t.Fatalf("mkdir generation: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(generationDir, "index.html"), []byte("ok"), 0o644); err != nil {
+		t.Fatalf("write index: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(".generations", "ready"), filepath.Join(dir, "current")); err != nil {
+		t.Fatalf("symlink current: %v", err)
+	}
+
+	if !checkReady() {
+		t.Fatal("expected site to be ready when current/index.html exists")
+	}
+	if !checkReady() {
+		t.Fatal("expected site to stay ready")
+	}
+
+	lines := strings.Split(strings.TrimSpace(logs.String()), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("expected exactly one readiness log, got %d: %q", len(lines), logs.String())
+	}
+	var entry map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &entry); err != nil {
+		t.Fatalf("decode readiness log: %v", err)
+	}
+	if entry["msg"] != "site ready" {
+		t.Fatalf("expected site ready log message, got %#v", entry["msg"])
+	}
+	if entry["dir"] != filepath.Join(dir, "current") {
+		t.Fatalf("expected active dir in log, got %#v", entry["dir"])
 	}
 }
 

@@ -426,6 +426,98 @@ func TestRunWatch_OutputDirFlagOverridesEnvVar(t *testing.T) {
 	}
 }
 
+func TestParseSiteServingConfig_DisabledByDefault(t *testing.T) {
+	enabled, port, accessLog, err := parseSiteServingConfig("8080")
+	if err != nil {
+		t.Fatalf("parseSiteServingConfig error: %v", err)
+	}
+	if enabled {
+		t.Fatal("expected site serving to be disabled by default")
+	}
+	if port != "" {
+		t.Fatalf("expected empty site port when disabled, got %q", port)
+	}
+	if accessLog {
+		t.Fatal("expected access logging to be disabled by default")
+	}
+}
+
+func TestParseSiteServingConfig_EnabledWithDefaultPort(t *testing.T) {
+	t.Setenv("SERVE_SITE", "true")
+
+	enabled, port, accessLog, err := parseSiteServingConfig("8080")
+	if err != nil {
+		t.Fatalf("parseSiteServingConfig error: %v", err)
+	}
+	if !enabled {
+		t.Fatal("expected site serving to be enabled")
+	}
+	if port != "8081" {
+		t.Fatalf("expected default site port 8081, got %q", port)
+	}
+	if accessLog {
+		t.Fatal("expected access logging to be disabled by default")
+	}
+}
+
+func TestParseSiteServingConfig_EnablesAccessLog(t *testing.T) {
+	t.Setenv("SERVE_SITE", "true")
+	t.Setenv("SERVE_ACCESS_LOG", "true")
+
+	enabled, port, accessLog, err := parseSiteServingConfig("8080")
+	if err != nil {
+		t.Fatalf("parseSiteServingConfig error: %v", err)
+	}
+	if !enabled {
+		t.Fatal("expected site serving to be enabled")
+	}
+	if port != "8081" {
+		t.Fatalf("expected default site port 8081, got %q", port)
+	}
+	if !accessLog {
+		t.Fatal("expected access logging to be enabled")
+	}
+}
+
+func TestParseSiteServingConfig_RejectsHealthPortConflict(t *testing.T) {
+	t.Setenv("SERVE_SITE", "true")
+	t.Setenv("SITE_PORT", "8080")
+
+	_, _, _, err := parseSiteServingConfig("8080")
+	if err == nil {
+		t.Fatal("expected port conflict error")
+	}
+	if !strings.Contains(err.Error(), "SITE_PORT") || !strings.Contains(err.Error(), "HEALTH_PORT") {
+		t.Fatalf("expected SITE_PORT/HEALTH_PORT guidance, got %v", err)
+	}
+}
+
+func TestParseSiteServingConfig_RejectsPrivilegedPort(t *testing.T) {
+	t.Setenv("SERVE_SITE", "true")
+	t.Setenv("SITE_PORT", "1023")
+
+	_, _, _, err := parseSiteServingConfig("8080")
+	if err == nil {
+		t.Fatal("expected privileged port error")
+	}
+	if !strings.Contains(err.Error(), "non-privileged") {
+		t.Fatalf("expected non-privileged port guidance, got %v", err)
+	}
+}
+
+func TestParseSiteServingConfig_RejectsInvalidPort(t *testing.T) {
+	t.Setenv("SERVE_SITE", "true")
+	t.Setenv("SITE_PORT", "not-a-port")
+
+	_, _, _, err := parseSiteServingConfig("8080")
+	if err == nil {
+		t.Fatal("expected invalid port error")
+	}
+	if !strings.Contains(err.Error(), "invalid SITE_PORT") {
+		t.Fatalf("expected SITE_PORT guidance, got %v", err)
+	}
+}
+
 func TestPreparePreviewSite_CreatesSampleGenerationUnderCurrent(t *testing.T) {
 	renderOrig := renderPreviewFunc
 	indexOrig := generatePreviewFunc

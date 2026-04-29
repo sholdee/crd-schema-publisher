@@ -141,6 +141,148 @@ jobs:
           echo "${DASHBOARD}" | python3 -m json.tool > /dev/null
           echo "Dashboard JSON embedded and valid"
 
+      - name: Verify built-in site server rendering
+        run: |
+          SERVE_RENDER=$(helm template test charts/crd-schema-publisher \
+            --set existingSecret.name=test \
+            --set serve.enabled=true)
+
+          SITE_ENV=$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[] | select(.name == "crd-schema-publisher") | .env[] | select(.name == "SERVE_SITE") | .value' <<< "${SERVE_RENDER}")
+          if [[ "${SITE_ENV}" != "true" ]]; then
+            echo "ERROR: serve.enabled should render SERVE_SITE=true"
+            exit 1
+          fi
+
+          ACCESS_LOG_ENV=$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[] | select(.name == "crd-schema-publisher") | .env[] | select(.name == "SERVE_ACCESS_LOG") | .value' <<< "${SERVE_RENDER}")
+          if [[ "${ACCESS_LOG_ENV}" != "false" ]]; then
+            echo "ERROR: serve.enabled should render SERVE_ACCESS_LOG=false by default"
+            exit 1
+          fi
+
+          ACCESS_LOG_RENDER=$(helm template test charts/crd-schema-publisher \
+            --set existingSecret.name=test \
+            --set serve.enabled=true \
+            --set serve.accessLog.enabled=true)
+          ACCESS_LOG_ENABLED=$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[] | select(.name == "crd-schema-publisher") | .env[] | select(.name == "SERVE_ACCESS_LOG") | .value' <<< "${ACCESS_LOG_RENDER}")
+          if [[ "${ACCESS_LOG_ENABLED}" != "true" ]]; then
+            echo "ERROR: serve.accessLog.enabled should render SERVE_ACCESS_LOG=true"
+            exit 1
+          fi
+
+          SITE_PORT=$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[] | select(.name == "crd-schema-publisher") | .ports[] | select(.name == "site") | .containerPort' <<< "${SERVE_RENDER}")
+          if [[ "${SITE_PORT}" != "8081" ]]; then
+            echo "ERROR: serve.enabled should render site container port 8081"
+            exit 1
+          fi
+
+          STRATEGY_TYPE=$(yq 'select(.kind == "Deployment") | .spec.strategy.type' <<< "${SERVE_RENDER}")
+          if [[ "${STRATEGY_TYPE}" != "Recreate" ]]; then
+            echo "ERROR: serve.enabled should force Recreate deployment strategy"
+            exit 1
+          fi
+
+          SERVICE_PORT=$(yq 'select(.kind == "Service") | .spec.ports[] | select(.name == "site") | .port' <<< "${SERVE_RENDER}")
+          if [[ "${SERVICE_PORT}" != "8081" ]]; then
+            echo "ERROR: serve.enabled should render site Service port 8081"
+            exit 1
+          fi
+
+          if helm template test charts/crd-schema-publisher --set mode=cronjob --set serve.enabled=true 2>/dev/null; then
+            echo "ERROR: serve.enabled should be rejected in cronjob mode"
+            exit 1
+          fi
+
+          if helm template test charts/crd-schema-publisher --set serve.enabled=true --set replicaCount=2 2>/dev/null; then
+            echo "ERROR: serve.enabled should require replicaCount=1"
+            exit 1
+          fi
+
+          if helm template test charts/crd-schema-publisher --set serve.enabled=true --set serve.port=8080 --set config.healthPort=8080 2>/dev/null; then
+            echo "ERROR: serve.port should not be allowed to equal config.healthPort"
+            exit 1
+          fi
+
+          if helm template test charts/crd-schema-publisher --set serve.enabled=true --set serve.port=80 2>/dev/null; then
+            echo "ERROR: serve.port should reject privileged ports"
+            exit 1
+          fi
+
+          NETWORK_POLICY_SITE_PORT=$(helm template test charts/crd-schema-publisher \
+            --set serve.enabled=true \
+            --set networkPolicy.enabled=true \
+            | yq 'select(.kind == "NetworkPolicy") | .spec.ingress[].ports[]? | select(.port == 8081) | .port')
+          if [[ "${NETWORK_POLICY_SITE_PORT}" != "8081" ]]; then
+            echo "ERROR: networkPolicy should allow the built-in site port when serve.enabled=true"
+            exit 1
+          fi
+
+          CILIUM_POLICY_SITE_PORT=$(helm template test charts/crd-schema-publisher \
+            --set serve.enabled=true \
+            --set ciliumNetworkPolicy.enabled=true \
+            | yq 'select(.kind == "CiliumNetworkPolicy") | .spec.ingress[].toPorts[].ports[]? | select(.port == "8081") | .port')
+          if [[ "${CILIUM_POLICY_SITE_PORT}" != "8081" ]]; then
+            echo "ERROR: ciliumNetworkPolicy should allow the built-in site port when serve.enabled=true"
+            exit 1
+          fi
+
+          HTTP_ROUTE_RENDER=$(helm template test charts/crd-schema-publisher \
+            --set existingSecret.name=test \
+            --set serve.enabled=true \
+            --set serve.httpRoute.enabled=true \
+            --set 'serve.httpRoute.parentRefs[0].name=envoy-gateway' \
+            --set 'serve.httpRoute.parentRefs[0].namespace=gateway' \
+            --set 'serve.httpRoute.parentRefs[0].sectionName=https' \
+            --set-string 'serve.httpRoute.hostnames[0]=kube-schemas-test.mgmt.sholdee.net' \
+            --set 'serve.httpRoute.filters[0].type=RequestHeaderModifier' \
+            --set 'serve.httpRoute.filters[0].requestHeaderModifier.add[0].name=X-Test' \
+            --set-string 'serve.httpRoute.filters[0].requestHeaderModifier.add[0].value=e2e')
+
+          HTTP_ROUTE_NAME=$(yq 'select(.kind == "HTTPRoute") | .metadata.name' <<< "${HTTP_ROUTE_RENDER}")
+          if [[ "${HTTP_ROUTE_NAME}" != "test-crd-schema-publisher" ]]; then
+            echo "ERROR: serve.httpRoute.enabled should render an HTTPRoute named after the release"
+            exit 1
+          fi
+
+          HTTP_ROUTE_PARENT=$(yq 'select(.kind == "HTTPRoute") | .spec.parentRefs[0].name' <<< "${HTTP_ROUTE_RENDER}")
+          if [[ "${HTTP_ROUTE_PARENT}" != "envoy-gateway" ]]; then
+            echo "ERROR: HTTPRoute should render configured parentRefs"
+            exit 1
+          fi
+
+          HTTP_ROUTE_HOSTNAME=$(yq 'select(.kind == "HTTPRoute") | .spec.hostnames[0]' <<< "${HTTP_ROUTE_RENDER}")
+          if [[ "${HTTP_ROUTE_HOSTNAME}" != "kube-schemas-test.mgmt.sholdee.net" ]]; then
+            echo "ERROR: HTTPRoute should render configured hostnames"
+            exit 1
+          fi
+
+          HTTP_ROUTE_MATCH_PATH=$(yq 'select(.kind == "HTTPRoute") | .spec.rules[0].matches[0].path.value' <<< "${HTTP_ROUTE_RENDER}")
+          if [[ "${HTTP_ROUTE_MATCH_PATH}" != "/" ]]; then
+            echo "ERROR: HTTPRoute should default to a / PathPrefix match"
+            exit 1
+          fi
+
+          HTTP_ROUTE_BACKEND_PORT=$(yq 'select(.kind == "HTTPRoute") | .spec.rules[0].backendRefs[0].port' <<< "${HTTP_ROUTE_RENDER}")
+          if [[ "${HTTP_ROUTE_BACKEND_PORT}" != "8081" ]]; then
+            echo "ERROR: HTTPRoute should route to the built-in site Service port"
+            exit 1
+          fi
+
+          HTTP_ROUTE_FILTER=$(yq 'select(.kind == "HTTPRoute") | .spec.rules[0].filters[0].type' <<< "${HTTP_ROUTE_RENDER}")
+          if [[ "${HTTP_ROUTE_FILTER}" != "RequestHeaderModifier" ]]; then
+            echo "ERROR: HTTPRoute should render configured filters"
+            exit 1
+          fi
+
+          if helm template test charts/crd-schema-publisher --set serve.httpRoute.enabled=true --set 'serve.httpRoute.parentRefs[0].name=envoy-gateway' 2>/dev/null; then
+            echo "ERROR: serve.httpRoute.enabled should require serve.enabled=true"
+            exit 1
+          fi
+
+          if helm template test charts/crd-schema-publisher --set serve.enabled=true --set serve.httpRoute.enabled=true 2>/dev/null; then
+            echo "ERROR: serve.httpRoute.enabled should require at least one parentRef"
+            exit 1
+          fi
+
       - name: Verify existingClaim suppresses PVC creation
         run: |
           PVC_COUNT=$(helm template test charts/crd-schema-publisher \
@@ -174,6 +316,11 @@ jobs:
             --set externalSecret.enabled=true \
             --set externalSecret.secretStoreRef.name=test \
             --set ciliumNetworkPolicy.enabled=true \
+            --set serve.enabled=true \
+            --set serve.httpRoute.enabled=true \
+            --set 'serve.httpRoute.parentRefs[0].name=envoy-gateway' \
+            --set 'serve.httpRoute.parentRefs[0].namespace=gateway' \
+            --set-string 'serve.httpRoute.hostnames[0]=kube-schemas-test.mgmt.sholdee.net' \
             --set metrics.podMonitor.enabled=true \
             --set metrics.prometheusRule.enabled=true \
             | kubeconform "${SCHEMA_ARGS[@]}"

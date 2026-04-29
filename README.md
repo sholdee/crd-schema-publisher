@@ -14,7 +14,7 @@ Run it as:
 - a CronJob for scheduled extraction
 - a local CLI for extracting from a live cluster or converting YAML files
 
-Exports schemas for IDE validation with yaml-language-server and CI linting with kubeconform. Cloudflare Pages is built in; S3, git repos, and local serving are supported via sidecar.
+Exports schemas for IDE validation with yaml-language-server and CI linting with kubeconform. Cloudflare Pages and local serving are built in; S3, git repos, and custom web servers are supported via sidecar.
 
 > **Upgrading direct-volume deployments:** the active site now lives at `OUTPUT_DIR/current`. Existing sidecars or scripts that read the shared output volume directly must be updated. Cloudflare Pages users do not need to change anything.
 
@@ -163,7 +163,21 @@ Controller mode still watches all CRDs, then applies the filter to each generate
 
 #### Optional features
 
-Persistent output volume (`persistence`), extra volumes/volume mounts/containers (`extraVolumes`, `extraVolumeMounts`, `extraContainers`), PodMonitor, PrometheusRule, Grafana dashboard (sidecar ConfigMap), NetworkPolicy, CiliumNetworkPolicy, PodDisruptionBudget, pod anti-affinity presets, topology spread constraints, and templated extra objects. See [`values.yaml`](charts/crd-schema-publisher/values.yaml) for all options.
+Persistent output volume (`persistence`), built-in static serving (`serve`), Gateway API HTTPRoute (`serve.httpRoute`), extra volumes/volume mounts/containers (`extraVolumes`, `extraVolumeMounts`, `extraContainers`), PodMonitor, PrometheusRule, Grafana dashboard (sidecar ConfigMap), NetworkPolicy, CiliumNetworkPolicy, PodDisruptionBudget, pod anti-affinity presets, topology spread constraints, and templated extra objects. See [`values.yaml`](charts/crd-schema-publisher/values.yaml) for all options.
+
+#### Built-in static serving
+
+For simple in-cluster deployments, the controller can serve the active generated site directly from `OUTPUT_DIR/current`:
+
+```bash
+helm upgrade --install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-schema-publisher \
+  --namespace crd-schema-publisher \
+  --set serve.enabled=true
+```
+
+The site is exposed on the chart Service port named `site` and defaults to non-privileged port `8081`; health and metrics stay on the `health` port. Built-in serving is controller-only, requires `replicaCount=1`, and switches the Deployment strategy to `Recreate` so traffic is not routed to a new pod before it has published its first site.
+
+Use [`examples/built-in-server/values.yaml`](examples/built-in-server/values.yaml) for a complete values file with persistence and Gateway API `HTTPRoute` setup.
 
 #### Examples: Alternative backends via sidecar pattern
 
@@ -272,6 +286,9 @@ Deployment/runtime configuration is primarily via environment variables. For loc
 | `POD_NAMESPACE` | Yes (watch) | — | Namespace for leader lease (set via downward API) |
 | `LEASE_NAME` | No | `crd-schema-publisher` | Name of the Lease resource (watch mode) |
 | `HEALTH_PORT` | No | `8080` | Port for liveness/readiness probes (watch mode) |
+| `SERVE_SITE` | No | — | Set to `true` to serve `OUTPUT_DIR/current` from watch mode |
+| `SITE_PORT` | No | `8081` | Non-privileged static site server port when `SERVE_SITE=true` |
+| `SERVE_ACCESS_LOG` | No | — | Set to `true` to log each request served by the built-in static site server |
 | `PREVIEW_ADDR` | No | `127.0.0.1:8989` | Listen address for preview server (preview mode) |
 | `SKIP_RENDER` | No | — | Set to `true` to skip HTML schema page rendering |
 | `UPLOAD_BUCKET_SIZE_BYTES` | No | `41943040` | Cloudflare upload bucket size in bytes. Lower values reduce peak upload memory at the cost of more requests |

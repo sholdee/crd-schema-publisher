@@ -11,9 +11,14 @@ metadata:
   {{- end }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  {{- if .Values.serve.enabled }}
+  strategy:
+    type: Recreate
+  {{- else }}
   {{- with .Values.strategy }}
   strategy:
     {{- toYaml . | nindent 4 }}
+  {{- end }}
   {{- end }}
   selector:
     matchLabels:
@@ -54,6 +59,14 @@ spec:
               value: {{ .Values.config.debounceSeconds | quote }}
             - name: HEALTH_PORT
               value: {{ .Values.config.healthPort | quote }}
+            {{- if .Values.serve.enabled }}
+            - name: SERVE_SITE
+              value: "true"
+            - name: SITE_PORT
+              value: {{ .Values.serve.port | quote }}
+            - name: SERVE_ACCESS_LOG
+              value: {{ .Values.serve.accessLog.enabled | quote }}
+            {{- end }}
             - name: LEASE_NAME
               value: {{ .Values.config.leaseName | quote }}
             - name: POD_NAME
@@ -68,6 +81,11 @@ spec:
             - name: health
               containerPort: {{ .Values.config.healthPort }}
               protocol: TCP
+            {{- if .Values.serve.enabled }}
+            - name: site
+              containerPort: {{ .Values.serve.port }}
+              protocol: TCP
+            {{- end }}
           {{- with .Values.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}

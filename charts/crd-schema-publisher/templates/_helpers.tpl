@@ -150,6 +150,27 @@ Validate that networkPolicy and ciliumNetworkPolicy are not both enabled.
 {{- end }}
 
 {{/*
+Validate built-in static site serving options.
+*/}}
+{{- define "crd-schema-publisher.validateServe" -}}
+{{- if and .Values.serve.enabled (ne .Values.mode "controller") }}
+{{- fail "serve.enabled is only supported in controller mode" }}
+{{- end }}
+{{- if and .Values.serve.enabled (ne (int .Values.replicaCount) 1) }}
+{{- fail "serve.enabled requires replicaCount=1 because only the leader writes OUTPUT_DIR/current" }}
+{{- end }}
+{{- if and .Values.serve.enabled (eq (int .Values.serve.port) (int .Values.config.healthPort)) }}
+{{- fail "serve.port must be different from config.healthPort" }}
+{{- end }}
+{{- if and .Values.serve.httpRoute.enabled (not .Values.serve.enabled) }}
+{{- fail "serve.httpRoute.enabled requires serve.enabled=true because the HTTPRoute targets the built-in site port" }}
+{{- end }}
+{{- if and .Values.serve.httpRoute.enabled (empty .Values.serve.httpRoute.parentRefs) }}
+{{- fail "serve.httpRoute.enabled requires at least one serve.httpRoute.parentRefs entry" }}
+{{- end }}
+{{- end }}
+
+{{/*
 Pod anti-affinity preset.
 Generates preferred (soft) or required (hard) pod anti-affinity rules
 using selector labels and kubernetes.io/hostname topology key.

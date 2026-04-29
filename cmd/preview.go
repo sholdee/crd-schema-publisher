@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/sholdee/crd-schema-publisher/extractor"
+	"github.com/sholdee/crd-schema-publisher/site"
 )
 
 func init() {
@@ -45,17 +46,7 @@ func runPreview(args []string) error {
 	defer cleanup()
 
 	addr := getEnv("PREVIEW_ADDR", "127.0.0.1:8989")
-	var handler http.Handler
-	if basePath != "" {
-		mux := http.NewServeMux()
-		mux.Handle(basePath+"/", http.StripPrefix(basePath, http.FileServer(http.Dir(serveDir))))
-		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, basePath+"/", http.StatusFound)
-		})
-		handler = mux
-	} else {
-		handler = http.FileServer(http.Dir(serveDir))
-	}
+	handler := site.NewStaticHandler(serveDir, basePath)
 	srv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)

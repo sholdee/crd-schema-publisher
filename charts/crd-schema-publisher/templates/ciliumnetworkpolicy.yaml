@@ -22,6 +22,10 @@ spec:
         - ports:
             - port: {{ .Values.config.healthPort | quote }}
               protocol: TCP
+            {{- if .Values.serve.enabled }}
+            - port: {{ .Values.serve.port | quote }}
+              protocol: TCP
+            {{- end }}
     {{- end }}
     {{- with .Values.ciliumNetworkPolicy.extraIngress }}
     {{- toYaml . | nindent 4 }}

@@ -28,6 +28,10 @@ spec:
     - ports:
         - port: {{ .Values.config.healthPort }}
           protocol: TCP
+        {{- if .Values.serve.enabled }}
+        - port: {{ .Values.serve.port }}
+          protocol: TCP
+        {{- end }}
     {{- end }}
     {{- with .Values.networkPolicy.extraIngress }}
     {{- toYaml . | nindent 4 }}

@@ -1,0 +1,27 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/sholdee/crd-schema-publisher/refs/heads/main/charts/crd-schema-publisher/values.schema.json
+#
+# Built-in server example - serve CRD schemas from the main controller container
+# Includes a Gateway API HTTPRoute; adapt parentRefs and hostnames to your Gateway.
+#
+# Install:
+#   helm install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-schema-publisher \
+#     --namespace crd-schema-publisher --create-namespace \
+#     -f values.yaml
+
+serve:
+  enabled: true
+  port: 8081
+  httpRoute:
+    enabled: true
+    parentRefs:
+      - name: envoy-gateway
+        namespace: gateway
+        sectionName: https
+    hostnames:
+      - kube-schemas.example.com
+
+# Optional, but useful if you want generated schemas to survive pod restarts.
+persistence:
+  enabled: true
+  size: 512Mi

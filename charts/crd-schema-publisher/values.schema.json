@@ -302,6 +302,119 @@
       "type": "object",
       "description": "Readiness probe configuration (controller mode only)"
     },
+    "serve": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Serve OUTPUT_DIR/current from the main controller container"
+        },
+        "port": {
+          "type": "integer",
+          "description": "Non-privileged static site server port",
+          "minimum": 1024,
+          "maximum": 65535
+        },
+        "accessLog": {
+          "type": "object",
+          "description": "Request logging for the built-in static site server",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Log each request served by the built-in static site server"
+            }
+          }
+        },
+        "httpRoute": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Gateway API HTTPRoute for the built-in static site server",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Create an HTTPRoute for the built-in static site server"
+            },
+            "labels": {
+              "type": "object",
+              "description": "Additional labels for the HTTPRoute",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "annotations": {
+              "type": "object",
+              "description": "Additional annotations for the HTTPRoute",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "parentRefs": {
+              "type": "array",
+              "description": "Gateway parentRefs for the HTTPRoute",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "group": {
+                    "type": "string",
+                    "description": "Gateway API group"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "description": "Gateway parent kind"
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "description": "Gateway namespace"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Gateway name"
+                  },
+                  "sectionName": {
+                    "type": "string",
+                    "description": "Gateway listener section name"
+                  },
+                  "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "description": "Gateway listener port"
+                  }
+                }
+              }
+            },
+            "hostnames": {
+              "type": "array",
+              "description": "Hostnames for the HTTPRoute",
+              "items": {
+                "type": "string"
+              }
+            },
+            "matches": {
+              "type": "array",
+              "description": "HTTPRoute matches for the site rule",
+              "items": {
+                "type": "object"
+              }
+            },
+            "filters": {
+              "type": "array",
+              "description": "HTTPRoute filters for the site rule",
+              "items": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
     "annotations": {
       "type": "object",
       "description": "Annotations added to the Deployment or CronJob metadata"

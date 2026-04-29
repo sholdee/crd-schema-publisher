@@ -12,6 +12,12 @@ spec:
       port: {{ .Values.config.healthPort }}
       targetPort: health
       protocol: TCP
+    {{- if .Values.serve.enabled }}
+    - name: site
+      port: {{ .Values.serve.port }}
+      targetPort: site
+      protocol: TCP
+    {{- end }}
   selector:
     {{- include "crd-schema-publisher.selectorLabels" . | nindent 4 }}
 {{- end }}

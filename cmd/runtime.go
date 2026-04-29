@@ -110,6 +110,21 @@ func parseRuntimeCommandArgs(cmd string, args []string, fallbackOutputDir string
 	}, nil
 }
 
+func parseSiteServingConfig(healthPort string) (bool, string, bool, error) {
+	if os.Getenv("SERVE_SITE") != "true" {
+		return false, "", false, nil
+	}
+	sitePort := getEnv("SITE_PORT", "8081")
+	if sitePort == healthPort {
+		return false, "", false, fmt.Errorf("SITE_PORT must be different from HEALTH_PORT when SERVE_SITE=true")
+	}
+	parsedPort, err := strconv.Atoi(sitePort)
+	if err != nil || parsedPort < 1024 || parsedPort > 65535 {
+		return false, "", false, fmt.Errorf("invalid SITE_PORT %q: must be a non-privileged integer port between 1024 and 65535", sitePort)
+	}
+	return true, sitePort, os.Getenv("SERVE_ACCESS_LOG") == "true", nil
+}
+
 func runBuild(outputDir string, filter extractor.SchemaFilter) (extractor.SiteBuildResult, error) {
 	basePath := normalizeBasePath(os.Getenv("BASE_PATH"))
 	kubeContext := os.Getenv("KUBECTL_CONTEXT")
@@ -206,6 +221,13 @@ func runWatch(args []string) error {
 
 	leaseName := getEnv("LEASE_NAME", "crd-schema-publisher")
 	healthPort := getEnv("HEALTH_PORT", "8080")
+	serveSite, sitePort, serveAccessLog, err := parseSiteServingConfig(healthPort)
+	if err != nil {
+		return err
+	}
+	if serveSite {
+		slog.Info("site serving enabled", "site_port", sitePort, "access_log", serveAccessLog)
+	}
 
 	cfg, err := extractor.BuildConfig(kubeContext)
 	if err != nil {
@@ -240,18 +262,20 @@ func runWatch(args []string) error {
 	defer cancel()
 
 	return watcher.Run(ctx, watcher.Config{
-		Client:     client,
-		KubeConfig: cfg,
-		OutputDir:  opts.OutputDir,
-		BasePath:   basePath,
-		Publisher:  pub,
-		Debounce:   time.Duration(debounceSeconds) * time.Second,
-		Namespace:  podNamespace,
-		LeaseName:  leaseName,
-		PodName:    podName,
-		HealthPort: healthPort,
-		Filter:     opts.Filter,
-		Profiler:   profiler,
+		Client:        client,
+		KubeConfig:    cfg,
+		OutputDir:     opts.OutputDir,
+		BasePath:      basePath,
+		Publisher:     pub,
+		Debounce:      time.Duration(debounceSeconds) * time.Second,
+		Namespace:     podNamespace,
+		LeaseName:     leaseName,
+		PodName:       podName,
+		HealthPort:    healthPort,
+		SitePort:      sitePort,
+		SiteAccessLog: serveAccessLog,
+		Filter:        opts.Filter,
+		Profiler:      profiler,
 	})
 }
 

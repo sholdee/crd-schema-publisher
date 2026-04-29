@@ -15,6 +15,7 @@ import (
 	"github.com/sholdee/crd-schema-publisher/extractor"
 	"github.com/sholdee/crd-schema-publisher/metrics"
 	"github.com/sholdee/crd-schema-publisher/publisher"
+	"github.com/sholdee/crd-schema-publisher/site"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -30,20 +31,22 @@ import (
 
 // Config holds the configuration for the CRD watcher.
 type Config struct {
-	Client     *apiextensionsclient.Clientset
-	KubeConfig *rest.Config
-	OutputDir  string
-	BasePath   string
-	Publisher  *publisher.Publisher // nil = extract-only
-	Debounce   time.Duration
-	Namespace  string
-	LeaseName  string
-	PodName    string
-	HealthPort string
-	Metrics    *metrics.Metrics    // nil = no metrics recording
-	CRDLister  extractor.CRDLister // nil = derive from Client
-	Filter     extractor.SchemaFilter
-	Profiler   diagnostics.Snapshotter
+	Client        *apiextensionsclient.Clientset
+	KubeConfig    *rest.Config
+	OutputDir     string
+	BasePath      string
+	Publisher     *publisher.Publisher // nil = extract-only
+	Debounce      time.Duration
+	Namespace     string
+	LeaseName     string
+	PodName       string
+	HealthPort    string
+	SitePort      string // empty = disabled
+	SiteAccessLog bool
+	Metrics       *metrics.Metrics    // nil = no metrics recording
+	CRDLister     extractor.CRDLister // nil = derive from Client
+	Filter        extractor.SchemaFilter
+	Profiler      diagnostics.Snapshotter
 }
 
 // Run starts the watcher with leader election and health server.
@@ -59,7 +62,30 @@ func Run(ctx context.Context, cfg Config) error {
 	// Start health server before leader election
 	healthReady := &atomic.Bool{}
 	cfg.Metrics = metrics.New()
-	healthServer := startHealthServer(cfg.HealthPort, healthReady, cfg.Metrics)
+	siteReady := func() bool { return true }
+	if cfg.SitePort != "" {
+		siteReady = newSiteReadyChecker(cfg.OutputDir)
+	}
+	healthServer := startHealthServer(cfg.HealthPort, healthReady, cfg.Metrics, siteReady)
+	var siteServer *http.Server
+	if cfg.SitePort != "" {
+		siteDir := extractor.ActiveOutputDir(cfg.OutputDir)
+		handler := site.NewStaticHandler(siteDir, cfg.BasePath)
+		if cfg.SiteAccessLog {
+			handler = site.WithAccessLog(handler)
+		}
+		var err error
+		siteServer, err = site.StartServer(":"+cfg.SitePort, handler)
+		if err != nil {
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutdownCancel()
+			if shutdownErr := healthServer.Shutdown(shutdownCtx); shutdownErr != nil {
+				slog.Error("health server shutdown error", "error", shutdownErr)
+			}
+			return fmt.Errorf("starting site server: %w", err)
+		}
+		slog.Info("site server started", "port", cfg.SitePort, "dir", siteDir, "base_path", cfg.BasePath, "access_log", cfg.SiteAccessLog)
+	}
 
 	kubeClient, err := kubernetes.NewForConfig(cfg.KubeConfig)
 	if err != nil {
@@ -122,9 +148,32 @@ func Run(ctx context.Context, cfg Config) error {
 	if err := healthServer.Shutdown(shutdownCtx); err != nil {
 		slog.Error("health server shutdown error", "error", err)
 	}
+	if siteServer != nil {
+		siteShutdownCtx, siteShutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer siteShutdownCancel()
+		if err := siteServer.Shutdown(siteShutdownCtx); err != nil {
+			slog.Error("site server shutdown error", "error", err)
+		}
+	}
 
 	slog.Info("shutdown complete")
 	return nil
+}
+
+func activeSiteReady(outputDir string) bool {
+	_, err := os.Stat(filepath.Join(extractor.ActiveOutputDir(outputDir), "index.html"))
+	return err == nil
+}
+
+func newSiteReadyChecker(outputDir string) func() bool {
+	var logged atomic.Bool
+	return func() bool {
+		ready := activeSiteReady(outputDir)
+		if ready && logged.CompareAndSwap(false, true) {
+			slog.Info("site ready", "dir", extractor.ActiveOutputDir(outputDir))
+		}
+		return ready
+	}
 }
 
 func runLeader(ctx context.Context, cfg Config) {
@@ -312,14 +361,14 @@ func cleanDir(dir string) error {
 	return nil
 }
 
-func startHealthServer(port string, ready *atomic.Bool, m *metrics.Metrics) *http.Server {
+func startHealthServer(port string, ready *atomic.Bool, m *metrics.Metrics, extraReady func() bool) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		if ready.Load() {
+		if ready.Load() && extraReady() {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("ok"))
 		} else {

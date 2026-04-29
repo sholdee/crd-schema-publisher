@@ -178,6 +178,41 @@ readinessProbe:
   initialDelaySeconds: 3
   periodSeconds: 5
 
+# ---------------------------------------------------------------------------
+# Built-in static site server
+# ---------------------------------------------------------------------------
+serve:
+  # -- Serve OUTPUT_DIR/current from the main controller container
+  enabled: false
+  # -- Non-privileged static site server port
+  port: 8081
+  accessLog:
+    # -- Log each request served by the built-in static site server
+    enabled: false
+  # -- Gateway API HTTPRoute for the built-in static site server
+  httpRoute:
+    # -- Create an HTTPRoute for the built-in static site server
+    enabled: false
+    # -- Additional labels for the HTTPRoute
+    labels: {}
+    # -- Additional annotations for the HTTPRoute
+    annotations: {}
+    # -- Gateway parentRefs. Required when serve.httpRoute.enabled=true.
+    parentRefs: []
+    #  - name: envoy-gateway
+    #    namespace: gateway
+    #    sectionName: https
+    # -- Hostnames for the HTTPRoute
+    hostnames: []
+    #  - kube-schemas.example.com
+    # -- HTTPRoute matches for the site rule
+    matches:
+      - path:
+          type: PathPrefix
+          value: /
+    # -- HTTPRoute filters for the site rule
+    filters: []
+
 # -- Annotations added to the Deployment or CronJob metadata (e.g. reloader.stakater.com/auto)
 annotations: {}
 

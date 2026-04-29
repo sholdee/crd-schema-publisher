@@ -283,6 +283,82 @@ jobs:
             exit 1
           fi
 
+      - name: Verify Grafana Operator dashboard rendering
+        run: |
+          OPERATOR_RENDER=$(helm template test charts/crd-schema-publisher \
+            --set existingSecret.name=test \
+            --set grafana.dashboard.operator.enabled=true \
+            --set-string grafana.dashboard.operator.instanceSelector.matchLabels.dashboards=grafana \
+            --set-string 'grafana.dashboard.operator.datasources[0].inputName=DS_PROMETHEUS' \
+            --set-string 'grafana.dashboard.operator.datasources[0].datasourceName=VictoriaMetrics')
+
+          if ! grep -q "^kind: GrafanaDashboard$" <<< "${OPERATOR_RENDER}"; then
+            echo "ERROR: Grafana Operator mode should render a GrafanaDashboard"
+            exit 1
+          fi
+
+          DASHBOARD_REF=$(yq 'select(.kind == "GrafanaDashboard") | .spec.configMapRef.name' <<< "${OPERATOR_RENDER}")
+          if [[ "${DASHBOARD_REF}" != "test-crd-schema-publisher-dashboard" ]]; then
+            echo "ERROR: GrafanaDashboard should reference the embedded dashboard ConfigMap"
+            exit 1
+          fi
+
+          DASHBOARD_KEY=$(yq 'select(.kind == "GrafanaDashboard") | .spec.configMapRef.key' <<< "${OPERATOR_RENDER}")
+          if [[ "${DASHBOARD_KEY}" != "crd-schema-publisher.json" ]]; then
+            echo "ERROR: GrafanaDashboard should reference crd-schema-publisher.json"
+            exit 1
+          fi
+
+          CROSS_NAMESPACE=$(yq 'select(.kind == "GrafanaDashboard") | .spec.allowCrossNamespaceImport' <<< "${OPERATOR_RENDER}")
+          if [[ "${CROSS_NAMESPACE}" != "true" ]]; then
+            echo "ERROR: GrafanaDashboard should allow cross-namespace import by default"
+            exit 1
+          fi
+
+          DATASOURCE_INPUT=$(yq 'select(.kind == "GrafanaDashboard") | .spec.datasources[0].inputName' <<< "${OPERATOR_RENDER}")
+          if [[ "${DATASOURCE_INPUT}" != "DS_PROMETHEUS" ]]; then
+            echo "ERROR: GrafanaDashboard should include the configured datasource input mapping"
+            exit 1
+          fi
+
+          DATASOURCE_NAME=$(yq 'select(.kind == "GrafanaDashboard") | .spec.datasources[0].datasourceName' <<< "${OPERATOR_RENDER}")
+          if [[ "${DATASOURCE_NAME}" != "VictoriaMetrics" ]]; then
+            echo "ERROR: GrafanaDashboard should include the configured datasource name mapping"
+            exit 1
+          fi
+
+          CM_MANAGER=$(yq 'select(.kind == "ConfigMap" and .metadata.name == "test-crd-schema-publisher-dashboard") | .metadata.labels."app.kubernetes.io/managed-by"' <<< "${OPERATOR_RENDER}")
+          if [[ "${CM_MANAGER}" != "grafana-operator" ]]; then
+            echo "ERROR: operator dashboard ConfigMap should use the Grafana Operator cache label"
+            exit 1
+          fi
+
+      - name: Verify Grafana dashboard option validation
+        run: |
+          if helm template test charts/crd-schema-publisher \
+            --set grafana.dashboard.enabled=true \
+            --set grafana.dashboard.operator.enabled=true \
+            2>/dev/null; then
+            echo "ERROR: sidecar and operator dashboard modes should be mutually exclusive"
+            exit 1
+          fi
+
+          if helm template test charts/crd-schema-publisher \
+            --set grafana.dashboard.operator.folderRef=folder \
+            --set grafana.dashboard.operator.folderUID=folder-uid \
+            2>/dev/null; then
+            echo "ERROR: folderRef and folderUID should be mutually exclusive"
+            exit 1
+          fi
+
+          if helm template test charts/crd-schema-publisher \
+            --set grafana.dashboard.operator.enabled=true \
+            --set grafana.dashboard.operator.instanceSelector.mathLabels.dashboards=grafana \
+            2>/dev/null; then
+            echo "ERROR: invalid instanceSelector keys should be rejected by the values schema"
+            exit 1
+          fi
+
       - name: Verify existingClaim suppresses PVC creation
         run: |
           PVC_COUNT=$(helm template test charts/crd-schema-publisher \
@@ -323,6 +399,9 @@ jobs:
             --set-string 'serve.httpRoute.hostnames[0]=kube-schemas-test.mgmt.sholdee.net' \
             --set metrics.podMonitor.enabled=true \
             --set metrics.prometheusRule.enabled=true \
+            --set grafana.dashboard.operator.enabled=true \
+            --set-string 'grafana.dashboard.operator.datasources[0].inputName=DS_PROMETHEUS' \
+            --set-string 'grafana.dashboard.operator.datasources[0].datasourceName=VictoriaMetrics' \
             | kubeconform "${SCHEMA_ARGS[@]}"
 
           echo "Validating cronjob mode..."

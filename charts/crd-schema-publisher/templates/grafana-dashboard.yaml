@@ -1,0 +1,37 @@
+{{- if .Values.grafana.dashboard.operator.enabled -}}
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: {{ include "crd-schema-publisher.fullname" . }}-dashboard
+  labels:
+    {{- include "crd-schema-publisher.labels" . | nindent 4 }}
+    {{- with .Values.grafana.dashboard.operator.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.grafana.dashboard.operator.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  instanceSelector:
+    {{- toYaml .Values.grafana.dashboard.operator.instanceSelector | nindent 4 }}
+  {{- if .Values.grafana.dashboard.operator.resyncPeriod }}
+  resyncPeriod: {{ .Values.grafana.dashboard.operator.resyncPeriod | quote }}
+  {{- end }}
+  {{- if .Values.grafana.dashboard.operator.allowCrossNamespaceImport }}
+  allowCrossNamespaceImport: true
+  {{- end }}
+  {{- if .Values.grafana.dashboard.operator.folderRef }}
+  folderRef: {{ .Values.grafana.dashboard.operator.folderRef | quote }}
+  {{- end }}
+  {{- if .Values.grafana.dashboard.operator.folderUID }}
+  folderUID: {{ .Values.grafana.dashboard.operator.folderUID | quote }}
+  {{- end }}
+  {{- with .Values.grafana.dashboard.operator.datasources }}
+  datasources:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  configMapRef:
+    name: {{ include "crd-schema-publisher.fullname" . }}-dashboard
+    key: crd-schema-publisher.json
+{{- end }}

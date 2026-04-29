@@ -171,6 +171,18 @@ Validate built-in static site serving options.
 {{- end }}
 
 {{/*
+Validate Grafana dashboard options.
+*/}}
+{{- define "crd-schema-publisher.validateGrafanaDashboard" -}}
+{{- if and .Values.grafana.dashboard.enabled .Values.grafana.dashboard.operator.enabled }}
+{{- fail "grafana.dashboard.enabled and grafana.dashboard.operator.enabled are mutually exclusive - enable only one dashboard provisioning mode" }}
+{{- end }}
+{{- if and .Values.grafana.dashboard.operator.folderRef .Values.grafana.dashboard.operator.folderUID }}
+{{- fail "grafana.dashboard.operator.folderRef and grafana.dashboard.operator.folderUID are mutually exclusive - set only one" }}
+{{- end }}
+{{- end }}
+
+{{/*
 Pod anti-affinity preset.
 Generates preferred (soft) or required (hard) pod anti-affinity rules
 using selector labels and kubernetes.io/hostname topology key.

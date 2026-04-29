@@ -163,7 +163,7 @@ Controller mode still watches all CRDs, then applies the filter to each generate
 
 #### Optional features
 
-Persistent output volume (`persistence`), built-in static serving (`serve`), Gateway API HTTPRoute (`serve.httpRoute`), extra volumes/volume mounts/containers (`extraVolumes`, `extraVolumeMounts`, `extraContainers`), PodMonitor, PrometheusRule, Grafana dashboard (sidecar ConfigMap), NetworkPolicy, CiliumNetworkPolicy, PodDisruptionBudget, pod anti-affinity presets, topology spread constraints, and templated extra objects. See [`values.yaml`](charts/crd-schema-publisher/values.yaml) for all options.
+Persistent output volume (`persistence`), built-in static serving (`serve`), Gateway API HTTPRoute (`serve.httpRoute`), extra volumes/volume mounts/containers (`extraVolumes`, `extraVolumeMounts`, `extraContainers`), PodMonitor, PrometheusRule, Grafana dashboard (sidecar ConfigMap or Grafana Operator `GrafanaDashboard`), NetworkPolicy, CiliumNetworkPolicy, PodDisruptionBudget, pod anti-affinity presets, topology spread constraints, and templated extra objects. See [`values.yaml`](charts/crd-schema-publisher/values.yaml) for all options.
 
 #### Built-in static serving
 
@@ -408,6 +408,39 @@ spec:
 ```
 
 For vanilla Prometheus, add `prometheus.io/*` annotations to the pod template or configure a static scrape target.
+
+#### Grafana dashboard
+
+The Helm chart can install the included Grafana dashboard in either sidecar-discovery mode or Grafana Operator mode.
+
+For Grafana sidecars that discover dashboard `ConfigMap` objects:
+
+```bash
+helm upgrade --install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-schema-publisher \
+  --namespace crd-schema-publisher \
+  --set grafana.dashboard.enabled=true
+```
+
+For Grafana Operator:
+
+```bash
+helm upgrade --install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-schema-publisher \
+  --namespace crd-schema-publisher \
+  --set grafana.dashboard.operator.enabled=true
+```
+
+Operator mode renders a `GrafanaDashboard` that references the embedded dashboard `ConfigMap`. Use `grafana.dashboard.operator.instanceSelector` if your Grafana instance uses labels other than the default `dashboards: grafana`, and use `grafana.dashboard.operator.folderRef` or `grafana.dashboard.operator.folderUID` to place the dashboard in a specific folder. If your Grafana datasource name is not resolved automatically, map the bundled dashboard input with:
+
+```yaml
+grafana:
+  dashboard:
+    operator:
+      datasources:
+        - inputName: DS_PROMETHEUS
+          datasourceName: Prometheus
+```
+
+Grafana Operator and its CRDs must already be installed in the cluster.
 
 ### Output Structure
 

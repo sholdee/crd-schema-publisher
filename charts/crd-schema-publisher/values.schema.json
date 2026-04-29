@@ -577,6 +577,112 @@
             "folder": {
               "type": "string",
               "description": "Folder annotation for the Grafana sidecar"
+            },
+            "operator": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Install the Grafana dashboard as a Grafana Operator GrafanaDashboard"
+                },
+                "instanceSelector": {
+                  "type": "object",
+                  "description": "Grafana Operator instance selector used by the GrafanaDashboard",
+                  "additionalProperties": false,
+                  "properties": {
+                    "matchLabels": {
+                      "type": "object",
+                      "description": "Label key-value pairs used to match Grafana instances",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "matchExpressions": {
+                      "type": "array",
+                      "description": "Label selector requirements used to match Grafana instances",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "key",
+                          "operator"
+                        ],
+                        "additionalProperties": false,
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "operator": {
+                            "type": "string",
+                            "enum": [
+                              "In",
+                              "NotIn",
+                              "Exists",
+                              "DoesNotExist"
+                            ]
+                          },
+                          "values": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "resyncPeriod": {
+                  "type": "string",
+                  "description": "Grafana Operator dashboard resync period"
+                },
+                "folderRef": {
+                  "type": "string",
+                  "description": "GrafanaFolder resource name for dashboard placement"
+                },
+                "folderUID": {
+                  "type": "string",
+                  "description": "Grafana folder UID for dashboard placement"
+                },
+                "allowCrossNamespaceImport": {
+                  "type": "boolean",
+                  "description": "Allow the operator to match Grafana instances outside this namespace"
+                },
+                "datasources": {
+                  "type": "array",
+                  "description": "Grafana Operator datasource mappings for dashboard template inputs",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "inputName",
+                      "datasourceName"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "inputName": {
+                        "type": "string"
+                      },
+                      "datasourceName": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "labels": {
+                  "type": "object",
+                  "description": "Additional labels for the GrafanaDashboard resource",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "annotations": {
+                  "type": "object",
+                  "description": "Additional annotations for the GrafanaDashboard resource",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
             }
           }
         }

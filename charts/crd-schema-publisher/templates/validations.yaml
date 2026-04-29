@@ -1,0 +1,1 @@
+{{- include "crd-schema-publisher.validateGrafanaDashboard" . -}}

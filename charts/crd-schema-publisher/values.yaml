@@ -289,7 +289,7 @@ metrics:
 # ---------------------------------------------------------------------------
 grafana:
   dashboard:
-    # -- Install the Grafana dashboard as a ConfigMap
+    # -- Install the Grafana dashboard as a ConfigMap for sidecar discovery
     enabled: false
     # -- Label key for Grafana sidecar discovery
     label: grafana_dashboard
@@ -297,6 +297,29 @@ grafana:
     labelValue: "1"
     # -- Folder annotation for the Grafana sidecar
     folder: ""
+    operator:
+      # -- Install the Grafana dashboard as a Grafana Operator GrafanaDashboard
+      enabled: false
+      # -- Grafana Operator instance selector used by the GrafanaDashboard
+      instanceSelector:
+        matchLabels:
+          dashboards: grafana
+      # -- Grafana Operator dashboard resync period
+      resyncPeriod: 10m
+      # -- GrafanaFolder resource name for dashboard placement
+      folderRef: ""
+      # -- Grafana folder UID for dashboard placement
+      folderUID: ""
+      # -- Allow the operator to match Grafana instances outside this namespace
+      allowCrossNamespaceImport: true
+      # -- Grafana Operator datasource mappings for dashboard template inputs
+      datasources: []
+      #  - inputName: DS_PROMETHEUS
+      #    datasourceName: Prometheus
+      # -- Additional labels for the GrafanaDashboard resource
+      labels: {}
+      # -- Additional annotations for the GrafanaDashboard resource
+      annotations: {}
 
 # ---------------------------------------------------------------------------
 # Network policies

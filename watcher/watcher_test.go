@@ -59,114 +59,279 @@ func testCRD() apiextensionsv1.CustomResourceDefinition {
 	}
 }
 
-// --- debounce tests ---
-
-func TestDebounce_FirstTriggerFiresImmediately(t *testing.T) {
-	var fired atomic.Bool
-	trigger := make(chan struct{}, 1)
-	done := make(chan struct{})
-
-	go debounceLoop(trigger, 200*time.Millisecond, func() error {
-		fired.Store(true)
-		return nil
-	}, nil, done)
-
-	trigger <- struct{}{}
-
-	// First trigger should fire well before the 200ms debounce duration
-	time.Sleep(50 * time.Millisecond)
-	if !fired.Load() {
-		t.Fatal("expected first trigger to fire immediately, but it did not")
+func waitUntil(t *testing.T, deadline time.Duration, cond func() bool) {
+	t.Helper()
+	timeout := time.After(deadline)
+	tick := time.NewTicker(5 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-timeout:
+			t.Fatal("condition not met before deadline")
+		case <-tick.C:
+			if cond() {
+				return
+			}
+		}
 	}
-	close(done)
 }
 
-func TestDebounce_SubsequentTriggerIsDebounced(t *testing.T) {
+func waitForClosed(t *testing.T, ch <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(time.Second):
+		t.Fatal("channel did not close before deadline")
+	}
+}
+
+type fakeDebounceClock struct {
+	mu     sync.Mutex
+	timers []*fakeDebounceTimer
+	afters []chan time.Time
+}
+
+func (c *fakeDebounceClock) NewTimer(d time.Duration) debounceTimer {
+	timer := &fakeDebounceTimer{c: make(chan time.Time, 1), duration: d}
+	c.mu.Lock()
+	c.timers = append(c.timers, timer)
+	c.mu.Unlock()
+	return timer
+}
+
+func (c *fakeDebounceClock) NewTicker(time.Duration) debounceTicker {
+	return &fakeDebounceTicker{c: make(chan time.Time, 1)}
+}
+
+func (c *fakeDebounceClock) After(time.Duration) <-chan time.Time {
+	ch := make(chan time.Time, 1)
+	c.mu.Lock()
+	c.afters = append(c.afters, ch)
+	c.mu.Unlock()
+	return ch
+}
+
+func (c *fakeDebounceClock) timerCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.timers)
+}
+
+func (c *fakeDebounceClock) afterCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.afters)
+}
+
+func (c *fakeDebounceClock) latestTimerDuration() time.Duration {
+	c.mu.Lock()
+	timer := c.timers[len(c.timers)-1]
+	c.mu.Unlock()
+	return timer.currentDuration()
+}
+
+func (c *fakeDebounceClock) latestTimerResetCount() int {
+	c.mu.Lock()
+	timer := c.timers[len(c.timers)-1]
+	c.mu.Unlock()
+	return timer.resetCount()
+}
+
+func (c *fakeDebounceClock) fireLatestTimer() {
+	c.mu.Lock()
+	timer := c.timers[len(c.timers)-1]
+	c.mu.Unlock()
+	timer.fire()
+}
+
+type fakeDebounceTimer struct {
+	mu       sync.Mutex
+	c        chan time.Time
+	duration time.Duration
+	stopped  bool
+	resets   int
+}
+
+func (t *fakeDebounceTimer) Stop() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	active := !t.stopped
+	t.stopped = true
+	return active
+}
+
+func (t *fakeDebounceTimer) Reset(d time.Duration) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	active := !t.stopped
+	t.duration = d
+	t.stopped = false
+	t.resets++
+	return active
+}
+
+func (t *fakeDebounceTimer) C() <-chan time.Time {
+	return t.c
+}
+
+func (t *fakeDebounceTimer) currentDuration() time.Duration {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.duration
+}
+
+func (t *fakeDebounceTimer) resetCount() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.resets
+}
+
+func (t *fakeDebounceTimer) fire() {
+	select {
+	case t.c <- time.Now():
+	default:
+	}
+}
+
+type fakeDebounceTicker struct {
+	c chan time.Time
+}
+
+func (t *fakeDebounceTicker) Stop() {}
+
+func (t *fakeDebounceTicker) C() <-chan time.Time {
+	return t.c
+}
+
+func startDebounceWithClock(trigger <-chan struct{}, duration time.Duration, publish func() error, m *metrics.Metrics, done <-chan struct{}, clock debounceClock) <-chan struct{} {
+	loopDone := make(chan struct{})
+	go func() {
+		defer close(loopDone)
+		debounceLoopWithClock(trigger, duration, publish, m, done, clock)
+	}()
+	return loopDone
+}
+
+// --- debounce tests ---
+
+func TestDebounceClock_FirstTriggerFiresImmediately(t *testing.T) {
 	var count atomic.Int32
 	trigger := make(chan struct{}, 1)
 	done := make(chan struct{})
+	clock := &fakeDebounceClock{}
 
-	go debounceLoop(trigger, 200*time.Millisecond, func() error {
+	loopDone := startDebounceWithClock(trigger, time.Hour, func() error {
 		count.Add(1)
 		return nil
-	}, nil, done)
+	}, nil, done, clock)
+
+	trigger <- struct{}{}
+	waitUntil(t, time.Second, func() bool { return clock.timerCount() == 1 })
+
+	if got := clock.latestTimerDuration(); got != 0 {
+		t.Fatalf("expected first trigger to use zero-duration timer, got %s", got)
+	}
+	clock.fireLatestTimer()
+	waitUntil(t, time.Second, func() bool { return count.Load() == 1 })
+	close(done)
+	waitForClosed(t, loopDone)
+}
+
+func TestDebounceClock_SubsequentTriggerWaitsForTimer(t *testing.T) {
+	var count atomic.Int32
+	trigger := make(chan struct{}, 1)
+	done := make(chan struct{})
+	clock := &fakeDebounceClock{}
+	debounceDuration := time.Hour
+
+	loopDone := startDebounceWithClock(trigger, debounceDuration, func() error {
+		count.Add(1)
+		return nil
+	}, nil, done, clock)
 
 	// First trigger — fires immediately
 	trigger <- struct{}{}
-	time.Sleep(50 * time.Millisecond)
-	if c := count.Load(); c != 1 {
-		t.Fatalf("expected 1 publish after first trigger, got %d", c)
-	}
+	waitUntil(t, time.Second, func() bool { return clock.timerCount() == 1 })
+	clock.fireLatestTimer()
+	waitUntil(t, time.Second, func() bool { return count.Load() == 1 })
 
 	// Second trigger — should be debounced
 	trigger <- struct{}{}
-	time.Sleep(50 * time.Millisecond)
+	waitUntil(t, time.Second, func() bool { return clock.timerCount() == 2 })
+	if got := clock.latestTimerDuration(); got != debounceDuration {
+		t.Fatalf("expected subsequent trigger to wait %s, got %s", debounceDuration, got)
+	}
 	if c := count.Load(); c != 1 {
 		t.Fatalf("expected second trigger to be debounced (still 1), got %d", c)
 	}
 
-	// Wait for debounce to fire
-	time.Sleep(300 * time.Millisecond)
-	if c := count.Load(); c != 2 {
-		t.Fatalf("expected 2 publishes after debounce, got %d", c)
-	}
+	clock.fireLatestTimer()
+	waitUntil(t, time.Second, func() bool { return count.Load() == 2 })
 	close(done)
+	waitForClosed(t, loopDone)
 }
 
-func TestDebounce_CoalescesRapidEvents(t *testing.T) {
+func TestDebounceClock_CoalescesRapidEvents(t *testing.T) {
 	var count atomic.Int32
 	trigger := make(chan struct{}, 10)
 	done := make(chan struct{})
+	clock := &fakeDebounceClock{}
 
-	go debounceLoop(trigger, 100*time.Millisecond, func() error {
+	loopDone := startDebounceWithClock(trigger, time.Hour, func() error {
 		count.Add(1)
 		return nil
-	}, nil, done)
+	}, nil, done, clock)
 
-	// First trigger fires immediately
 	trigger <- struct{}{}
-	time.Sleep(50 * time.Millisecond)
+	waitUntil(t, time.Second, func() bool { return clock.timerCount() == 1 })
+	clock.fireLatestTimer()
+	waitUntil(t, time.Second, func() bool { return count.Load() == 1 })
 
-	// Send 4 more events in rapid succession — these should coalesce into 1 debounced publish
-	for range 4 {
+	for range 3 {
 		trigger <- struct{}{}
-		time.Sleep(10 * time.Millisecond)
 	}
+	waitUntil(t, time.Second, func() bool {
+		return clock.timerCount() == 2 && clock.latestTimerResetCount() == 2
+	})
 
-	// Wait for debounce to fire
-	time.Sleep(300 * time.Millisecond)
+	clock.fireLatestTimer()
+	waitUntil(t, time.Second, func() bool { return count.Load() == 2 })
 	close(done)
-
-	// 1 immediate + 1 debounced = 2 total (not 5)
-	if c := count.Load(); c != 2 {
-		t.Fatalf("expected 2 publish cycles (1 immediate + 1 debounced), got %d", c)
-	}
+	waitForClosed(t, loopDone)
 }
 
-func TestDebounce_SkipsWhenPublishInProgress(t *testing.T) {
+func TestDebounceClock_SkipsWhenPublishInProgress(t *testing.T) {
 	var count atomic.Int32
+	publishStarted := make(chan struct{})
+	releasePublish := make(chan struct{})
 	m := metrics.New()
 	trigger := make(chan struct{}, 10)
 	done := make(chan struct{})
+	clock := &fakeDebounceClock{}
 
-	go debounceLoop(trigger, 50*time.Millisecond, func() error {
+	loopDone := startDebounceWithClock(trigger, time.Hour, func() error {
 		count.Add(1)
-		// Simulate slow publish
-		time.Sleep(300 * time.Millisecond)
+		close(publishStarted)
+		<-releasePublish
 		return nil
-	}, m, done)
+	}, m, done, clock)
 
-	// First event triggers publish
+	// First trigger fires immediately
 	trigger <- struct{}{}
-	time.Sleep(100 * time.Millisecond) // debounce fires, publish starts (takes 300ms)
+	waitUntil(t, time.Second, func() bool { return clock.timerCount() == 1 })
+	clock.fireLatestTimer()
+	waitForClosed(t, publishStarted)
 
 	// Second event during publish — debounce fires but publish in progress, skip
 	trigger <- struct{}{}
-	time.Sleep(100 * time.Millisecond) // debounce fires while first publish still running
-
-	// Wait for everything to settle
-	time.Sleep(500 * time.Millisecond)
-	close(done)
+	waitUntil(t, time.Second, func() bool { return clock.timerCount() == 2 })
+	clock.fireLatestTimer()
+	waitUntil(t, time.Second, func() bool {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/metrics", nil)
+		m.Handler().ServeHTTP(rec, req)
+		return strings.Contains(rec.Body.String(), "crdpublisher_publish_skipped_total 1")
+	})
 
 	// Only 1 publish should have run (second was skipped)
 	if c := count.Load(); c != 1 {
@@ -180,35 +345,44 @@ func TestDebounce_SkipsWhenPublishInProgress(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "crdpublisher_publish_skipped_total 1") {
 		t.Fatalf("expected publish_skipped_total=1 in:\n%s", rec.Body.String())
 	}
+	close(releasePublish)
+	close(done)
+	waitForClosed(t, loopDone)
 }
 
-func TestDebounce_DrainsInFlightPublishOnShutdown(t *testing.T) {
+func TestDebounceClock_ShutdownDrainsInFlightPublish(t *testing.T) {
 	var count atomic.Int32
+	publishStarted := make(chan struct{})
+	releasePublish := make(chan struct{})
 	trigger := make(chan struct{}, 10)
 	done := make(chan struct{})
+	clock := &fakeDebounceClock{}
 
-	var loopDone sync.WaitGroup
-	loopDone.Add(1)
-
-	go func() {
-		defer loopDone.Done()
-		debounceLoop(trigger, 50*time.Millisecond, func() error {
-			count.Add(1)
-			// Simulate slow publish
-			time.Sleep(500 * time.Millisecond)
-			return nil
-		}, nil, done)
-	}()
+	loopDone := startDebounceWithClock(trigger, time.Hour, func() error {
+		count.Add(1)
+		close(publishStarted)
+		<-releasePublish
+		return nil
+	}, nil, done, clock)
 
 	// Trigger a publish
 	trigger <- struct{}{}
-	time.Sleep(100 * time.Millisecond) // debounce fires, publish starts
+	waitUntil(t, time.Second, func() bool { return clock.timerCount() == 1 })
+	clock.fireLatestTimer()
+	waitForClosed(t, publishStarted)
 
 	// Shut down while publish is in progress
 	close(done)
+	waitUntil(t, time.Second, func() bool { return clock.afterCount() == 1 })
 
-	// debounceLoop should block until publish completes, then return
-	loopDone.Wait()
+	select {
+	case <-loopDone:
+		t.Fatal("debounceLoop returned before in-flight publish completed")
+	default:
+	}
+
+	close(releasePublish)
+	waitForClosed(t, loopDone)
 
 	// The in-flight publish must have completed (not been killed)
 	if c := count.Load(); c != 1 {

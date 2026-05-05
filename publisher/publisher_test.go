@@ -127,6 +127,29 @@ func tempFileEntry(t *testing.T) *fileEntry {
 	}
 }
 
+func TestBuildManifestUsesSlashPrefixedRelativePaths(t *testing.T) {
+	files := []*fileEntry{
+		{relPath: "example.io/test_v1.json", hash: "hash-json"},
+		{relPath: "index.html", hash: "hash-index"},
+	}
+	manifest := buildManifest(files)
+	if manifest["/example.io/test_v1.json"] != "hash-json" {
+		t.Fatalf("schema manifest entry missing: %#v", manifest)
+	}
+	if manifest["/index.html"] != "hash-index" {
+		t.Fatalf("index manifest entry missing: %#v", manifest)
+	}
+}
+
+func TestShouldSkipPublishedFileSkipsInternalMetadata(t *testing.T) {
+	if !shouldSkipPublishedFile("_meta/kinds.json") {
+		t.Fatal("expected _meta file to be skipped")
+	}
+	if shouldSkipPublishedFile("example.io/test_v1.json") {
+		t.Fatal("expected schema json to be published")
+	}
+}
+
 type recordingSnapshotter struct {
 	phases []string
 }

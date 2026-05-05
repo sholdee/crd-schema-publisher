@@ -1,4 +1,4 @@
-# CLAUDE.md - Project Context for crd-schema-publisher
+# AGENTS.md - Project Context for crd-schema-publisher
 
 ## What This Is
 
@@ -13,7 +13,7 @@ converter/      OpenAPI v3 -> JSON Schema transforms (ported from openapi2jsonsc
 extractor/      client-go CRD listing, schema extraction, file writing, config builder, file/YAML parsing
 index/          HTML index generation (deepspace theme, client-side search, starfield/flare effects)
 jsonschema/     Shared JSON Schema traversal, type, required-property, and composition helpers
-publisher/      Cloudflare Pages direct upload API client + BLAKE3 hashing
+publisher/      Cloudflare Pages publish orchestration, request adapter, upload planning, BLAKE3 hashing
 renderer/       HTML schema page renderer (collapsible property trees, type badges, constraints)
 theme/          Shared CSS/HTML/JS assets (deepspace theme, hash helpers, extracted schema-search module)
 metrics/        Prometheus metrics (stdlib-only, atomic counters/gauges, text exposition format)
@@ -117,7 +117,7 @@ go run ./cmd/main.go --help
 ### Key Design Decisions
 
 - **No CGO.** Binary is statically linked. BLAKE3 uses `github.com/zeebo/blake3` (pure Go).
-- **Cloudflare Pages direct upload API** is undocumented. Implementation reverse-engineered from wrangler source (`cloudflare/workers-sdk`). The upload flow uses JWT auth for asset operations and API token auth for deployment creation. See `publisher/publisher.go` for the full 6-step flow.
+- **Cloudflare Pages direct upload API** is undocumented. Implementation reverse-engineered from wrangler source (`cloudflare/workers-sdk`). The upload flow uses JWT auth for asset operations and API token auth for deployment creation. `publisher/publisher.go` owns the publish orchestration, `publisher/cloudflare_client.go` owns Cloudflare request execution and retries, and `publisher/upload_plan.go` owns active-site file collection, manifest construction, bucket planning, and upload body construction.
 - **BLAKE3 file hashing** exactly matches wrangler's `hashFile`: `hex(blake3(base64(content) + extension))[0:32]`. Do not change this algorithm without verifying against wrangler source.
 - **OpenAPI v3 to JSON Schema conversion** is an improved port of `openapi2jsonschema.py` from datreeio/CRDs-catalog (via yannh/kubeconform). Three transforms applied in order: additionalProperties, replaceIntOrString, allowNullOptionalFields. Shared JSON Schema semantics that are used by both converter and renderer live in `jsonschema/`; keep traversal keyword sets, non-null type resolution, required-property lookup, and oneOf branch display de-duplication there instead of duplicating them in call sites. Known divergences from the Python original, all intentional improvements for kubeconform/IDE validation correctness: (1) `additionalProperties` uses schema-aware traversal, closing structural child object schemas while skipping same-instance validation overlays (`oneOf`/`anyOf`/`allOf`/`not`/dependencies/conditionals) and literal data-valued keywords such as `default` and `enum`; it also recurses into each property sub-schema individually — Python recurses into the `properties` map itself, so CRD fields named `properties` (or other JSON Schema keywords) get a spurious `additionalProperties: false` injected into the map, corrupting the schema; (2) nullable applies only to fields *not* in the required list — Python disables nullable for *all* siblings when any sibling is required; (3) `replaceIntOrString` preserves safe metadata but removes/replaces conflicting parent type and distributes type-specific assertions into the string or integer oneOf branch for Kubernetes int-or-string markers — Python discards the entire dict; (4) root object and array items are not made nullable — Python makes them nullable unnecessarily. Golden E2E tests (`extractor/testdata/golden_certificate_v1.json`, `golden_edgecase_v1.json`) freeze the converter output and catch regressions.
 - **Schema renderer** generates interactive HTML documentation pages (collapsible `<details>`/`<summary>` property trees, type/required badges, YAML boilerplate). Uses `html/template` with recursive `{{define "properties"}}` for nested schemas. Schema-page path search behavior lives in the extracted `theme/schema_search.js` asset, which `RenderAll` emits into the output root as `schema-search.js` and the page bootstrap loads at runtime. Enabled by default; disable with `SKIP_RENDER=true`.

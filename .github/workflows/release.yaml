@@ -33,7 +33,7 @@ jobs:
     uses: ./.github/workflows/helm-lint.yml
 
   binaries:
-    needs: [test, build]
+    needs: [test, build, release-smoke]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -160,8 +160,48 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  release-smoke:
+    needs: [build, helm-lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      IMAGE_REPOSITORY: ghcr.io/${{ github.repository }}
+      IMAGE_DIGEST: ${{ needs.build.outputs.digest }}
+      CF_PAGES_E2E_ACCOUNT_ID: ${{ secrets.CF_PAGES_E2E_ACCOUNT_ID }}
+      CF_PAGES_E2E_API_TOKEN: ${{ secrets.CF_PAGES_E2E_API_TOKEN }}
+      CF_PAGES_E2E_PROJECT: ${{ secrets.CF_PAGES_E2E_PROJECT }}
+      RUN_MARKER: ${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+      MARKER_GROUP: smoke-${{ github.run_id }}-${{ github.run_attempt }}.ci.crd-schema-publisher.dev
+      NAMESPACE: crd-schema-publisher-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Validate release smoke secrets
+        run: |
+          test -n "${CF_PAGES_E2E_ACCOUNT_ID}" || { echo "CF_PAGES_E2E_ACCOUNT_ID is required"; exit 1; }
+          test -n "${CF_PAGES_E2E_API_TOKEN}" || { echo "CF_PAGES_E2E_API_TOKEN is required"; exit 1; }
+          test -n "${CF_PAGES_E2E_PROJECT}" || { echo "CF_PAGES_E2E_PROJECT is required"; exit 1; }
+
+      - name: Set up Helm
+        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5.0.0
+
+      - name: Set up kubectl
+        uses: Azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
+
+      - name: Create kind cluster
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+        with:
+          cluster_name: crd-schema-publisher-release-smoke
+          wait: 120s
+
+      - name: Run release smoke
+        run: hack/release-smoke/validate.sh
+
   sign:
-    needs: [build]
+    needs: [build, release-smoke]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -187,7 +227,7 @@ jobs:
           cosign sign --yes "${FULL_IMAGE}:latest@${DIGEST}"
 
   helm-package:
-    needs: [helm-lint, build, sign]
+    needs: [helm-lint, build, sign, release-smoke]
     runs-on: ubuntu-latest
     permissions:
       contents: read

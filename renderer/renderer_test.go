@@ -177,6 +177,41 @@ func TestDisplayType_NoType(t *testing.T) {
 	}
 }
 
+func TestSchemaNode_BooleanSchemasDisplayAsObject(t *testing.T) {
+	var node SchemaNode
+	if err := json.Unmarshal([]byte(`true`), &node); err != nil {
+		t.Fatalf("unmarshal boolean schema: %v", err)
+	}
+	if got := node.DisplayType(); got != "object" {
+		t.Fatalf("DisplayType() = %q, want %q", got, "object")
+	}
+}
+
+func TestSchemaNode_OneOfDisplayKeepsCurrentUnionStyle(t *testing.T) {
+	node := &SchemaNode{
+		OneOf: []*SchemaNode{
+			{Type: "string"},
+			{Type: "integer"},
+		},
+	}
+	if got := node.DisplayType(); got != "string | integer" {
+		t.Fatalf("DisplayType() = %q, want %q", got, "string | integer")
+	}
+}
+
+func TestSchemaNode_OneOfDisplayDropsNullAndDuplicateBranches(t *testing.T) {
+	node := &SchemaNode{
+		OneOf: []*SchemaNode{
+			{Type: "null"},
+			{Type: "string"},
+			{Type: "string"},
+		},
+	}
+	if got := node.DisplayType(); got != "string" {
+		t.Fatalf("DisplayType() = %q, want %q", got, "string")
+	}
+}
+
 func TestIsRequired(t *testing.T) {
 	parent := &SchemaNode{
 		Required: []string{"name", "spec"},
@@ -866,6 +901,72 @@ func TestRenderAll_SchemaPageContract(t *testing.T) {
 		if !strings.Contains(contract, needle) {
 			t.Fatalf("schema page contract missing %q", needle)
 		}
+	}
+}
+
+func TestRenderAll_CompositionSectionsRemainStable(t *testing.T) {
+	tmpDir := t.TempDir()
+	groupDir := filepath.Join(tmpDir, "example.io")
+	if err := os.MkdirAll(groupDir, 0o755); err != nil {
+		t.Fatalf("mkdir group dir: %v", err)
+	}
+	schema := `{
+		"type": "object",
+		"properties": {
+			"choice": {"oneOf": [{"type": "string"}, {"type": "integer"}]},
+			"either": {"anyOf": [{"type": "string"}, {"type": "integer"}]},
+			"combined": {"allOf": [{"type": "object", "properties": {"name": {"type": "string"}}}]}
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(groupDir, "thing_v1.json"), []byte(schema), 0o644); err != nil {
+		t.Fatalf("write schema: %v", err)
+	}
+	if err := RenderAll(tmpDir, ""); err != nil {
+		t.Fatalf("RenderAll: %v", err)
+	}
+	page := readFile(t, filepath.Join(groupDir, "thing_v1.html"))
+	contract := normalizeHTMLForContract(page)
+	for _, needle := range []string{
+		`<span class="prop-name">choice</span>`,
+		`<span class="type-badge">string | integer</span>`,
+		`<span class="prop-name">either</span>`,
+		`<span class="prop-name">combined</span>`,
+	} {
+		if !strings.Contains(contract, needle) {
+			t.Fatalf("composition rendering contract missing %q", needle)
+		}
+	}
+}
+
+func TestRenderAll_RequiredBadgesUseParentRequiredList(t *testing.T) {
+	tmpDir := t.TempDir()
+	groupDir := filepath.Join(tmpDir, "example.io")
+	if err := os.MkdirAll(groupDir, 0o755); err != nil {
+		t.Fatalf("mkdir group dir: %v", err)
+	}
+	schema := `{
+		"type": "object",
+		"required": ["spec"],
+		"properties": {
+			"spec": {"type": "object"},
+			"status": {"type": "object"}
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(groupDir, "thing_v1.json"), []byte(schema), 0o644); err != nil {
+		t.Fatalf("write schema: %v", err)
+	}
+	if err := RenderAll(tmpDir, ""); err != nil {
+		t.Fatalf("RenderAll: %v", err)
+	}
+	page := normalizeHTMLForContract(readFile(t, filepath.Join(groupDir, "thing_v1.html")))
+	if count := strings.Count(page, `<span class="required-badge">required</span>`); count != 1 {
+		t.Fatalf("expected one required badge, got %d", count)
+	}
+	if !strings.Contains(page, `data-path="spec"`) || !strings.Contains(page, `<span class="prop-name">spec</span>`) {
+		t.Fatal("expected required spec property to render")
+	}
+	if !strings.Contains(page, `data-path="status"`) || !strings.Contains(page, `<span class="prop-name">status</span>`) {
+		t.Fatal("expected optional status property to render")
 	}
 }
 

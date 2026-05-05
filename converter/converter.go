@@ -3,6 +3,8 @@ package converter
 import (
 	"os"
 	"reflect"
+
+	"github.com/sholdee/crd-schema-publisher/jsonschema"
 )
 
 var stringValidationKeywords = map[string]struct{}{
@@ -17,32 +19,6 @@ var integerValidationKeywords = map[string]struct{}{
 	"maximum":          {},
 	"minimum":          {},
 	"multipleOf":       {},
-}
-
-var schemaMapKeywords = map[string]struct{}{
-	"$defs":             {},
-	"definitions":       {},
-	"dependencies":      {},
-	"patternProperties": {},
-	"properties":        {},
-}
-
-var schemaValueKeywords = map[string]struct{}{
-	"additionalItems":      {},
-	"additionalProperties": {},
-	"contains":             {},
-	"else":                 {},
-	"if":                   {},
-	"items":                {},
-	"not":                  {},
-	"propertyNames":        {},
-	"then":                 {},
-}
-
-var schemaArrayKeywords = map[string]struct{}{
-	"allOf": {},
-	"anyOf": {},
-	"oneOf": {},
 }
 
 // AdditionalProperties walks the schema tree and adds "additionalProperties": false
@@ -83,65 +59,21 @@ func ReplaceIntOrString(data map[string]interface{}) map[string]interface{} {
 		return data
 	}
 	for k, v := range data {
-		visitChildSchemasForKeyword(k, v, func(nested map[string]interface{}) {
+		jsonschema.VisitChildSchemasForKeyword(k, v, func(nested map[string]interface{}) {
 			ReplaceIntOrString(nested)
 		})
 	}
 	return data
 }
 
-func visitChildSchemasForKeyword(k string, v interface{}, visit func(map[string]interface{})) {
-	if _, ok := schemaMapKeywords[k]; ok {
-		visitSchemaMapValues(v, visit)
-		return
-	}
-	if _, ok := schemaValueKeywords[k]; ok {
-		visitSchemaValue(v, visit)
-		return
-	}
-	if _, ok := schemaArrayKeywords[k]; ok {
-		visitSchemaArray(v, visit)
-	}
-}
-
 func visitAdditionalPropertiesChildSchemasForKeyword(k string, v interface{}, visit func(map[string]interface{})) {
 	switch k {
 	case "$defs", "definitions", "patternProperties", "properties":
-		visitSchemaMapValues(v, visit)
+		jsonschema.VisitSchemaMapValues(v, visit)
 		return
 	case "additionalItems", "additionalProperties", "items":
-		visitSchemaValue(v, visit)
+		jsonschema.VisitSchemaValue(v, visit)
 		return
-	}
-}
-
-func visitSchemaMapValues(v interface{}, visit func(map[string]interface{})) {
-	m, ok := v.(map[string]interface{})
-	if !ok {
-		return
-	}
-	for _, item := range m {
-		visitSchemaValue(item, visit)
-	}
-}
-
-func visitSchemaValue(v interface{}, visit func(map[string]interface{})) {
-	if nested, ok := v.(map[string]interface{}); ok {
-		visit(nested)
-		return
-	}
-	visitSchemaArray(v, visit)
-}
-
-func visitSchemaArray(v interface{}, visit func(map[string]interface{})) {
-	arr, ok := v.([]interface{})
-	if !ok {
-		return
-	}
-	for _, item := range arr {
-		if nested, ok := item.(map[string]interface{}); ok {
-			visit(nested)
-		}
 	}
 }
 
@@ -165,7 +97,7 @@ func replaceIntOrStringSchema(data map[string]interface{}) {
 		case k == "oneOf":
 			delete(data, k)
 		case k == "type":
-			if typeIncludesNull(v) {
+			if jsonschema.TypeIncludesNull(v) {
 				nullable = true
 			}
 			delete(data, k)
@@ -267,19 +199,19 @@ func mergeTypedUnionBranches(branches []interface{}, stringBranch, integerBranch
 		}
 		schemaType := schema["type"]
 		recognized := false
-		if typeIncludes(schemaType, "string") {
+		if jsonschema.TypeIncludes(schemaType, "string") {
 			mergeBranchKeywords(stringCopy, schema)
 			stringCount++
 			hasString = true
 			recognized = true
 		}
-		if typeIncludes(schemaType, "integer") {
+		if jsonschema.TypeIncludes(schemaType, "integer") {
 			mergeBranchKeywords(integerCopy, schema)
 			integerCount++
 			hasInteger = true
 			recognized = true
 		}
-		if typeIncludesNull(schemaType) {
+		if jsonschema.TypeIncludesNull(schemaType) {
 			nullable = true
 			nullCount++
 			recognized = true
@@ -387,6 +319,10 @@ func appendParentAllOfSchema(data map[string]interface{}, schema map[string]inte
 // propertyName is the field's key in its parent "properties" map.
 // requiredSet contains the names of required fields from the parent object.
 func AllowNullOptionalFields(data map[string]interface{}, propertyName string, requiredSet map[string]bool) map[string]interface{} {
+	return allowNullOptionalFields(data, propertyName, boolRequiredSet(requiredSet))
+}
+
+func allowNullOptionalFields(data map[string]interface{}, propertyName string, requiredSet map[string]struct{}) map[string]interface{} {
 	if isOptionalProperty(propertyName, requiredSet) {
 		allowNullForOptionalField(data)
 	}
@@ -397,8 +333,21 @@ func AllowNullOptionalFields(data map[string]interface{}, propertyName string, r
 	return data
 }
 
-func isOptionalProperty(propertyName string, requiredSet map[string]bool) bool {
-	return propertyName != "" && !requiredSet[propertyName]
+func boolRequiredSet(required map[string]bool) map[string]struct{} {
+	if required == nil {
+		return nil
+	}
+	set := make(map[string]struct{}, len(required))
+	for name, isRequired := range required {
+		if isRequired {
+			set[name] = struct{}{}
+		}
+	}
+	return set
+}
+
+func isOptionalProperty(propertyName string, requiredSet map[string]struct{}) bool {
+	return propertyName != "" && !jsonschema.IsRequired(requiredSet, propertyName)
 }
 
 func allowNullForOptionalField(data map[string]interface{}) {
@@ -411,25 +360,25 @@ func allowNullForOptionalField(data map[string]interface{}) {
 	}
 }
 
-func childRequiredSet(data map[string]interface{}) map[string]bool {
+func childRequiredSet(data map[string]interface{}) map[string]struct{} {
 	reqList, ok := data["required"].([]interface{})
 	if !ok {
 		return nil
 	}
-	required := make(map[string]bool, len(reqList))
+	required := make([]string, 0, len(reqList))
 	for _, r := range reqList {
 		if s, ok := r.(string); ok {
-			required[s] = true
+			required = append(required, s)
 		}
 	}
-	return required
+	return jsonschema.RequiredSet(required)
 }
 
-func allowNullProperties(data map[string]interface{}, childRequired map[string]bool) {
+func allowNullProperties(data map[string]interface{}, childRequired map[string]struct{}) {
 	if props, ok := data["properties"].(map[string]interface{}); ok {
 		for pk, pv := range props {
 			if nested, ok := pv.(map[string]interface{}); ok {
-				props[pk] = AllowNullOptionalFields(nested, pk, childRequired)
+				props[pk] = allowNullOptionalFields(nested, pk, childRequired)
 			}
 		}
 	}
@@ -440,8 +389,8 @@ func allowNullNonPropertyChildren(data map[string]interface{}) {
 		if k == "properties" {
 			continue
 		}
-		visitChildSchemasForKeyword(k, v, func(nested map[string]interface{}) {
-			AllowNullOptionalFields(nested, "", nil)
+		jsonschema.VisitChildSchemasForKeyword(k, v, func(nested map[string]interface{}) {
+			allowNullOptionalFields(nested, "", nil)
 		})
 	}
 }
@@ -497,32 +446,9 @@ func hasOnlyTypedOneOfBranches(oneOf []interface{}) bool {
 	return true
 }
 
-func typeIncludesNull(t interface{}) bool {
-	return typeIncludes(t, "null")
-}
-
-func typeIncludes(t interface{}, target string) bool {
-	if t == "null" {
-		return target == "null"
-	}
-	if t == target {
-		return true
-	}
-	types, ok := t.([]interface{})
-	if !ok {
-		return false
-	}
-	for _, typ := range types {
-		if typ == target {
-			return true
-		}
-	}
-	return false
-}
-
 func addNullToType(data map[string]interface{}) {
 	t, ok := data["type"]
-	if !ok || typeIncludesNull(t) {
+	if !ok || jsonschema.TypeIncludesNull(t) {
 		return
 	}
 	switch typ := t.(type) {

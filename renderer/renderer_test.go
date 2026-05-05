@@ -30,6 +30,55 @@ func testTemplate(t *testing.T) *template.Template {
 	return tmpl
 }
 
+func normalizeHTMLForContract(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	lines := strings.Split(s, "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		out = append(out, trimmed)
+	}
+	return strings.Join(out, "\n")
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(data)
+}
+
+func writeRendererFixtureSchema(t *testing.T, outputDir string) {
+	t.Helper()
+	groupDir := filepath.Join(outputDir, "example.io")
+	if err := os.MkdirAll(groupDir, 0o755); err != nil {
+		t.Fatalf("mkdir group dir: %v", err)
+	}
+	schema := `{
+		"type": "object",
+		"properties": {
+			"spec": {
+				"type": "object",
+				"description": "Spec defines desired state",
+				"properties": {
+					"replicas": {
+						"type": "integer",
+						"description": "Replica count"
+					}
+				}
+			}
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(groupDir, "test_v1.json"), []byte(schema), 0o644); err != nil {
+		t.Fatalf("write schema: %v", err)
+	}
+}
+
 func TestDisplayType_SimpleTypes(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -793,6 +842,30 @@ func TestRenderAll_CreatesHTMLFiles(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(tmpDir, "master-standalone", "test.html")); err == nil {
 		t.Error("master-standalone should not get HTML files")
+	}
+}
+
+func TestRenderAll_SchemaPageContract(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeRendererFixtureSchema(t, tmpDir)
+	if err := RenderAll(tmpDir, "/docs"); err != nil {
+		t.Fatalf("RenderAll: %v", err)
+	}
+	page := readFile(t, filepath.Join(tmpDir, "example.io", "test_v1.html"))
+	contract := normalizeHTMLForContract(page)
+	for _, needle := range []string{
+		`<script src="/docs/schema-search.js"></script>`,
+		`id="expand-all"`,
+		`id="collapse-all"`,
+		`id="copy-url"`,
+		`data-path-key=`,
+		`readHashSearchQuery`,
+		`writeHashSearchQuery`,
+		`window.SchemaSearch`,
+	} {
+		if !strings.Contains(contract, needle) {
+			t.Fatalf("schema page contract missing %q", needle)
+		}
 	}
 }
 

@@ -7,6 +7,43 @@ import (
 	"testing"
 )
 
+func normalizeHTMLForContract(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	lines := strings.Split(s, "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		out = append(out, trimmed)
+	}
+	return strings.Join(out, "\n")
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(data)
+}
+
+func writeIndexFixtureSchemas(t *testing.T, outputDir string) {
+	t.Helper()
+	groupDir := filepath.Join(outputDir, "example.io")
+	if err := os.MkdirAll(groupDir, 0o755); err != nil {
+		t.Fatalf("mkdir group dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(groupDir, "test_v1.json"), []byte(`{"type":"object"}`), 0o644); err != nil {
+		t.Fatalf("write schema: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(groupDir, "test_v1.html"), []byte(`<html></html>`), 0o644); err != nil {
+		t.Fatalf("write schema html: %v", err)
+	}
+}
+
 func TestGenerate_CreatesIndexHTML(t *testing.T) {
 	tmpDir := t.TempDir()
 	// 2 groups, 3 total schemas — distinct counts so we can verify each stat independently
@@ -63,6 +100,27 @@ func TestGenerate_CreatesIndexHTML(t *testing.T) {
 	for _, c := range checks {
 		if !strings.Contains(html, c.substr) {
 			t.Errorf("index should contain %s (looked for %q)", c.desc, c.substr)
+		}
+	}
+}
+
+func TestGenerate_IndexPageContract(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeIndexFixtureSchemas(t, tmpDir)
+	if err := Generate(tmpDir, "/docs"); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	page := readFile(t, filepath.Join(tmpDir, "index.html"))
+	contract := normalizeHTMLForContract(page)
+	for _, needle := range []string{
+		`href="/docs/example.io/test_v1.html"`,
+		`readHashSearchQuery`,
+		`writeHashSearchQuery`,
+		`localStorage.getItem('theme')`,
+		`history.replaceState`,
+	} {
+		if !strings.Contains(contract, needle) {
+			t.Fatalf("index page contract missing %q", needle)
 		}
 	}
 }

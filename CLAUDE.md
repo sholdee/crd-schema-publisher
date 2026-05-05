@@ -28,8 +28,8 @@ go test ./...
 # Run local Helm render contract assertions
 go run ./hack/chartassert
 
-# If you change the extracted schema search module or its tests
-node --test theme/schema_search.test.js
+# If you change extracted page JavaScript or its tests
+node --test theme/schema_search.test.js theme/schema_page.test.js theme/index_page.test.js
 
 # Vet
 go vet ./...

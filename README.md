@@ -258,7 +258,7 @@ Pre-built multi-arch images (amd64 + arm64) are published to GHCR:
 ghcr.io/sholdee/crd-schema-publisher:latest
 ```
 
-Releases are triggered manually via the release workflow, producing a date-based tag (`vYYYY.MDD.HMMSS` — e.g. `v2026.413.65435`) and `latest`. Release notes include the image digest, OCI Helm chart reference, signed checksum manifest, binary provenance link, and standalone binary attachments. PR builds get `pr-N` tags for testing.
+Releases are triggered manually via the release workflow, producing a date-based tag (`vYYYY.MDD.HMMSS` — e.g. `v2026.413.65435`) and `latest`. Release notes include the image digest, OCI Helm chart reference, signed checksum manifest, binary provenance link, and standalone binary attachments. The workflow runs an internal smoke gate before release artifacts are promoted. PR builds get `pr-N` tags for testing.
 
 Images use `gcr.io/distroless/static:nonroot` as the runtime base — no shell, no package manager, runs as UID 65534. Production images are signed with [cosign](https://docs.sigstore.dev/cosign/overview/) keyless signing via GitHub Actions OIDC:
 

@@ -152,14 +152,15 @@ Everything else in `go.mod` is transitive. The project still leans heavily on th
 
 ### Pipeline Architecture
 
-Four workflow files in `.github/workflows/`:
+Five workflow files in `.github/workflows/`:
 
 | File | Trigger | Purpose |
 | --- | ------- | ------- |
 | `test.yml` | `workflow_call` | Reusable: actionlint, markdownlint-cli2, golangci-lint, go mod verify/tidy, go test, go vet, govulncheck |
 | `helm-lint.yml` | `workflow_call` | Reusable: `helm lint`, `helm template` in controller/cronjob/all-features modes, mode isolation checks, schema validation, dashboard JSON embedding, kubeconform |
 | `ci.yaml` | PR + push to `main` | Orchestrator: calls `test.yml` and `helm-lint.yml`, runs detect/build/renovate/gate |
-| `release.yaml` | `workflow_dispatch` | Orchestrator: calls `test.yml` and `helm-lint.yml`, runs build/sign/helm-package/release |
+| `release.yaml` | `workflow_dispatch` | Orchestrator: calls `test.yml` and `helm-lint.yml`, builds the candidate image, runs release-smoke, then signs/packages/releases |
+| `release-smoke-rehearsal.yaml` | `workflow_dispatch` | Manual pre-release rehearsal that runs the same smoke script against a maintainer-supplied image digest without creating release artifacts |
 
 **`ci.yaml`** jobs:
 
@@ -180,13 +181,22 @@ Pushes to main run `test` and `helm-lint` only (no Docker build, no release). PR
 | --- | --------- | ------- |
 | `test` | Always | Calls `test.yml` — re-runs all linting and Go tests as a safety net before building |
 | `helm-lint` | Always | Calls `helm-lint.yml` — re-runs all Helm validation before packaging |
-| `binaries` | After `test` and `build` pass | Cross-compiles static binaries for linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, generates `checksums-sha256.txt`, signs the checksum manifest with cosign keyless blob signing, uploads `dist/` as artifacts for the `release` job, and publishes GitHub/Sigstore build provenance for the binaries via the attestations service. |
-| `build` | After `test` passes | Multi-arch Docker build (amd64 + arm64), pushes `vYYYY.MDD.HMMSS` + `latest` to GHCR. Verifies distroless base image digest with cosign before building. |
-| `sign` | After `build` | Cosign keyless signing via GitHub OIDC |
-| `helm-package` | After `helm-lint`, `build`, and `sign` | Package chart with CalVer SemVer matching the image tag. Push OCI to GHCR, cosign sign. Image and chart always share the same version — no desync possible. |
-| `release` | After `build`, `sign`, `helm-package`, `binaries` | Creates git tag, GitHub Release with auto-generated notes, image digest, chart OCI reference, signed checksum manifest, binary provenance link, and standalone binaries. Note: tag push will fail if the tagged commit includes workflow file changes — create the tag manually in that case. |
+| `build` | After `test` passes | Multi-arch Docker build (amd64 + arm64), pushes `vYYYY.MDD.HMMSS` + `latest` to GHCR. Verifies distroless base image digest with cosign before building. This creates the unsigned candidate image used by release-smoke. |
+| `release-smoke` | After `build` and `helm-lint` pass | Starts a temporary kind cluster, applies a unique marker CRD, installs the chart in controller/watch mode using the candidate image digest and dedicated Cloudflare CI credentials, then fetches the published Pages deployment to verify the current marker and core site assets. Blocks all promotional artifacts if it fails. |
+| `sign` | After `build` and `release-smoke` pass | Cosign keyless signing via GitHub OIDC |
+| `helm-package` | After `helm-lint`, `build`, `release-smoke`, and `sign` pass | Package chart with CalVer SemVer matching the image tag. Push OCI to GHCR, cosign sign. Image and chart always share the same version — no desync possible. |
+| `binaries` | After `build` and `release-smoke` pass | Cross-compiles static binaries for linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, generates `checksums-sha256.txt`, signs the checksum manifest with cosign keyless blob signing, uploads `dist/` as artifacts for the `release` job, and publishes GitHub/Sigstore build provenance for the binaries via the attestations service. |
+| `release` | After `build`, `sign`, `helm-package`, and `binaries` pass | Creates git tag, GitHub Release with auto-generated notes, image digest, chart OCI reference, signed checksum manifest, binary provenance link, and standalone binaries. |
 
 App image and Helm chart are always released together with the same CalVer version. Releases are decoupled from CI — trigger the release workflow when changes warrant a new version. The release workflow re-runs all tests before building as a safety net. A concurrency group prevents simultaneous releases from racing.
+
+**`release-smoke-rehearsal.yaml`** jobs:
+
+| Job | Runs when | Purpose |
+| --- | --------- | ------- |
+| `rehearsal` | Manual dispatch with `image_repository` and `image_digest` inputs | Starts a temporary kind cluster and runs `hack/release-smoke/validate.sh` against an existing image digest using dedicated Cloudflare CI credentials. Produces no release artifacts and does not push tags, images, charts, binaries, or GitHub Releases. |
+
+The rehearsal workflow is for validating the external smoke path before a release: kind, Helm install, watch mode, Cloudflare upload, marker freshness, and HTTP checks. It requires the same dedicated repository secrets as the release gate: `CF_PAGES_E2E_ACCOUNT_ID`, `CF_PAGES_E2E_API_TOKEN`, and `CF_PAGES_E2E_PROJECT`. The `image_digest` input must be a `sha256:<64 lowercase hex chars>` digest; the workflow intentionally does not resolve tags.
 
 ### Tags
 

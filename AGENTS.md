@@ -152,7 +152,7 @@ Everything else in `go.mod` is transitive. The project still leans heavily on th
 
 ### Pipeline Architecture
 
-Four workflow files in `.github/workflows/`:
+Five workflow files in `.github/workflows/`:
 
 | File | Trigger | Purpose |
 | --- | ------- | ------- |
@@ -160,6 +160,7 @@ Four workflow files in `.github/workflows/`:
 | `helm-lint.yml` | `workflow_call` | Reusable: `helm lint`, `helm template` in controller/cronjob/all-features modes, mode isolation checks, schema validation, dashboard JSON embedding, kubeconform |
 | `ci.yaml` | PR + push to `main` | Orchestrator: calls `test.yml` and `helm-lint.yml`, runs detect/build/renovate/gate |
 | `release.yaml` | `workflow_dispatch` | Orchestrator: calls `test.yml` and `helm-lint.yml`, builds the candidate image, runs release-smoke, then signs/packages/releases |
+| `release-smoke-rehearsal.yaml` | `workflow_dispatch` | Manual pre-release rehearsal that runs the same smoke script against a maintainer-supplied image digest without creating release artifacts |
 
 **`ci.yaml`** jobs:
 
@@ -188,6 +189,14 @@ Pushes to main run `test` and `helm-lint` only (no Docker build, no release). PR
 | `release` | After `build`, `sign`, `helm-package`, and `binaries` pass | Creates git tag, GitHub Release with auto-generated notes, image digest, chart OCI reference, signed checksum manifest, binary provenance link, and standalone binaries. |
 
 App image and Helm chart are always released together with the same CalVer version. Releases are decoupled from CI — trigger the release workflow when changes warrant a new version. The release workflow re-runs all tests before building as a safety net. A concurrency group prevents simultaneous releases from racing.
+
+**`release-smoke-rehearsal.yaml`** jobs:
+
+| Job | Runs when | Purpose |
+| --- | --------- | ------- |
+| `rehearsal` | Manual dispatch with `image_repository` and `image_digest` inputs | Starts a temporary kind cluster and runs `hack/release-smoke/validate.sh` against an existing image digest using dedicated Cloudflare CI credentials. Produces no release artifacts and does not push tags, images, charts, binaries, or GitHub Releases. |
+
+The rehearsal workflow is for validating the external smoke path before a release: kind, Helm install, watch mode, Cloudflare upload, marker freshness, and HTTP checks. It requires the same dedicated repository secrets as the release gate: `CF_PAGES_E2E_ACCOUNT_ID`, `CF_PAGES_E2E_API_TOKEN`, and `CF_PAGES_E2E_PROJECT`. The `image_digest` input must be a `sha256:<64 lowercase hex chars>` digest; the workflow intentionally does not resolve tags.
 
 ### Tags
 

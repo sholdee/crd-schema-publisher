@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/sholdee/crd-schema-publisher/jsonschema"
 	"github.com/sholdee/crd-schema-publisher/theme"
 )
 
@@ -94,16 +95,9 @@ func (n *SchemaNode) displayOneOfType() string {
 		return ""
 	}
 
-	types := make([]string, 0, len(n.OneOf))
-	seen := make(map[string]bool, len(n.OneOf))
-	for _, o := range n.OneOf {
-		typ := o.DisplayType()
-		if typ == "null" || seen[typ] {
-			continue
-		}
-		seen[typ] = true
-		types = append(types, typ)
-	}
+	types := jsonschema.UniqueNonNullBranchTypes(n.OneOf, func(node *SchemaNode) string {
+		return node.DisplayType()
+	})
 	if len(types) == 0 {
 		return "null"
 	}
@@ -143,12 +137,7 @@ func (p RenderProperty) Expandable() bool {
 
 // IsRequired returns true if the given property name is in this node's required list.
 func (n *SchemaNode) IsRequired(name string) bool {
-	for _, r := range n.Required {
-		if r == name {
-			return true
-		}
-	}
-	return false
+	return jsonschema.IsRequired(jsonschema.RequiredSet(n.Required), name)
 }
 
 // HasChildren returns true if this node has nested properties to render.
@@ -884,15 +873,5 @@ metadata:
 
 // resolveType extracts the non-null type from the Type field.
 func (n *SchemaNode) resolveType() string {
-	switch t := n.Type.(type) {
-	case string:
-		return t
-	case []interface{}:
-		for _, v := range t {
-			if s, ok := v.(string); ok && s != "null" {
-				return s
-			}
-		}
-	}
-	return ""
+	return jsonschema.NonNullType(n.Type)
 }

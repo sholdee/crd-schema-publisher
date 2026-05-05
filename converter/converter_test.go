@@ -71,6 +71,145 @@ func assertAllOfOneOfAllowsNullBypass(t *testing.T, schema map[string]interface{
 	}
 }
 
+func schemaTypeIncludes(t *testing.T, schema map[string]interface{}, expected string) bool {
+	t.Helper()
+	switch typ := schema["type"].(type) {
+	case string:
+		return typ == expected
+	case []interface{}:
+		for _, item := range typ {
+			if item == expected {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func TestSharedTraversal_PreservesKeywordCollidingProperties(t *testing.T) {
+	schema := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"value": map[string]interface{}{"type": "string"},
+				},
+			},
+			"items": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"value": map[string]interface{}{"type": "string"},
+				},
+			},
+			"oneOf": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"value": map[string]interface{}{"type": "string"},
+				},
+			},
+		},
+	}
+
+	result := Convert(schema)
+	props, ok := result["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected properties map, got %T", result["properties"])
+	}
+	for _, name := range []string{"properties", "items", "oneOf"} {
+		if _, ok := props[name].(map[string]interface{}); !ok {
+			t.Fatalf("expected CRD field %q to remain a property, got %#v", name, props[name])
+		}
+	}
+	if _, found := props["additionalProperties"]; found {
+		t.Fatalf("properties map should not be treated as a schema object, got %#v", props)
+	}
+}
+
+func TestSharedNullable_OptionalFieldsRemainNullableRequiredFieldsDoNot(t *testing.T) {
+	schema := map[string]interface{}{
+		"type":     "object",
+		"required": []interface{}{"spec"},
+		"properties": map[string]interface{}{
+			"spec": map[string]interface{}{
+				"type":     "object",
+				"nullable": true,
+			},
+			"status": map[string]interface{}{
+				"type":     "object",
+				"nullable": true,
+			},
+		},
+	}
+
+	result := AllowNullOptionalFields(schema, "", nil)
+	spec := propField(t, result, "spec")
+	status := propField(t, result, "status")
+	if schemaTypeIncludes(t, spec, "null") {
+		t.Fatalf("required field should not include null, got %#v", spec["type"])
+	}
+	if !schemaTypeIncludes(t, status, "null") {
+		t.Fatalf("optional field should include null, got %#v", status["type"])
+	}
+}
+
+func TestSharedIntOrString_KeepsSafeMetadataAndBranches(t *testing.T) {
+	schema := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"port": map[string]interface{}{
+				"x-kubernetes-int-or-string": true,
+				"description":                "service port",
+				"default":                    "http",
+				"maxLength":                  16,
+				"minimum":                    1,
+			},
+		},
+	}
+
+	result := ReplaceIntOrString(schema)
+	port := propField(t, result, "port")
+	if port["description"] != "service port" || port["default"] != "http" || port["x-kubernetes-int-or-string"] != true {
+		t.Fatalf("safe metadata should be preserved, got %#v", port)
+	}
+	wantOneOf := []interface{}{
+		map[string]interface{}{"type": "string", "maxLength": 16},
+		map[string]interface{}{"type": "integer", "minimum": 1},
+	}
+	if !reflect.DeepEqual(port["oneOf"], wantOneOf) {
+		t.Fatalf("expected oneOf %#v, got %#v", wantOneOf, port["oneOf"])
+	}
+	if _, found := port["type"]; found {
+		t.Fatalf("conflicting parent type should not remain, got %#v", port["type"])
+	}
+}
+
+func TestSharedTraversal_IgnoresBooleanSchemas(t *testing.T) {
+	schema := map[string]interface{}{
+		"type":                 "object",
+		"additionalProperties": true,
+		"properties": map[string]interface{}{
+			"name":     map[string]interface{}{"type": "string"},
+			"anything": true,
+		},
+		"not": false,
+	}
+
+	got := Convert(schema)
+	want := map[string]interface{}{
+		"type":                 "object",
+		"additionalProperties": true,
+		"properties": map[string]interface{}{
+			"name":     map[string]interface{}{"type": []interface{}{"string", "null"}},
+			"anything": true,
+		},
+		"not": false,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected %#v, got %#v", want, got)
+	}
+}
+
 func TestAdditionalProperties_AddsToObjectWithProperties(t *testing.T) {
 	schema := map[string]interface{}{
 		"type": "object",

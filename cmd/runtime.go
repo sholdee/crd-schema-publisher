@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -24,11 +23,6 @@ const (
 	schemaFilterVersionEnv = "SCHEMA_FILTER_VERSION"
 )
 
-type runtimeCommandOptions struct {
-	OutputDir string
-	Filter    extractor.SchemaFilter
-}
-
 func init() {
 	registerCommand("run", runAll)
 	registerCommand("extract", runExtract)
@@ -42,40 +36,26 @@ func init() {
 }
 
 func runExtract(args []string) error {
-	fs := newCommandFlagSet("extract")
-	var outputDir string
-	stringFlagWithAlias(fs, &outputDir, "output-dir", "o", os.Getenv("OUTPUT_DIR"), "output directory")
-	basePath := fs.String("base-path", os.Getenv("BASE_PATH"), "URL path prefix for subpath deployments")
-	kubeContext := fs.String("context", os.Getenv("KUBECTL_CONTEXT"), "Kubernetes context")
-	skipRender := fs.Bool("skip-render", os.Getenv("SKIP_RENDER") == "true", "skip HTML rendering")
-	kind := fs.String("kind", os.Getenv(schemaFilterKindEnv), "filter by kind (comma-separated, case-insensitive)")
-	group := fs.String("group", os.Getenv(schemaFilterGroupEnv), "filter by group (comma-separated, case-insensitive)")
-	version := fs.String("version", os.Getenv(schemaFilterVersionEnv), "filter by version (comma-separated, case-insensitive)")
-
-	if err := fs.Parse(args); err != nil {
+	cfg, err := parseExtractConfig(args, os.Getenv)
+	if err != nil {
 		return err
 	}
-	if extras := fs.Args(); len(extras) > 0 {
-		return fmt.Errorf("unexpected arguments for extract: %s", strings.Join(extras, " "))
-	}
-	if err := requireConfiguredOutputDir(outputDir, "Provide a writable directory for extracted schemas"); err != nil {
+	if err := requireConfiguredOutputDir(cfg.OutputDir, "Provide a writable directory for extracted schemas"); err != nil {
 		return err
 	}
 
 	slog.Info("building kubernetes client")
-	client, err := buildClientFunc(*kubeContext)
+	client, err := buildClientFunc(cfg.KubeContext)
 	if err != nil {
 		return fmt.Errorf("building client: %w", err)
 	}
 
-	filter := extractor.ParseFilter(*kind, *group, *version)
-
 	result, err := buildSiteFunc(extractor.SiteBuildOptions{
 		Lister:    client.ApiextensionsV1().CustomResourceDefinitions(),
-		OutputDir: outputDir,
-		BasePath:  normalizeBasePath(*basePath),
-		Render:    !*skipRender,
-		Filter:    filter,
+		OutputDir: cfg.OutputDir,
+		BasePath:  normalizeBasePath(cfg.BasePath),
+		Render:    cfg.Render,
+		Filter:    cfg.Filter,
 		Profiler:  diagnostics.NewFromEnv(),
 	})
 	if err != nil {
@@ -86,28 +66,12 @@ func runExtract(args []string) error {
 		return nil
 	}
 
-	slog.Info("extract complete", "count", result.SchemaCount, "dir", outputDir)
+	slog.Info("extract complete", "count", result.SchemaCount, "dir", cfg.OutputDir)
 	return nil
 }
 
 func parseRuntimeCommandArgs(cmd string, args []string, fallbackOutputDir string) (runtimeCommandOptions, error) {
-	fs := newCommandFlagSet(cmd)
-	var outputDir string
-	stringFlagWithAlias(fs, &outputDir, "output-dir", "o", fallbackOutputDir, "output directory")
-	kind := fs.String("kind", os.Getenv(schemaFilterKindEnv), "filter by kind (comma-separated, case-insensitive)")
-	group := fs.String("group", os.Getenv(schemaFilterGroupEnv), "filter by group (comma-separated, case-insensitive)")
-	version := fs.String("version", os.Getenv(schemaFilterVersionEnv), "filter by version (comma-separated, case-insensitive)")
-	if err := fs.Parse(args); err != nil {
-		return runtimeCommandOptions{}, err
-	}
-	if extras := fs.Args(); len(extras) > 0 {
-		return runtimeCommandOptions{}, fmt.Errorf("unexpected arguments for %s: %s", cmd, strings.Join(extras, " "))
-	}
-
-	return runtimeCommandOptions{
-		OutputDir: outputDir,
-		Filter:    extractor.ParseFilter(*kind, *group, *version),
-	}, nil
+	return parseRuntimeConfig(cmd, args, fallbackOutputDir, os.Getenv)
 }
 
 func parseSiteServingConfig(healthPort string) (bool, string, bool, error) {
@@ -156,11 +120,11 @@ func runBuild(outputDir string, filter extractor.SchemaFilter) (extractor.SiteBu
 }
 
 func runUpload(args []string) error {
-	outputDir, _, err := parseOutputDirArg("upload", args, getEnv("OUTPUT_DIR", "/output"))
+	cfg, err := parseUploadCommandConfig(args, os.Getenv)
 	if err != nil {
 		return err
 	}
-	if err := requireExistingOutputDir(outputDir, "Set OUTPUT_DIR or pass --output-dir to a pre-created directory"); err != nil {
+	if err := requireExistingOutputDir(cfg.OutputDir, "Set OUTPUT_DIR or pass --output-dir to a pre-created directory"); err != nil {
 		return err
 	}
 
@@ -187,7 +151,7 @@ func runUpload(args []string) error {
 		UploadConcurrency:     uploadConfig.Concurrency,
 	}
 
-	return p.Publish(outputDir)
+	return p.Publish(cfg.OutputDir)
 }
 
 func runWatch(args []string) error {

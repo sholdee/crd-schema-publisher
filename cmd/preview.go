@@ -29,17 +29,17 @@ func init() {
 }
 
 func runPreview(args []string) error {
-	outputDir, explicit, err := parseOutputDirArg("preview", args, "")
+	cfg, err := parsePreviewConfig(args)
 	if err != nil {
 		return err
 	}
-	if explicit {
-		if err := requireExistingOutputDir(outputDir, "Pass --output-dir to a pre-created directory"); err != nil {
+	if cfg.ExplicitOutputDir {
+		if err := requireExistingOutputDir(cfg.OutputDir, "Pass --output-dir to a pre-created directory"); err != nil {
 			return err
 		}
 	}
 	basePath := normalizeBasePath(os.Getenv("BASE_PATH"))
-	serveDir, cleanup, err := preparePreviewSiteFunc(outputDir, basePath, os.Getenv("SKIP_RENDER") != "true")
+	serveDir, cleanup, err := preparePreviewSiteFunc(cfg.OutputDir, basePath, os.Getenv("SKIP_RENDER") != "true")
 	if err != nil {
 		return err
 	}

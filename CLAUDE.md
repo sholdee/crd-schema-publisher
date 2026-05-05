@@ -25,6 +25,9 @@ watcher/        CRD informer watch loop, debounce, leader election, health serve
 # Run all tests
 go test ./...
 
+# Run local Helm render contract assertions
+go run ./hack/chartassert
+
 # If you change the extracted schema search module or its tests
 node --test theme/schema_search.test.js
 

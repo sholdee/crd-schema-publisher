@@ -260,6 +260,16 @@ ghcr.io/sholdee/crd-schema-publisher:latest
 
 Releases are triggered manually via the release workflow, producing a date-based tag (`vYYYY.MDD.HMMSS` — e.g. `v2026.413.65435`) and `latest`. Release notes include the image digest, OCI Helm chart reference, signed checksum manifest, binary provenance link, and standalone binary attachments. PR builds get `pr-N` tags for testing.
 
+The manual release workflow also runs a release smoke gate before signing images, pushing the Helm chart, creating binary provenance, tagging the commit, or creating the GitHub Release. The smoke gate starts a temporary kind cluster, installs the candidate image by digest with the Helm chart in controller/watch mode, publishes a unique marker CRD catalog to a dedicated Cloudflare Pages project, and fetches the published site to verify the current marker and core static assets.
+
+Maintainers must configure dedicated CI-only Cloudflare Pages secrets before triggering releases:
+
+- `CF_PAGES_E2E_ACCOUNT_ID`
+- `CF_PAGES_E2E_API_TOKEN`
+- `CF_PAGES_E2E_PROJECT`
+
+Use a dedicated Pages project and a token scoped only to the permissions needed to edit that project. Missing smoke secrets fail the release workflow before any promotional artifacts are created beyond the unsigned candidate image tag.
+
 Images use `gcr.io/distroless/static:nonroot` as the runtime base — no shell, no package manager, runs as UID 65534. Production images are signed with [cosign](https://docs.sigstore.dev/cosign/overview/) keyless signing via GitHub Actions OIDC:
 
 ```bash

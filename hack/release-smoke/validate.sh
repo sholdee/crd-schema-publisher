@@ -29,6 +29,61 @@ fail() {
   exit 1
 }
 
+redact_output_value() {
+  local value="$1"
+
+  if [ -n "${CF_PAGES_E2E_PROJECT:-}" ]; then
+    value="${value//${CF_PAGES_E2E_PROJECT}/***}"
+  fi
+
+  echo "${value}"
+}
+
+write_success_summary() {
+  local url_source="$1"
+  local validated_url="$2"
+
+  if [ -z "${GITHUB_STEP_SUMMARY:-}" ]; then
+    return 0
+  fi
+
+  {
+    echo "## Release Smoke"
+    echo
+    echo "- Result: success"
+    echo "- URL source: \`${url_source}\`"
+    echo "- Validated URL: $(redact_output_value "${validated_url}")"
+    echo "- Namespace: \`${NAMESPACE}\`"
+    echo "- Marker group: \`${MARKER_GROUP}\`"
+    echo "- Run marker: \`${RUN_MARKER}\`"
+    echo "- Image: \`${IMAGE_REPOSITORY}@${IMAGE_DIGEST}\`"
+  } >> "${GITHUB_STEP_SUMMARY}"
+}
+
+write_failure_summary() {
+  local last_log_url="$1"
+  local fallback_url="$2"
+
+  if [ -z "${GITHUB_STEP_SUMMARY:-}" ]; then
+    return 0
+  fi
+
+  {
+    echo "## Release Smoke Failed"
+    echo
+    echo "- Namespace: \`${NAMESPACE}\`"
+    echo "- Marker group: \`${MARKER_GROUP}\`"
+    echo "- Run marker: \`${RUN_MARKER}\`"
+    echo "- Image: \`${IMAGE_REPOSITORY}@${IMAGE_DIGEST}\`"
+    if [ -n "${last_log_url}" ]; then
+      echo "- Last deployment URL from logs: $(redact_output_value "${last_log_url}")"
+    else
+      echo "- Last deployment URL from logs: unavailable"
+    fi
+    echo "- Fallback URL: $(redact_output_value "${fallback_url}")"
+  } >> "${GITHUB_STEP_SUMMARY}"
+}
+
 require_env() {
   local name
   for name in "${required_env[@]}"; do
@@ -107,7 +162,11 @@ deployment_url_from_logs() {
 
 fetch() {
   local url="$1"
-  curl -fsSL --retry 3 --retry-delay 2 "${url}"
+  if [ "${RELEASE_SMOKE_VERBOSE_CURL:-}" = "true" ]; then
+    curl -fsSL --retry 3 --retry-delay 2 "${url}"
+  else
+    curl -fsSL --retry 3 --retry-delay 2 "${url}" 2>/dev/null
+  fi
 }
 
 assert_url_contains() {
@@ -116,7 +175,7 @@ assert_url_contains() {
   local body
   body="$(fetch "${url}")" || return 1
   if ! grep -Fq "${expected}" <<<"${body}"; then
-    echo "Expected ${url} to contain ${expected}" >&2
+    echo "Expected $(redact_output_value "${url}") to contain ${expected}" >&2
     return 1
   fi
 }
@@ -130,7 +189,6 @@ validate_site_at() {
   local raw_base="$1"
   local base="${raw_base%/}"
 
-  echo "Validating release smoke site at ${base}"
   assert_url_contains "${base}/index.html" "${MARKER_GROUP}" || return 1
   assert_url_contains "${base}/${MARKER_GROUP}/releasesmoke_v1.json" "${RUN_MARKER}" || return 1
   assert_url_contains "${base}/${MARKER_GROUP}/releasesmoke_v1.html" "${RUN_MARKER}" || return 1
@@ -153,25 +211,36 @@ dump_debug_state() {
 wait_for_site() {
   local fixed_url="https://${CF_PAGES_E2E_PROJECT}.pages.dev"
   local log_url=""
+  local last_log_url=""
+  local log_status=""
   local i
 
   for i in $(seq 1 48); do
     log_url="$(deployment_url_from_logs)"
 
-    if [ -n "${log_url}" ] && validate_site_at "${log_url}"; then
-      echo "Release smoke validated deployment URL: ${log_url}"
-      return 0
+    if [ -n "${log_url}" ]; then
+      last_log_url="${log_url}"
+      if validate_site_at "${log_url}"; then
+        echo "Release smoke validated deployment URL: $(redact_output_value "${log_url}")"
+        write_success_summary "deployment log" "${log_url}"
+        return 0
+      fi
+      log_status="deployment URL failed"
+    else
+      log_status="deployment URL unavailable"
     fi
 
     if validate_site_at "${fixed_url}"; then
-      echo "Release smoke validated fallback project URL: ${fixed_url}"
+      echo "Release smoke validated fallback project URL: $(redact_output_value "${fixed_url}")"
+      write_success_summary "fallback project domain" "${fixed_url}"
       return 0
     fi
 
-    echo "Waiting for current marker ${RUN_MARKER} to be published (${i}/48)"
+    echo "Attempt ${i}/48: marker ${RUN_MARKER} not visible yet (${log_status}; fallback failed)"
     sleep 5
   done
 
+  write_failure_summary "${last_log_url}" "${fixed_url}"
   dump_debug_state
   fail "published Cloudflare Pages site did not expose marker ${RUN_MARKER}"
 }

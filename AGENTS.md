@@ -219,7 +219,7 @@ Automated dependency management with platform automerge.
 | GitHub Actions | Commit SHA + version comment | `actions/checkout@<sha> # v4` |
 | Dockerfile base images | Tag + manifest digest | `golang:1.26.2@sha256:...` |
 | Go modules | `go.mod` + `go.sum`, verified with `go mod verify` | Standard |
-| CI tools (`go install`) | Semver tag, tracked by Renovate custom manager | `actionlint@v1.7.12` |
+| CI tools (`go install`, `npx`, workflow setup inputs) | Semver tag, tracked by Renovate custom manager | `actionlint@v1.7.12`, `helm v4.1.4` |
 
 ### OCI Labels
 

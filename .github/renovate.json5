@@ -29,7 +29,15 @@
     },
     {
       description: 'Automerge minor/patch CI tool updates',
-      matchPackageNames: ['rhysd/actionlint', 'markdownlint-cli2', 'golang/vuln', 'yannh/kubeconform'],
+      matchPackageNames: [
+        'rhysd/actionlint',
+        'markdownlint-cli2',
+        'golang/vuln',
+        'yannh/kubeconform',
+        'helm/helm',
+        'kubernetes/kubernetes',
+        'kubernetes-sigs/kind',
+      ],
       matchUpdateTypes: ['minor', 'patch'],
       automerge: true,
     },
@@ -73,6 +81,40 @@
       ],
       datasourceTemplate: 'npm',
       versioningTemplate: 'npm',
+    },
+    {
+      customType: 'regex',
+      description: ['Process Helm setup versions in CI workflows'],
+      managerFilePatterns: ['/\\.github/workflows/.*\\.ya?ml$/'],
+      matchStrings: [
+        'uses: azure/setup-helm@[^\\n]+\\n\\s+with:\\n\\s+version: v(?<currentValue>[\\d.]+)',
+      ],
+      depNameTemplate: 'helm/helm',
+      datasourceTemplate: 'github-releases',
+      versioningTemplate: 'semver',
+    },
+    {
+      customType: 'regex',
+      description: ['Process kubectl setup versions in CI workflows'],
+      managerFilePatterns: ['/\\.github/workflows/.*\\.ya?ml$/'],
+      matchStrings: [
+        'uses: Azure/setup-kubectl@[^\\n]+\\n\\s+with:\\n\\s+version: v(?<currentValue>[\\d.]+)',
+        'uses: helm/kind-action@[^\\n]+\\n\\s+with:\\n(?:\\s+version: v[\\d.]+\\n)?\\s+kubectl_version: v(?<currentValue>[\\d.]+)',
+      ],
+      depNameTemplate: 'kubernetes/kubernetes',
+      datasourceTemplate: 'github-releases',
+      versioningTemplate: 'semver',
+    },
+    {
+      customType: 'regex',
+      description: ['Process kind versions in CI workflows'],
+      managerFilePatterns: ['/\\.github/workflows/.*\\.ya?ml$/'],
+      matchStrings: [
+        'uses: helm/kind-action@[^\\n]+\\n\\s+with:\\n\\s+version: v(?<currentValue>[\\d.]+)',
+      ],
+      depNameTemplate: 'kubernetes-sigs/kind',
+      datasourceTemplate: 'github-releases',
+      versioningTemplate: 'semver',
     },
   ],
 }

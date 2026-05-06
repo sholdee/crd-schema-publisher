@@ -1,12 +1,30 @@
-[![Go Report Card](https://goreportcard.com/badge/github.com/sholdee/crd-schema-publisher)](https://goreportcard.com/report/github.com/sholdee/crd-schema-publisher)
-[![CI](https://github.com/sholdee/crd-schema-publisher/actions/workflows/ci.yaml/badge.svg)](https://github.com/sholdee/crd-schema-publisher/actions/workflows/ci.yaml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/sholdee/crd-schema-publisher)](go.mod)
-[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/crd-schema-publisher)](https://artifacthub.io/packages/helm/crd-schema-publisher/crd-schema-publisher)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/sholdee/crd-schema-publisher/main/docs/assets/logo.svg" alt="crd-schema-publisher logo" width="96">
+</p>
 
-# crd-schema-publisher — CRD docs and IDE validation, straight from the cluster
+<h1 align="center">crd-schema-publisher</h1>
+
+<p align="center">
+  CRD docs and IDE validation, straight from the cluster.
+</p>
+
+<p align="center">
+  <a href="https://goreportcard.com/report/github.com/sholdee/crd-schema-publisher"><img src="https://goreportcard.com/badge/github.com/sholdee/crd-schema-publisher" alt="Go Report Card"></a>
+  <a href="https://github.com/sholdee/crd-schema-publisher/actions/workflows/ci.yaml"><img src="https://github.com/sholdee/crd-schema-publisher/actions/workflows/ci.yaml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/sholdee/crd-schema-publisher" alt="Go Version"></a>
+  <a href="https://artifacthub.io/packages/helm/crd-schema-publisher/crd-schema-publisher"><img src="https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/crd-schema-publisher" alt="Artifact Hub"></a>
+</p>
 
 Extracts CRD OpenAPI schemas from your Kubernetes API server or YAML files, converts them to JSON Schema, and publishes a searchable documentation site with interactive schema pages.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/sholdee/crd-schema-publisher/main/docs/screenshots/overview.gif" alt="Downloading crd-schema-publisher, extracting CRD schemas, and browsing the generated schema site" width="720">
+</p>
+
+<p align="center">
+  <a href="https://kube-schemas.shold.io">Live demo</a>
+</p>
 
 Run it as:
 
@@ -17,8 +35,6 @@ Run it as:
 Exports schemas for IDE validation with yaml-language-server and CI linting with kubeconform. Cloudflare Pages and local serving are built in; S3, git repos, and custom web servers are supported via sidecar.
 
 > **Upgrading direct-volume deployments:** the active site now lives at `OUTPUT_DIR/current`. Existing sidecars or scripts that read the shared output volume directly must be updated. Cloudflare Pages users do not need to change anything.
-
-**[Live demo →](https://kube-schemas.shold.io)**
 
 ## 💡 Why
 

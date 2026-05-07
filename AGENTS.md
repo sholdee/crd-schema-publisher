@@ -29,6 +29,9 @@ go test ./...
 # Run local Helm render contract assertions
 go run ./hack/chartassert
 
+# Verify Go version pins stay aligned across go.mod and Dockerfile
+bash ./hack/check-go-toolchain.sh
+
 # If you change extracted page JavaScript or its tests
 node --test theme/schema_search.test.js theme/schema_page.test.js theme/index_page.test.js
 
@@ -156,7 +159,7 @@ Five workflow files in `.github/workflows/`:
 
 | File | Trigger | Purpose |
 | --- | ------- | ------- |
-| `test.yml` | `workflow_call` | Reusable: actionlint, markdownlint-cli2, golangci-lint, go mod verify/tidy, go test, go vet, govulncheck |
+| `test.yml` | `workflow_call` | Reusable: Go toolchain pin check, actionlint, markdownlint-cli2, golangci-lint, go mod verify/tidy, go test, go vet, govulncheck |
 | `helm-lint.yml` | `workflow_call` | Reusable: `helm lint`, `helm template` in controller/cronjob/all-features modes, mode isolation checks, schema validation, dashboard JSON embedding, kubeconform |
 | `ci.yaml` | PR + push to `main` | Orchestrator: calls `test.yml` and `helm-lint.yml`, runs detect/build/renovate/gate |
 | `release.yaml` | `workflow_dispatch` | Orchestrator: calls `test.yml` and `helm-lint.yml`, builds the candidate image, runs release-smoke, then signs/packages/releases |
@@ -208,7 +211,8 @@ The rehearsal workflow is for validating the external smoke path before a releas
 Automated dependency management with platform automerge.
 
 - **Presets:** `config:recommended`, `docker:enableMajor`, `:semanticCommits`, `helpers:pinGitHubActionDigests`
-- **Automerge (minor/patch):** GitHub Actions, Docker images (including digest), Go modules, CI tools
+- **Automerge (minor/patch):** GitHub Actions, Docker images (including digest), Go version directive, Go modules, indirect `golang.org/x/*` modules, CI tools
+- **Go toolchain updates:** `go.mod`'s `go` directive must match the Dockerfile `golang` build image tag. `test.yml` runs `hack/check-go-toolchain.sh` so split Docker-only Go updates cannot merge.
 - **Custom manager:** Regex manager matches `go install github.com/<org>/<repo>/...@v<version>` in workflow files, updates via `github-releases` datasource
 - **Major updates:** require manual review (all dependency types)
 
@@ -217,8 +221,8 @@ Automated dependency management with platform automerge.
 | Dependency type | Pinning strategy | Example |
 | -------------- | --------------- | ------- |
 | GitHub Actions | Commit SHA + version comment | `actions/checkout@<sha> # v4` |
-| Dockerfile base images | Tag + manifest digest | `golang:1.26.2@sha256:...` |
-| Go modules | `go.mod` + `go.sum`, verified with `go mod verify` | Standard |
+| Dockerfile base images | Tag + manifest digest | `golang:1.26.3@sha256:...` |
+| Go modules/toolchain | `go.mod` + `go.sum`, verified with `go mod verify`; `go` directive must match Dockerfile Go tag | Standard + `hack/check-go-toolchain.sh` |
 | CI tools (`go install`, `npx`, workflow setup inputs) | Semver tag, tracked by Renovate custom manager | `actionlint@v1.7.12`, `helm v4.1.4` |
 
 ### OCI Labels

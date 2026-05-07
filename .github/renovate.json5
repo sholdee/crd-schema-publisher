@@ -22,9 +22,33 @@
       automerge: true,
     },
     {
+      description: 'Group Go runtime image and module version updates',
+      matchDatasources: ['docker', 'golang-version'],
+      matchPackageNames: ['golang', 'go'],
+      matchUpdateTypes: ['minor', 'patch', 'digest'],
+      groupName: 'Go toolchain',
+      automerge: true,
+    },
+    {
+      description: 'Bump the go.mod go directive with Go releases',
+      matchManagers: ['gomod'],
+      matchDepTypes: ['golang'],
+      matchDepNames: ['go'],
+      rangeStrategy: 'bump',
+    },
+    {
       description: 'Automerge minor/patch Go module updates',
       matchManagers: ['gomod'],
       matchUpdateTypes: ['minor', 'patch'],
+      automerge: true,
+    },
+    {
+      description: 'Automerge minor/patch indirect golang.org/x module updates',
+      matchManagers: ['gomod'],
+      matchDepTypes: ['indirect'],
+      matchPackageNames: ['/^golang\\.org\\/x\\//'],
+      matchUpdateTypes: ['minor', 'patch'],
+      enabled: true,
       automerge: true,
     },
     {

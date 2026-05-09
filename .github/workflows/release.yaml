@@ -31,7 +31,10 @@ jobs:
       - name: Generate release metadata
         id: version
         run: |
-          DATE_TAG="v$(date -u +'%Y.%-m%d.%-H%M%S')"
+          read -r YEAR MONTH DAY HOUR MINUTE SECOND < <(date -u '+%Y %m %d %H %M %S')
+          MDD=$((10#${MONTH} * 100 + 10#${DAY}))
+          HMMSS=$((10#${HOUR} * 10000 + 10#${MINUTE} * 100 + 10#${SECOND}))
+          DATE_TAG="v${YEAR}.${MDD}.${HMMSS}"
           CREATED="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           {
             echo "date=${DATE_TAG}"

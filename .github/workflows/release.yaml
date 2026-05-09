@@ -14,9 +14,13 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  guard:
+  release-meta:
     runs-on: ubuntu-latest
     permissions: {}
+    outputs:
+      date-tag: ${{ steps.version.outputs.date }}
+      created: ${{ steps.version.outputs.created }}
+      semver: ${{ steps.version.outputs.semver }}
     steps:
       - name: Verify branch
         if: github.ref != 'refs/heads/main'
@@ -24,16 +28,27 @@ jobs:
           echo "ERROR: Release workflow must run on main branch, got ${GITHUB_REF}"
           exit 1
 
+      - name: Generate release metadata
+        id: version
+        run: |
+          DATE_TAG="v$(date -u +'%Y.%-m%d.%-H%M%S')"
+          CREATED="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          {
+            echo "date=${DATE_TAG}"
+            echo "created=${CREATED}"
+            echo "semver=${DATE_TAG#v}"
+          } >> "$GITHUB_OUTPUT"
+
   test:
-    needs: [guard]
+    needs: [release-meta]
     uses: ./.github/workflows/test.yml
 
   helm-lint:
-    needs: [guard]
+    needs: [release-meta]
     uses: ./.github/workflows/helm-lint.yml
 
   binaries:
-    needs: [test, build, release-smoke]
+    needs: [test, release-meta]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -52,7 +67,7 @@ jobs:
 
       - name: Build binaries
         env:
-          VERSION: ${{ needs.build.outputs.date-tag }}
+          VERSION: ${{ needs.release-meta.outputs.date-tag }}
         run: |
           for pair in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
             goos="${pair%/*}"
@@ -89,14 +104,13 @@ jobs:
           retention-days: 1
 
   build:
-    needs: [test]
+    needs: [test, release-meta]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     outputs:
       digest: ${{ steps.build.outputs.digest }}
-      date-tag: ${{ steps.tags.outputs.date }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -125,22 +139,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate version
-        id: tags
-        env:
-          FULL_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        run: |
-          DATE_TAG="v$(date -u +'%Y.%-m%d.%-H%M%S')"
-          CREATED="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          {
-            echo "date=${DATE_TAG}"
-            echo "created=${CREATED}"
-            echo 'tags<<TAGS_EOF'
-            echo "${FULL_IMAGE}:${DATE_TAG}"
-            echo "${FULL_IMAGE}:latest"
-            echo 'TAGS_EOF'
-          } >> "$GITHUB_OUTPUT"
-
       - name: Build and push
         id: build
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
@@ -148,17 +146,19 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.tags.outputs.tags }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.release-meta.outputs.date-tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           annotations: |
             index:org.opencontainers.image.description=Extracts CRD JSON schemas from Kubernetes and publishes to Cloudflare Pages
             index:org.opencontainers.image.source=https://github.com/sholdee/crd-schema-publisher
             index:org.opencontainers.image.licenses=MIT
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ steps.tags.outputs.date }}
-            org.opencontainers.image.created=${{ steps.tags.outputs.created }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            org.opencontainers.image.version=${{ needs.release-meta.outputs.date-tag }}
+            org.opencontainers.image.created=${{ needs.release-meta.outputs.created }}
+          cache-from: type=gha,scope=crd-schema-publisher
+          cache-to: type=gha,scope=crd-schema-publisher,mode=max,ignore-error=true
 
   release-smoke:
     needs: [build, helm-lint]
@@ -207,7 +207,7 @@ jobs:
         run: hack/release-smoke/validate.sh
 
   sign:
-    needs: [build, release-smoke]
+    needs: [build, release-smoke, release-meta]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -226,14 +226,14 @@ jobs:
       - name: Sign image with cosign
         env:
           FULL_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          DATE_TAG: ${{ needs.build.outputs.date-tag }}
+          DATE_TAG: ${{ needs.release-meta.outputs.date-tag }}
           DIGEST: ${{ needs.build.outputs.digest }}
         run: |
           cosign sign --yes "${FULL_IMAGE}:${DATE_TAG}@${DIGEST}"
           cosign sign --yes "${FULL_IMAGE}:latest@${DIGEST}"
 
   helm-package:
-    needs: [helm-lint, build, sign, release-smoke]
+    needs: [helm-lint, sign, release-smoke, release-meta]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -258,33 +258,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute chart version
-        id: version
-        env:
-          DATE_TAG: ${{ needs.build.outputs.date-tag }}
-        run: |
-          SEMVER="${DATE_TAG#v}"
-          echo "semver=${SEMVER}" >> "$GITHUB_OUTPUT"
-          echo "app-version=${DATE_TAG}" >> "$GITHUB_OUTPUT"
-
       - name: Package chart
         env:
-          SEMVER: ${{ steps.version.outputs.semver }}
-          APP_VERSION: ${{ steps.version.outputs.app-version }}
+          SEMVER: ${{ needs.release-meta.outputs.semver }}
+          APP_VERSION: ${{ needs.release-meta.outputs.date-tag }}
         run: helm package charts/crd-schema-publisher --version "${SEMVER}" --app-version "${APP_VERSION}"
 
       - name: Push chart to GHCR
         env:
-          SEMVER: ${{ steps.version.outputs.semver }}
+          SEMVER: ${{ needs.release-meta.outputs.semver }}
         run: helm push "crd-schema-publisher-${SEMVER}.tgz" "oci://${REGISTRY}/sholdee/charts"
 
       - name: Sign chart with cosign
         env:
-          SEMVER: ${{ steps.version.outputs.semver }}
+          SEMVER: ${{ needs.release-meta.outputs.semver }}
         run: cosign sign --yes "${REGISTRY}/sholdee/charts/crd-schema-publisher:${SEMVER}"
 
   release:
-    needs: [build, sign, helm-package, binaries]
+    needs: [build, sign, helm-package, binaries, release-meta]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -303,7 +294,7 @@ jobs:
       - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DATE_TAG: ${{ needs.build.outputs.date-tag }}
+          DATE_TAG: ${{ needs.release-meta.outputs.date-tag }}
           FULL_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           DIGEST: ${{ needs.build.outputs.digest }}
           ATTESTATION_URL: ${{ needs.binaries.outputs.attestation-url }}

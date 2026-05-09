@@ -111,8 +111,8 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=dev
             org.opencontainers.image.created=${{ github.event.pull_request.updated_at }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=crd-schema-publisher
+          cache-to: type=gha,scope=crd-schema-publisher,mode=max,ignore-error=true
 
   renovate:
     needs: detect

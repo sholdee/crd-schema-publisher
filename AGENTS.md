@@ -182,14 +182,15 @@ Pushes to main run `test` and `helm-lint` only (no Docker build, no release). PR
 
 | Job | Runs when | Purpose |
 | --- | --------- | ------- |
-| `test` | Always | Calls `test.yml` — re-runs all linting and Go tests as a safety net before building |
-| `helm-lint` | Always | Calls `helm-lint.yml` — re-runs all Helm validation before packaging |
-| `build` | After `test` passes | Multi-arch Docker build (amd64 + arm64), pushes `vYYYY.MDD.HMMSS` + `latest` to GHCR. Verifies distroless base image digest with cosign before building. This creates the unsigned candidate image used by release-smoke. |
+| `release-meta` | First | Verifies the release is running on `main`, computes the CalVer date tag, created timestamp, and chart SemVer used by all downstream jobs. Does not create the git tag. |
+| `test` | After `release-meta` passes | Calls `test.yml` — re-runs all linting and Go tests as a safety net before building |
+| `helm-lint` | After `release-meta` passes | Calls `helm-lint.yml` — re-runs all Helm validation before packaging |
+| `build` | After `test` and `release-meta` pass | Multi-arch Docker build (amd64 + arm64), pushes `vYYYY.MDD.HMMSS` + `latest` to GHCR. Verifies distroless base image digest with cosign before building. This creates the unsigned candidate image used by release-smoke. |
 | `release-smoke` | After `build` and `helm-lint` pass | Starts a temporary kind cluster, applies a unique marker CRD, installs the chart in controller/watch mode using the candidate image digest and dedicated Cloudflare CI credentials, then fetches the published Pages deployment to verify the current marker and core site assets. Blocks all promotional artifacts if it fails. |
 | `sign` | After `build` and `release-smoke` pass | Cosign keyless signing via GitHub OIDC |
-| `helm-package` | After `helm-lint`, `build`, `release-smoke`, and `sign` pass | Package chart with CalVer SemVer matching the image tag. Push OCI to GHCR, cosign sign. Image and chart always share the same version — no desync possible. |
-| `binaries` | After `build` and `release-smoke` pass | Cross-compiles static binaries for linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, generates `checksums-sha256.txt`, signs the checksum manifest with cosign keyless blob signing, uploads `dist/` as artifacts for the `release` job, and publishes GitHub/Sigstore build provenance for the binaries via the attestations service. |
-| `release` | After `build`, `sign`, `helm-package`, and `binaries` pass | Creates git tag, GitHub Release with auto-generated notes, image digest, chart OCI reference, signed checksum manifest, binary provenance link, and standalone binaries. |
+| `helm-package` | After `helm-lint`, `release-smoke`, and `sign` pass | Package chart with CalVer SemVer matching the image tag. Push OCI to GHCR, cosign sign. Image and chart always share the same version — no desync possible. |
+| `binaries` | After `test` and `release-meta` pass | Cross-compiles static binaries for linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, generates `checksums-sha256.txt`, signs the checksum manifest with cosign keyless blob signing, uploads `dist/` as short-lived artifacts for the `release` job, and publishes GitHub/Sigstore build provenance for the binaries via the attestations service. |
+| `release` | After `build`, `sign`, `helm-package`, `binaries`, and `release-meta` pass | Creates git tag, GitHub Release with auto-generated notes, image digest, chart OCI reference, signed checksum manifest, binary provenance link, and standalone binaries. |
 
 App image and Helm chart are always released together with the same CalVer version. Releases are decoupled from CI — trigger the release workflow when changes warrant a new version. The release workflow re-runs all tests before building as a safety net. A concurrency group prevents simultaneous releases from racing.
 

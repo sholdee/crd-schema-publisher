@@ -63,9 +63,15 @@ helm install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-schema-publis
 
 See [Deploying](#-deploying) for credentials, raw manifests, CronJob mode, alternative backends, and chart verification.
 
-### Generate Schemas with the CLI
+### Install and Run the CLI
 
-Use the standalone binary or `go run ./cmd/` to extract schemas from a kubeconfig context or convert CRD YAML files without a cluster connection.
+Install the standalone CLI:
+
+```bash
+curl -fsSL https://crdsp.shold.io | bash
+```
+
+Extract schemas from a kubeconfig context or convert CRD YAML files without a cluster connection:
 
 ```bash
 # Extract from the current kubeconfig context
@@ -78,7 +84,7 @@ crd-schema-publisher extract --context my-cluster -o ./schemas
 crd-schema-publisher convert -f crd.yaml -o ./schemas
 ```
 
-See [Standalone Binary](#standalone-binary) for release downloads and [Configuration and CLI Reference](#configuration-and-cli-reference) for flags and command behavior.
+For source builds, use `go run ./cmd/` in place of `crd-schema-publisher`. See [Standalone Binary](#standalone-binary) for installer options and manual downloads, and [Configuration and CLI Reference](#configuration-and-cli-reference) for flags and command behavior.
 
 ### Use Published Schemas
 
@@ -98,7 +104,27 @@ See [Using Your Schemas](#-using-your-schemas) for IDE and kubeconform examples.
 
 ### Standalone Binary
 
-Static binaries for Linux and macOS (amd64 + arm64) are attached to each [GitHub Release](https://github.com/sholdee/crd-schema-publisher/releases).
+The quick installer is the recommended path for local CLI use. Static binaries for Linux and macOS (amd64 + arm64) are also attached to each [GitHub Release](https://github.com/sholdee/crd-schema-publisher/releases).
+
+Quick install/update:
+
+```bash
+curl -fsSL https://crdsp.shold.io | bash
+```
+
+Non-interactive install:
+
+```bash
+curl -fsSL https://crdsp.shold.io | bash -s -- --yes
+```
+
+Install a specific release:
+
+```bash
+curl -fsSL https://crdsp.shold.io | bash -s -- --version vYYYY.MDD.HMMSS
+```
+
+The installer detects Linux/macOS and amd64/arm64, verifies the selected binary against the release checksum manifest, optionally verifies the checksum Sigstore bundle when `cosign` is available, and installs to an existing `crd-schema-publisher` path or `/usr/local/bin/crd-schema-publisher`.
 
 ```bash
 # Download the latest release (example: Linux amd64)

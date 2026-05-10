@@ -27,6 +27,9 @@ jobs:
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           actionlint -shellcheck="shellcheck"
 
+      - name: Lint installer script
+        run: shellcheck scripts/install-crd-schema-publisher.sh
+
       - name: Lint markdown
         run: npx --yes markdownlint-cli2@0.22.1 '**/*.md' '#node_modules'
 

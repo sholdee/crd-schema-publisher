@@ -19,7 +19,7 @@
 Extracts CRD OpenAPI schemas from your Kubernetes API server or YAML files, converts them to JSON Schema, and publishes a searchable documentation site with interactive schema pages.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/sholdee/crd-schema-publisher/main/docs/screenshots/overview.gif" alt="Downloading crd-schema-publisher, extracting CRD schemas, and browsing the generated schema site" width="720">
+  <img src="https://raw.githubusercontent.com/sholdee/crd-schema-publisher/main/docs/screenshots/overview.gif" alt="Installing crd-schema-publisher, extracting CRD schemas, and browsing the generated schema site" width="720">
 </p>
 
 <p align="center">

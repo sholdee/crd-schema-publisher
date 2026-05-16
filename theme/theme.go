@@ -8,28 +8,28 @@ const CSSVars = `
     --bg-surface: rgba(24, 24, 27, 0.6);
     --bg-hover: rgba(24, 24, 27, 0.8);
     --fg: #fafafa;
-    --fg-muted: #a1a1aa;
+    --fg-muted: #b0b3bc;
     --accent: #6bc1fe;
     --accent-dim: rgba(107, 193, 254, 0.15);
     --border: rgba(255, 255, 255, 0.1);
     --border-active: #6bc1fe;
     --stat-fg: #fafafa;
-    --required-bg: rgba(251, 191, 36, 0.15);
-    --required-fg: #fbbf24;
+    --required-bg: rgba(251, 191, 36, 0.25);
+    --required-fg: #f59e0b;
   }
   .light {
     --bg: #f5f7fa;
     --bg-surface: #ffffff;
     --bg-hover: #edf0f4;
     --fg: #18181b;
-    --fg-muted: #6b7785;
+    --fg-muted: #374151;
     --accent: #2563b0;
     --accent-dim: rgba(37, 99, 176, 0.08);
     --border: #d8dde4;
     --border-active: #2563b0;
     --stat-fg: #18181b;
-    --required-bg: rgba(217, 119, 6, 0.1);
-    --required-fg: #b45309;
+    --required-bg: rgba(217, 119, 6, 0.15);
+    --required-fg: #92400e;
   }`
 
 // CSSBase contains shared base styles: reset, body, theme toggle, toast, and footer.
@@ -42,16 +42,38 @@ const CSSBase = `
     position: relative; z-index: 1;
     transition: background 0.2s, color 0.2s;
   }
+  .skip-nav {
+    position: absolute; left: -999px; top: auto; width: 1px; height: 1px;
+    overflow: hidden; z-index: 100;
+  }
+  .skip-nav:focus, .skip-nav:active {
+    left: auto; width: auto; height: auto; padding: 0.5rem 1rem;
+    background: var(--accent); color: #09090b;
+    border-radius: 6px; font-weight: 600; text-decoration: none;
+    margin: 0.5rem; outline: 2px solid var(--accent);
+  }
+  .visually-hidden {
+    position: absolute; width: 1px; height: 1px; padding: 0;
+    margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0);
+    white-space: nowrap; border: 0;
+  }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important; scroll-behavior: auto !important;
+    }
+  }
   .theme-toggle {
     background: none; border: 1px solid var(--border); border-radius: 6px;
-    color: var(--fg-muted); cursor: pointer; padding: 0.35rem 0.6rem; font-size: 0.85rem;
+    color: var(--fg-muted); cursor: pointer; padding: 0.35rem 0.6rem; font-size: 0.9rem;
     transition: border-color 0.2s, color 0.2s;
   }
   .theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
   .copied-toast {
     position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
     background: var(--accent); color: #09090b; padding: 0.4rem 1rem;
-    border-radius: 6px; font-size: 0.8rem; font-weight: 600;
+    border-radius: 6px; font-size: 0.875rem; font-weight: 600;
     opacity: 0; transition: opacity 0.2s;
     pointer-events: none; z-index: 10;
   }
@@ -59,7 +81,7 @@ const CSSBase = `
   footer {
     margin-top: 3rem; padding-top: 1.5rem;
     border-top: 1px solid var(--border);
-    text-align: center; font-size: 0.8rem; color: var(--fg-muted);
+    text-align: center; font-size: 0.875rem; color: var(--fg-muted);
   }
   footer a { color: var(--accent); text-decoration: none; }
   footer a:hover { text-decoration: underline; }`
@@ -75,7 +97,7 @@ const SearchCSS = `
   .search-box::placeholder { color: var(--fg-muted); }
   .search-box:focus { border-color: var(--accent); }
   .search-status {
-    color: var(--fg-muted); font-size: 0.8rem;
+    color: var(--fg-muted); font-size: 0.875rem;
     min-height: 1.25rem; white-space: nowrap;
   }
   .search-status.has-results { color: var(--accent); }
@@ -88,10 +110,10 @@ const SearchCSS = `
 const HeadScript = `<script>if(localStorage.getItem('theme')==='light')document.documentElement.className='light';</script>`
 
 // ThemeToggleButton is the light/dark mode toggle.
-const ThemeToggleButton = `<button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode">☀/☾</button>`
+const ThemeToggleButton = `<button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode" aria-label="Toggle light/dark mode">☀/☾</button>`
 
 // ToastDiv is the clipboard copy toast notification.
-const ToastDiv = `<div class="copied-toast" id="toast">Copied!</div>`
+const ToastDiv = `<div class="copied-toast" id="toast" role="status" aria-live="polite">Copied!</div>`
 
 // FooterHTML is the page footer.
 const FooterHTML = `<footer>

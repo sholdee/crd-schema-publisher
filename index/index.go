@@ -74,12 +74,12 @@ var indexTemplate = `<!DOCTYPE html>
   .title-group { display: flex; align-items: center; gap: 0.6rem; }
   .title-icon { width: 28px; height: 28px; flex-shrink: 0; }
   h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.02em; }
-  .subtitle { color: var(--fg-muted); font-size: 0.85rem; margin-bottom: 1.5rem; }
+  .subtitle { color: var(--fg-muted); font-size: 0.9rem; margin-bottom: 1.5rem; }
   .stats {
     display: flex; gap: 1.5rem; margin-bottom: 1.5rem;
     flex-wrap: wrap;
   }
-  .stat { font-size: 0.85rem; color: var(--fg-muted); }
+  .stat { font-size: 0.9rem; color: var(--fg-muted); }
   .stat strong { color: var(--stat-fg); font-size: 1.1rem; font-weight: 700; margin-right: 0.3rem; }
 ` + theme.SearchCSS + `
   .search-box { margin-bottom: 1.5rem; }
@@ -88,7 +88,7 @@ var indexTemplate = `<!DOCTYPE html>
   }
   .toolbar button {
     background: none; border: none; color: var(--fg-muted); cursor: pointer;
-    font-size: 0.8rem; padding: 0.2rem 0;
+    font-size: 0.875rem; padding: 0.2rem 0;
     transition: color 0.15s;
   }
   .toolbar button:hover { color: var(--accent); }
@@ -96,22 +96,22 @@ var indexTemplate = `<!DOCTYPE html>
   .usage-section details { border: 1px solid var(--border); border-radius: 6px; }
   .usage-section summary {
     padding: 0.65rem 1rem; cursor: pointer; font-weight: 600;
-    font-size: 0.85rem; color: var(--fg-muted);
+    font-size: 0.9rem; color: var(--fg-muted);
     background: var(--bg-surface); border-radius: 6px;
     list-style: none;
   }
   .usage-section summary::-webkit-details-marker { display: none; }
-  .usage-section summary::before { content: "▸ "; transition: transform 0.2s; }
-  .usage-section details[open] summary::before { content: "▾ "; }
+  .usage-section summary::before { content: "▸ "; color: var(--fg); transition: transform 0.2s; }
+  .usage-section details[open] summary::before { content: "▾ "; color: var(--accent); }
   .usage-section summary:hover { color: var(--fg); }
   .usage-content {
-    padding: 1rem; font-size: 0.85rem;
+    padding: 1rem; font-size: 0.9rem;
     border-top: 1px solid var(--border);
   }
   .usage-content p { margin-bottom: 0.5rem; color: var(--fg-muted); }
   .usage-content code {
     display: block; background: var(--bg); border: 1px solid var(--border);
-    border-radius: 4px; padding: 0.75rem 1rem; font-size: 0.8rem;
+    border-radius: 4px; padding: 0.75rem 1rem; font-size: 0.875rem;
     font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
     overflow-x: auto; white-space: pre; color: var(--fg);
   }
@@ -127,7 +127,7 @@ var indexTemplate = `<!DOCTYPE html>
     transition: background 0.15s;
   }
   .group summary::-webkit-details-marker { display: none; }
-  .group summary::before { content: "▸"; color: var(--fg-muted); font-size: 0.75rem; transition: transform 0.15s; }
+  .group summary::before { content: "▸"; color: var(--fg); font-size: 0.875rem; transition: transform 0.15s; }
   .group[open] summary::before { content: "▾"; color: var(--accent); }
   .group summary:hover { background: var(--bg-hover); }
   .group summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
@@ -135,7 +135,7 @@ var indexTemplate = `<!DOCTYPE html>
   .group-name { flex: 1; }
   .badge {
     background: var(--accent-dim); color: var(--accent);
-    font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.5rem;
+    font-size: 0.75rem; font-weight: 700; padding: 0.15rem 0.5rem;
     border-radius: 10px;
   }
   .schemas { padding: 0.4rem 1rem 0.75rem; }
@@ -144,14 +144,14 @@ var indexTemplate = `<!DOCTYPE html>
   }
   .schemas a {
     display: block; padding: 0.2rem 0; color: var(--accent);
-    text-decoration: none; font-size: 0.82rem;
+    text-decoration: none; font-size: 0.875rem;
     font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
     break-inside: avoid;
   }
   .schemas a:hover { text-decoration: underline; }
   .schemas a .copy-hint {
     display: none; margin-left: 0.5rem;
-    font-size: 0.65rem; color: var(--fg-muted); font-family: inherit;
+    font-size: 0.875rem; color: var(--fg-muted); font-family: inherit;
     padding: 0.1rem 0.4rem; border-radius: 4px;
     transition: background 0.15s, color 0.15s;
   }
@@ -172,10 +172,11 @@ var indexTemplate = `<!DOCTYPE html>
 ` + theme.HeadScript + `
 </head>
 <body data-base-path="{{.BasePath}}">
-<header>
+<a class="skip-nav" href="#search">Skip to search</a>
+<main id="main"><header>
   <div class="title-row">
     <div class="title-group">
-      <svg class="title-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+      <svg class="title-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false">
         <line x1="16" y1="3" x2="28.38" y2="7.96" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"/>
         <line x1="28.38" y1="7.96" x2="27.02" y2="21.53" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"/>
         <line x1="27.02" y1="21.53" x2="19.04" y2="28.51" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"/>
@@ -231,7 +232,7 @@ metadata:
 </div>
 </details>
 </div>
-<input type="search" class="search-box" placeholder="Search groups and schemas...  ` + theme.SearchHintText + `" id="search" autocomplete="off" spellcheck="false">
+<input type="search" class="search-box" placeholder="Search groups and schemas...  ` + theme.SearchHintText + `" id="search" autocomplete="off" spellcheck="false" aria-label="Search groups and schemas" aria-controls="no-results">
 <div class="toolbar"><button id="toggle-all">Expand all</button></div>
 <div id="groups">
 {{range .Groups}}
@@ -244,6 +245,7 @@ metadata:
 {{end}}
 </div>
 <p class="no-results" id="no-results">No matching groups or schemas.</p>
+</main>
 ` + theme.ToastDiv + `
 ` + theme.FooterHTML + `
 <button class="back-to-top" id="back-to-top" title="Back to top" aria-label="Back to top">&#8593;</button>

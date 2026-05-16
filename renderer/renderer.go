@@ -755,13 +755,13 @@ var schemaTemplate = `<!DOCTYPE html>
     font-size: 0.75rem; font-weight: 700; padding: 0.15rem 0.5rem;
     border-radius: 8px; white-space: nowrap;
   }
-  .prop-desc { color: var(--fg-muted); font-size: 0.9rem; margin-top: 0.25rem; }
+  .prop-desc { color: var(--fg-muted); font-size: 0.9rem; margin-top: 0.25rem; overflow-wrap: anywhere; }
   .prop-constraints {
     color: var(--fg-muted); font-size: 0.875rem; margin-top: 0.2rem;
     font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
   }
   .prop-children { margin-top: 0.5rem; }
-  .leaf-desc { color: var(--fg-muted); font-size: 0.9rem; flex: 1; min-width: 0; }
+  .leaf-desc { color: var(--fg-muted); font-size: 0.9rem; flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .leaf-constraints {
     color: var(--fg-muted); font-size: 0.875rem; margin-top: 0.15rem;
     font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;

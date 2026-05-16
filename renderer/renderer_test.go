@@ -477,7 +477,6 @@ func TestRenderSchema_BasicOutput(t *testing.T) {
 		{"favicon.svg", "favicon link"},
 		{"<script src=\"/schema-search.js\"></script>", "shared schema search script"},
 		{"--accent", "CSS custom properties"},
-		{"body::before", "starfield CSS"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(html, c.substr) {

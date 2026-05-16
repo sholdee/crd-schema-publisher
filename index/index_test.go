@@ -78,8 +78,6 @@ func TestGenerate_CreatesIndexHTML(t *testing.T) {
 		{"toggleTheme", "theme toggle JS"},
 		{"documentElement.className", "FOUC prevention script in head"},
 		{`e.key === '/'`, "slash keyboard shortcut"},
-		{`class="flare"`, "flare div"},
-		{"body::before", "starfield CSS"},
 		{"yaml-language-server", "usage section"},
 		{"data-url=\"/", "copy URL data attribute"},
 		{"copy-hint", "copy hint span"},

@@ -16,8 +16,6 @@ const CSSVars = `
     --stat-fg: #fafafa;
     --required-bg: rgba(251, 191, 36, 0.15);
     --required-fg: #fbbf24;
-    --stripes-dark: repeating-linear-gradient(100deg, #000 0%, #000 7%, transparent 10%, transparent 12%, #000 16%);
-    --rainbow: repeating-linear-gradient(100deg, #fff 10%, #fff 16%, #fff 22%, #fff 30%);
   }
   .light {
     --bg: #f5f7fa;
@@ -32,11 +30,9 @@ const CSSVars = `
     --stat-fg: #18181b;
     --required-bg: rgba(217, 119, 6, 0.1);
     --required-fg: #b45309;
-    --stripes-dark: none;
-    --rainbow: none;
   }`
 
-// CSSBase contains shared base styles: reset, body, starfield, flare, theme toggle, toast, and footer.
+// CSSBase contains shared base styles: reset, body, theme toggle, toast, and footer.
 const CSSBase = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -46,53 +42,6 @@ const CSSBase = `
     position: relative; z-index: 1;
     transition: background 0.2s, color 0.2s;
   }
-  body::before {
-    content: '';
-    position: fixed; inset: 0; z-index: -2;
-    pointer-events: none;
-    background-image:
-      radial-gradient(1.5px 1.5px at 31px 47px, rgba(255,255,255,1), transparent),
-      radial-gradient(1px 1px at 212px 23px, rgba(255,255,255,0.7), transparent),
-      radial-gradient(1.5px 1.5px at 68px 289px, rgba(255,255,255,0.84), transparent),
-      radial-gradient(1px 1px at 313px 151px, rgba(255,255,255,0.56), transparent),
-      radial-gradient(1px 1px at 157px 371px, rgba(255,255,255,0.6), transparent),
-      radial-gradient(2px 2px at 19px 83px, rgba(255,255,255,0.96), transparent),
-      radial-gradient(1px 1px at 301px 41px, rgba(255,255,255,0.6), transparent),
-      radial-gradient(1.5px 1.5px at 127px 409px, rgba(255,255,255,0.8), transparent),
-      radial-gradient(1px 1px at 443px 237px, rgba(255,255,255,0.5), transparent),
-      radial-gradient(1.5px 1.5px at 67px 491px, rgba(255,255,255,0.72), transparent),
-      radial-gradient(1px 1px at 11px 37px, rgba(255,255,255,0.72), transparent),
-      radial-gradient(1.5px 1.5px at 191px 213px, rgba(255,255,255,0.9), transparent),
-      radial-gradient(1px 1px at 53px 7px, rgba(255,255,255,0.5), transparent),
-      radial-gradient(1px 1px at 271px 103px, rgba(255,255,255,0.64), transparent);
-    background-size:
-      397px 397px, 397px 397px, 397px 397px, 397px 397px, 397px 397px,
-      509px 509px, 509px 509px, 509px 509px, 509px 509px, 509px 509px,
-      311px 311px, 311px 311px, 311px 311px, 311px 311px;
-    mask-image: linear-gradient(to bottom, black 0%, rgba(0,0,0,0.35) 45%, transparent 80%);
-    -webkit-mask-image: linear-gradient(to bottom, black 0%, rgba(0,0,0,0.35) 45%, transparent 80%);
-  }
-  .flare {
-    position: fixed; top: 0; right: 0;
-    width: 100vw; height: 450px; z-index: -1;
-    pointer-events: none;
-    background-image: var(--stripes-dark), var(--rainbow);
-    background-size: 300% 200%;
-    background-position: 50% 50%;
-    filter: opacity(50%) saturate(200%);
-    opacity: 0.25;
-    mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%);
-    -webkit-mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%);
-  }
-  .flare::after {
-    content: '';
-    position: absolute; inset: 0;
-    background-image: var(--stripes-dark), var(--rainbow);
-    background-size: 200% 100%;
-    background-attachment: fixed;
-    mix-blend-mode: difference;
-  }
-  .light body::before, .light .flare { display: none; }
   .theme-toggle {
     background: none; border: 1px solid var(--border); border-radius: 6px;
     color: var(--fg-muted); cursor: pointer; padding: 0.35rem 0.6rem; font-size: 0.85rem;
@@ -137,9 +86,6 @@ const SearchCSS = `
 
 // HeadScript is the FOUC prevention script placed in <head>.
 const HeadScript = `<script>if(localStorage.getItem('theme')==='light')document.documentElement.className='light';</script>`
-
-// FlareDiv is the flare background element.
-const FlareDiv = `<div class="flare"></div>`
 
 // ThemeToggleButton is the light/dark mode toggle.
 const ThemeToggleButton = `<button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode">☀/☾</button>`

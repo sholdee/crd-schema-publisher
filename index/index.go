@@ -172,7 +172,6 @@ var indexTemplate = `<!DOCTYPE html>
 ` + theme.HeadScript + `
 </head>
 <body data-base-path="{{.BasePath}}">
-` + theme.FlareDiv + `
 <header>
   <div class="title-row">
     <div class="title-group">

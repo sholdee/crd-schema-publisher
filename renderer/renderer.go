@@ -786,7 +786,6 @@ var schemaTemplate = `<!DOCTYPE html>
 ` + theme.HeadScript + `
 </head>
 <body data-base-path="{{.BasePath}}">
-` + theme.FlareDiv + `
 <div class="nav-row">
   <a href="{{.BasePath}}/" class="back-link">← Back to index <kbd>Esc</kbd></a>
   ` + theme.ThemeToggleButton + `

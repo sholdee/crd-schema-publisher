@@ -171,12 +171,12 @@ Five workflow files in `.github/workflows/`:
 | --- | --------- | ------- |
 | `detect` | Always | `dorny/paths-filter` classifies changes: `app` (Go, go.mod/sum, Dockerfile), `chart` (charts/**), `renovate` (config only). |
 | `test` | Always | Calls `test.yml` — safety net, ensures Go code compiles on every PR, even docs-only |
-| `build` | PR + `app == true` | Multi-arch Docker build (amd64 + arm64), pushes `pr-N` tag to GHCR. Verifies distroless base image digest with cosign before building. |
+| `build` | PR + `app == true` | Read-only multi-arch Docker build (amd64 + arm64), no GHCR login or push. Verifies distroless base image digest with cosign before building. |
 | `renovate` | `renovate == true` | Validates `.github/renovate.json5` with `renovate-config-validator --strict` |
 | `helm-lint` | `chart == true` | Calls `helm-lint.yml` |
 | `gate` | Always | Evaluates all job results — only `success` and `skipped` pass. Single required status check for branch protection. |
 
-Pushes to main run `test` and `helm-lint` only (no Docker build, no release). PR builds produce `pr-N` images for testing.
+Pushes to main run `test` and `helm-lint` only (no Docker build, no release). PR builds verify the image build without package write credentials or GHCR push.
 
 **`release.yaml`** jobs:
 
@@ -205,7 +205,7 @@ The rehearsal workflow is for validating the external smoke path before a releas
 ### Tags
 
 - **Production:** `vYYYY.MDD.HMMSS` (UTC, no leading zeros in numeric components — e.g. `v2026.413.65435`) + `latest` — created by manual release workflow
-- **PR:** `pr-N` — created on every PR with app code changes
+- **PR:** no image tag — PR CI builds the image without pushing to GHCR
 
 ### Renovate (`.github/renovate.json5`)
 

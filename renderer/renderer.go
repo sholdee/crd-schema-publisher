@@ -600,27 +600,26 @@ var schemaTemplate = `<!DOCTYPE html>
     display: flex; align-items: center; justify-content: space-between;
     margin-bottom: 1.5rem;
   }
-  .back-link { font-size: 0.85rem; display: flex; align-items: center; gap: 0.4rem; }
+  .schema-title {
+    font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em;
+    margin-bottom: 0.25rem;
+  }
+  .schema-title-group {
+    color: var(--fg-muted); font-size: 0.95rem; margin-bottom: 1.25rem;
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+  }
+  .back-link { font-size: 0.875rem; display: flex; align-items: center; gap: 0.4rem; }
   .back-link kbd {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    font-size: 0.6rem; color: var(--fg-muted); background: var(--bg-surface);
+    font-size: 0.75rem; color: var(--fg-muted); background: var(--bg-surface);
     border: 1px solid var(--border); border-radius: 4px;
     padding: 0.1rem 0.35rem; line-height: 1;
   }
-  .meta-cards {
-    display: flex; gap: 0.75rem; margin-bottom: 1.25rem; flex-wrap: wrap;
-  }
-  .meta-card {
-    background: var(--bg-surface); border: 1px solid var(--border);
-    border-radius: 6px; padding: 0.5rem 1rem;
-  }
-  .meta-card .label { font-size: 0.7rem; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.05em; }
-  .meta-card .value { font-size: 1rem; font-weight: 600; }
   .yaml-block {
     background: var(--bg-surface); border: 1px solid var(--border);
     border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 1.5rem;
     font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
-    font-size: 0.8rem; white-space: pre; overflow-x: auto; color: var(--fg);
+    font-size: 0.875rem; white-space: pre; overflow-x: auto; color: var(--fg);
   }
   .toolbar {
     display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap;
@@ -705,7 +704,7 @@ var schemaTemplate = `<!DOCTYPE html>
   .toolbar-left { display: flex; gap: 0.75rem; flex-wrap: wrap; }
   .toolbar button, .toolbar a {
     background: none; border: none; color: var(--fg-muted); cursor: pointer;
-    font-size: 0.8rem; padding: 0.2rem 0; transition: color 0.15s;
+    font-size: 0.875rem; padding: 0.2rem 0; transition: color 0.15s;
   }
   .toolbar button:hover, .toolbar a:hover { color: var(--accent); text-decoration: underline; }
   .prop {
@@ -731,7 +730,7 @@ var schemaTemplate = `<!DOCTYPE html>
   .prop.search-match > summary,
   .prop-leaf.search-match { background: var(--accent-dim); }
   .prop > summary::-webkit-details-marker { display: none; }
-  .prop > summary::before { content: "\25B8"; color: var(--fg-muted); font-size: 0.7rem; }
+  .prop > summary::before { content: "\25B8"; color: var(--fg); font-size: 0.8rem; }
   .prop[open] > summary::before { content: "\25BE"; color: var(--accent); }
   .prop > summary:hover { background: var(--bg-hover); }
   .prop-content { padding: 0.5rem 0.75rem 0.75rem; padding-left: 1.5rem; min-width: 0; }
@@ -748,23 +747,23 @@ var schemaTemplate = `<!DOCTYPE html>
   }
   .type-badge {
     background: var(--accent-dim); color: var(--accent);
-    font-size: 0.65rem; font-weight: 700; padding: 0.1rem 0.4rem;
+    font-size: 0.75rem; font-weight: 700; padding: 0.15rem 0.5rem;
     border-radius: 8px; white-space: nowrap;
   }
   .required-badge {
     background: var(--required-bg); color: var(--required-fg);
-    font-size: 0.65rem; font-weight: 700; padding: 0.1rem 0.4rem;
+    font-size: 0.75rem; font-weight: 700; padding: 0.15rem 0.5rem;
     border-radius: 8px; white-space: nowrap;
   }
-  .prop-desc { color: var(--fg-muted); font-size: 0.82rem; margin-top: 0.25rem; }
+  .prop-desc { color: var(--fg-muted); font-size: 0.9rem; margin-top: 0.25rem; overflow-wrap: anywhere; }
   .prop-constraints {
-    color: var(--fg-muted); font-size: 0.75rem; margin-top: 0.2rem;
+    color: var(--fg-muted); font-size: 0.875rem; margin-top: 0.2rem;
     font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
   }
   .prop-children { margin-top: 0.5rem; }
-  .leaf-desc { color: var(--fg-muted); font-size: 0.82rem; flex: 1; min-width: 0; }
+  .leaf-desc { color: var(--fg-muted); font-size: 0.9rem; flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .leaf-constraints {
-    color: var(--fg-muted); font-size: 0.75rem; margin-top: 0.15rem;
+    color: var(--fg-muted); font-size: 0.875rem; margin-top: 0.15rem;
     font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
   }
   .schema-constraint { max-width: 100%; min-width: 0; }
@@ -786,23 +785,23 @@ var schemaTemplate = `<!DOCTYPE html>
 ` + theme.HeadScript + `
 </head>
 <body data-base-path="{{.BasePath}}">
-` + theme.FlareDiv + `
-<div class="nav-row">
+<a class="skip-nav" href="#search">Skip to search</a>
+<main id="main">
+<nav class="nav-row" aria-label="Page navigation">
   <a href="{{.BasePath}}/" class="back-link">← Back to index <kbd>Esc</kbd></a>
   ` + theme.ThemeToggleButton + `
-</div>
-<div class="meta-cards">
-  <div class="meta-card"><div class="label">Kind</div><div class="value">{{.Kind}}</div></div>
-  <div class="meta-card"><div class="label">Group</div><div class="value">{{.Group}}</div></div>
-  <div class="meta-card"><div class="label">Version</div><div class="value">{{.Version}}</div></div>
-</div>
+</nav>
+<header>
+  <h1 class="schema-title">{{.Kind}}</h1>
+  <p class="schema-title-group">{{.Group}} / {{.Version}}</p>
+</header>
 <div class="yaml-block">apiVersion: {{.Group}}/{{.Version}}
 kind: {{.Kind}}
 metadata:
   name: example</div>
 <div class="search-row">
   <div class="search-input-wrap">
-    <input type="search" class="search-box" placeholder="Search schema fields...  ` + theme.SearchHintText + `" id="search" autocomplete="off" spellcheck="false">
+    <input type="search" class="search-box" placeholder="Search schema fields...  ` + theme.SearchHintText + `" id="search" autocomplete="off" spellcheck="false" aria-label="Search schema fields" aria-controls="search-status" aria-describedby="search-status">
     <div class="search-ghost" id="search-ghost" aria-hidden="true"><span class="search-ghost-prefix" id="search-ghost-prefix"></span><span class="search-ghost-suffix" id="search-ghost-suffix"></span></div>
     <button type="button" class="search-clear" id="search-clear" aria-label="Clear search" title="Clear search" hidden></button>
   </div>
@@ -860,6 +859,7 @@ metadata:
 {{- range .Properties}}{{template "property" .}}{{end}}
 </div>
 <p class="no-results" id="no-results" data-no-results-message="No matches. Try {{.SearchPathHint}} for an exact path">No matches. Try {{.SearchPathHint}} for an exact path</p>
+</main>
 ` + theme.ToastDiv + `
 ` + theme.FooterHTML + `
 <script src="{{.BasePath}}/` + theme.SchemaSearchAssetName + `"></script>

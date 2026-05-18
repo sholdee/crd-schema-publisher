@@ -42,6 +42,33 @@ const CSSBase = `
     position: relative; z-index: 1;
     transition: background 0.2s, color 0.2s;
   }
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: -2;
+    pointer-events: none;
+    background-image:
+      radial-gradient(1.5px 1.5px at 31px 47px, rgba(255,255,255,1), transparent),
+      radial-gradient(1px 1px at 212px 23px, rgba(255,255,255,0.7), transparent),
+      radial-gradient(1.5px 1.5px at 68px 289px, rgba(255,255,255,0.84), transparent),
+      radial-gradient(1px 1px at 313px 151px, rgba(255,255,255,0.56), transparent),
+      radial-gradient(1px 1px at 157px 371px, rgba(255,255,255,0.6), transparent),
+      radial-gradient(2px 2px at 19px 83px, rgba(255,255,255,0.96), transparent),
+      radial-gradient(1px 1px at 301px 41px, rgba(255,255,255,0.6), transparent),
+      radial-gradient(1.5px 1.5px at 127px 409px, rgba(255,255,255,0.8), transparent),
+      radial-gradient(1px 1px at 443px 237px, rgba(255,255,255,0.5), transparent),
+      radial-gradient(1.5px 1.5px at 67px 491px, rgba(255,255,255,0.72), transparent),
+      radial-gradient(1px 1px at 11px 37px, rgba(255,255,255,0.72), transparent),
+      radial-gradient(1.5px 1.5px at 191px 213px, rgba(255,255,255,0.9), transparent),
+      radial-gradient(1px 1px at 53px 7px, rgba(255,255,255,0.5), transparent),
+      radial-gradient(1px 1px at 271px 103px, rgba(255,255,255,0.64), transparent);
+    background-size:
+      397px 397px, 397px 397px, 397px 397px, 397px 397px, 397px 397px,
+      509px 509px, 509px 509px, 509px 509px, 509px 509px, 509px 509px,
+      311px 311px, 311px 311px, 311px 311px, 311px 311px;
+    mask-image: linear-gradient(to bottom, black 0%, rgba(0,0,0,0.35) 45%, transparent 80%);
+    -webkit-mask-image: linear-gradient(to bottom, black 0%, rgba(0,0,0,0.35) 45%, transparent 80%);
+  }
+  .light body::before { display: none; }
   .skip-nav {
     position: absolute; left: -999px; top: auto; width: 1px; height: 1px;
     overflow: hidden; z-index: 100;

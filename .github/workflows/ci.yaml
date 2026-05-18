@@ -47,7 +47,7 @@ jobs:
     uses: ./.github/workflows/test.yml
 
   build:
-    needs: [test, detect]
+    needs: detect
     if: github.event_name == 'pull_request' && needs.detect.outputs.app == 'true'
     runs-on: ubuntu-latest
     permissions:

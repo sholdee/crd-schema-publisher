@@ -69,7 +69,7 @@ var indexTemplate = `<!DOCTYPE html>
   .usage-section summary {
     padding: 0.65rem 1rem; cursor: pointer; font-weight: 600;
     font-size: 0.9rem; color: var(--fg-muted);
-    background: var(--bg-surface); border-radius: 6px;
+    background: var(--surface-background); border-radius: 6px;
     list-style: none;
   }
   .usage-section summary::-webkit-details-marker { display: none; }
@@ -94,14 +94,14 @@ var indexTemplate = `<!DOCTYPE html>
   .group[open] { border-color: var(--border-active); border-left-width: 2px; }
   .group summary {
     padding: 0.7rem 1rem; cursor: pointer; font-weight: 600;
-    font-size: 0.9rem; background: var(--bg-surface); border-radius: 6px;
+    font-size: 0.9rem; background: var(--surface-background); border-radius: 6px;
     list-style: none; display: flex; align-items: center; gap: 0.5rem;
     transition: background 0.15s;
   }
   .group summary::-webkit-details-marker { display: none; }
   .group summary::before { content: "▸"; color: var(--fg); font-size: 0.875rem; transition: transform 0.15s; }
   .group[open] summary::before { content: "▾"; color: var(--accent); }
-  .group summary:hover { background: var(--bg-hover); }
+  .group summary:hover { background: var(--surface-hover-background); }
   .group summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
   .usage-section summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
   .group-name { flex: 1; }

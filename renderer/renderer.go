@@ -616,7 +616,7 @@ var schemaTemplate = `<!DOCTYPE html>
     padding: 0.1rem 0.35rem; line-height: 1;
   }
   .yaml-block {
-    background: var(--bg-surface); border: 1px solid var(--border);
+    background: var(--surface-background); border: 1px solid var(--border);
     border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 1.5rem;
     font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
     font-size: 0.875rem; white-space: pre; overflow-x: auto; color: var(--fg);
@@ -673,22 +673,22 @@ var schemaTemplate = `<!DOCTYPE html>
   }
   .prop > summary {
     padding: 0.5rem 0.75rem; cursor: pointer;
-    font-size: 0.85rem; background: var(--bg-surface); border-radius: 6px;
+    font-size: 0.85rem; background: var(--surface-background); border-radius: 6px;
     list-style: none; display: flex; align-items: center; gap: 0.5rem;
     transition: background 0.15s;
   }
   .prop.search-match > summary,
-  .prop-leaf.search-match { background: var(--accent-dim); }
+  .prop-leaf.search-match { background: var(--surface-accent-background); }
   .prop > summary::-webkit-details-marker { display: none; }
   .prop > summary::before { content: "\25B8"; color: var(--fg); font-size: 0.8rem; }
   .prop[open] > summary::before { content: "\25BE"; color: var(--accent); }
-  .prop > summary:hover { background: var(--bg-hover); }
+  .prop > summary:hover { background: var(--surface-hover-background); }
   .prop-content { padding: 0.5rem 0.75rem 0.75rem; padding-left: 1.5rem; min-width: 0; }
   .prop-leaf {
     padding: 0.5rem 0.75rem;
     font-size: 0.85rem; display: flex; align-items: flex-start; gap: 0.5rem;
     border: 1px solid var(--border); border-radius: 6px;
-    margin-bottom: 0.35rem; background: var(--bg-surface);
+    margin-bottom: 0.35rem; background: var(--surface-background);
   }
   .prop-leaf .prop-name { min-width: 0; }
   .prop-name {

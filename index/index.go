@@ -104,7 +104,7 @@ var indexTemplate = `<!DOCTYPE html>
   .group summary:hover { background: var(--surface-hover-background); }
   .group summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
   .usage-section summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
-  .group-name { flex: 1; }
+  .group-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .badge {
     background: var(--accent-dim); color: var(--accent);
     font-size: 0.75rem; font-weight: 700; padding: 0.15rem 0.5rem;
@@ -119,7 +119,8 @@ var indexTemplate = `<!DOCTYPE html>
     break-inside: avoid;
   }
   .schemas a {
-    flex: 0 1 auto; min-width: 0; padding: 0.2rem 0; color: var(--accent);
+    flex: 0 1 auto; min-width: 0; min-height: 1.5rem; display: inline-flex; align-items: center;
+    padding: 0.2rem 0; color: var(--accent);
     text-decoration: none; font-size: 0.875rem;
     font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
     overflow-wrap: anywhere;
@@ -200,7 +201,7 @@ metadata:
 </details>
 </div>
 <div class="search-input-wrap">
-  <input type="search" class="search-box" placeholder="Search groups and schemas...  ` + theme.SearchHintText + `" id="search" autocomplete="off" spellcheck="false" aria-label="Search groups and schemas" aria-controls="no-results" aria-describedby="search-status">
+  <input type="search" class="search-box" placeholder="Search groups and schemas...  ` + theme.SearchHintText + `" id="search" autocomplete="off" spellcheck="false" aria-label="Search groups and schemas" aria-controls="groups" aria-describedby="search-status">
   <button type="button" class="search-clear" id="search-clear" aria-label="Clear search" title="Clear search" hidden></button>
 </div>
 <div class="visually-hidden" id="search-status" role="status" aria-live="polite" aria-atomic="true"></div>

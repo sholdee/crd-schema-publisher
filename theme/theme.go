@@ -189,7 +189,7 @@ const SearchCSS = `
   .search-clear[hidden] { display: none; }
   .search-status {
     color: var(--fg-muted); font-size: 0.875rem;
-    min-height: 1.25rem; white-space: nowrap;
+    min-height: 1.25rem; overflow-wrap: anywhere;
   }
   .search-status.has-results { color: var(--accent); }
   .no-results {
@@ -201,7 +201,7 @@ const SearchCSS = `
 const HeadScript = `<script>if(localStorage.getItem('theme')==='light')document.documentElement.className='light';</script>`
 
 // ThemeToggleButton is the light/dark mode toggle.
-const ThemeToggleButton = `<button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode" aria-label="Toggle light/dark mode">☀/☾</button>`
+const ThemeToggleButton = `<button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode" aria-label="Light mode" aria-pressed="false">☀/☾</button>`
 
 // ToastDiv is the clipboard copy toast notification.
 const ToastDiv = `<div class="copied-toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>`
@@ -254,21 +254,43 @@ const BackToTopJS = `function scrollToTop(){
 
 // CopyToastJS contains shared clipboard copy feedback for pages with ToastDiv.
 const CopyToastJS = `var copyToastTimer;
+function showCopyToast(message){
+  var toast = document.getElementById('toast');
+  if (!toast) return;
+  clearTimeout(copyToastTimer);
+  toast.textContent = message;
+  toast.classList.add('show');
+  copyToastTimer = setTimeout(function(){
+    toast.classList.remove('show');
+    toast.textContent = '';
+  }, 1500);
+}
 function copyURLWithToast(url){
+  if (typeof navigator === 'undefined' || !navigator.clipboard || !navigator.clipboard.writeText) {
+    showCopyToast('Copy unavailable');
+    return Promise.resolve(false);
+  }
   return navigator.clipboard.writeText(url).then(function(){
-    var toast = document.getElementById('toast');
-    clearTimeout(copyToastTimer);
-    toast.textContent = 'Copied!';
-    toast.classList.add('show');
-    copyToastTimer = setTimeout(function(){
-      toast.classList.remove('show');
-      toast.textContent = '';
-    }, 1500);
+    showCopyToast('Copied!');
+    return true;
+  }).catch(function(){
+    showCopyToast('Copy failed');
+    return false;
   });
 }`
 
 // ThemeToggleJS is the JavaScript function for toggling the theme.
-const ThemeToggleJS = `function toggleTheme(){
+const ThemeToggleJS = `function updateThemeToggle(){
+  var toggle = document.getElementById('theme-toggle');
+  if (!toggle) return;
+  var light = document.documentElement.classList.contains('light');
+  toggle.setAttribute('aria-pressed', light ? 'true' : 'false');
+  toggle.setAttribute('aria-label', 'Light mode');
+  toggle.setAttribute('title', 'Toggle light/dark mode');
+}
+function toggleTheme(){
   document.documentElement.classList.toggle('light');
   localStorage.setItem('theme', document.documentElement.classList.contains('light') ? 'light' : 'dark');
-}`
+  updateThemeToggle();
+}
+updateThemeToggle();`

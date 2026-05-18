@@ -79,11 +79,11 @@ function optionalGoRawString(source, name) {
   return match ? match[1] : '';
 }
 
-function loadSchemaPageScript({ reducedMotion = false, learnedPathSearch = false } = {}) {
+function loadSchemaPageScript({ reducedMotion = false, learnedPathSearch = false, clipboardRejects = false } = {}) {
   const pageScript = fs.readFileSync(path.join(__dirname, 'schema_page.js'), 'utf8');
   const themeSource = fs.readFileSync(path.join(__dirname, 'theme.go'), 'utf8');
   const script = `${extractGoRawString(themeSource, 'SearchHashStateJS')}\n${extractGoRawString(themeSource, 'BackToTopJS')}\n${optionalGoRawString(themeSource, 'CopyToastJS')}\n${pageScript}`;
-  const calls = { scrolls: [] };
+  const calls = { scrolls: [], timers: [] };
   const elements = new Map();
   const documentListeners = new Map();
   const windowListeners = new Map();
@@ -107,8 +107,8 @@ function loadSchemaPageScript({ reducedMotion = false, learnedPathSearch = false
     Event,
     clearTimeout,
     setTimeout(fn) {
-      fn();
-      return 1;
+      calls.timers.push(fn);
+      return calls.timers.length;
     },
     localStorage: {
       getItem(key) {
@@ -131,6 +131,7 @@ function loadSchemaPageScript({ reducedMotion = false, learnedPathSearch = false
     navigator: {
       clipboard: {
         writeText(value) {
+          if (clipboardRejects) return Promise.reject(new Error('denied'));
           context.__copied = value;
           return Promise.resolve();
         },
@@ -193,8 +194,19 @@ test('schema page copy button writes absolute schema URL', async () => {
   element('copy-url').click();
   await Promise.resolve();
   assert.equal(context.__copied, 'https://schemas.example.test/docs/example.io/test_v1.json');
-  assert.equal(element('toast').textContent, '');
-  assert.equal(element('toast').classList.contains('show'), false);
+  assert.equal(element('toast').textContent, 'Copied!');
+  assert.equal(element('toast').classList.contains('show'), true);
+});
+
+test('schema page copy button reports clipboard failure', async () => {
+  const { element } = loadSchemaPageScript({ clipboardRejects: true });
+
+  element('copy-url').click();
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(element('toast').textContent, 'Copy failed');
+  assert.equal(element('toast').classList.contains('show'), true);
 });
 
 test('schema page shows path hint only until path search is learned', () => {

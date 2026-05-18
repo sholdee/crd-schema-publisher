@@ -7,6 +7,9 @@ const CSSVars = `
     --bg: #09090b;
     --bg-surface: rgba(24, 24, 27, 0.6);
     --bg-hover: rgba(24, 24, 27, 0.8);
+    --surface-background: linear-gradient(var(--bg-surface), var(--bg-surface)), var(--bg);
+    --surface-hover-background: linear-gradient(var(--bg-hover), var(--bg-hover)), var(--bg);
+    --surface-accent-background: linear-gradient(var(--accent-dim), var(--accent-dim)), var(--bg);
     --fg: #fafafa;
     --fg-muted: #b0b3bc;
     --accent: #6bc1fe;
@@ -128,7 +131,7 @@ const CSSBase = `
 const SearchCSS = `
   .search-box {
     width: 100%; padding: 0.65rem 1rem; font-size: 0.95rem;
-    background: var(--bg-surface); color: var(--fg);
+    background: var(--surface-background); color: var(--fg);
     border: 1px solid var(--border); border-radius: 6px;
     outline: none; transition: border-color 0.2s;
   }
@@ -139,7 +142,7 @@ const SearchCSS = `
     position: relative;
     border: 1px solid var(--border);
     border-radius: 6px;
-    background: var(--bg-surface);
+    background: var(--surface-background);
     font: inherit; font-size: 0.95rem; line-height: 1.2;
     font-family: inherit; font-weight: inherit; letter-spacing: inherit;
     text-transform: inherit; text-indent: inherit; font-kerning: inherit;

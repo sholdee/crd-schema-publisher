@@ -396,6 +396,8 @@ func TestRenderSchema_BasicOutput(t *testing.T) {
 		{"class=\"search-input-wrap\"", "inline search wrapper"},
 		{"id=\"search-ghost\"", "inline ghost suggestion element"},
 		{`type="button" class="search-clear" id="search-clear" aria-label="Clear search" title="Clear search" hidden></button>`, "schema search clear button"},
+		{"background: var(--surface-background);", "schema text surfaces hide starfield"},
+		{"background: var(--surface-accent-background);", "schema match surfaces hide starfield"},
 		{".search-clear {", "schema search clear button style"},
 		{".search-clear::before,\n  .search-clear::after {", "schema search clear icon uses centered CSS strokes"},
 		{"transform: translate(-50%, -50%) rotate(45deg);", "schema search clear icon stroke is centered before rotation"},

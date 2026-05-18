@@ -36,7 +36,9 @@ function makeElement(id, dataset = {}) {
     textContent: '',
     value: '',
     href: '',
-    focus() {},
+    hidden: false,
+    focused: false,
+    focus() { this.focused = true; },
     blur() {},
     setAttribute(name) { attrs.add(name); },
     removeAttribute(name) { attrs.delete(name); },
@@ -52,6 +54,7 @@ function makeElement(id, dataset = {}) {
       for (const fn of listeners.get(event.type) || []) fn.call(this, event);
     },
     querySelectorAll(selector) {
+      if (selector === '.schema-row') return this.__rows || [];
       if (selector === '.schemas a') return this.__links || [];
       return [];
     },
@@ -65,20 +68,28 @@ function extractGoRawString(source, name) {
   return match[1];
 }
 
-function loadIndexPageScript({ hash = '', savedState = '' } = {}) {
+function optionalGoRawString(source, name) {
+  const pattern = new RegExp(`const ${name} = \`([\\s\\S]*?)\``);
+  const match = source.match(pattern);
+  return match ? match[1] : '';
+}
+
+function loadIndexPageScript({ hash = '', savedState = '', reducedMotion = false } = {}) {
   const indexScript = fs.readFileSync(path.join(__dirname, 'index_page.js'), 'utf8');
   const themeSource = fs.readFileSync(path.join(__dirname, 'theme.go'), 'utf8');
-  const script = `${extractGoRawString(themeSource, 'SearchHashStateJS')}\n${indexScript}\n${extractGoRawString(themeSource, 'ThemeToggleJS')}`;
+  const script = `${extractGoRawString(themeSource, 'SearchHashStateJS')}\n${extractGoRawString(themeSource, 'BackToTopJS')}\n${optionalGoRawString(themeSource, 'CopyToastJS')}\n${indexScript}\n${extractGoRawString(themeSource, 'ThemeToggleJS')}`;
   const calls = { replaceState: [], localStorageWrites: [], scrolls: [] };
   const elements = new Map();
   const documentListeners = new Map();
 
-  const link = makeElement('schema-link', { schema: 'test_v1.json', url: '/docs/example.io/test_v1.json' });
-  const copyHint = makeElement('copy-hint');
-  copyHint.classList.toggle('copy-hint', true);
-  copyHint.closest = (selector) => selector === '.schemas a' ? link : null;
-  link.closest = (selector) => selector === '.schemas a' ? link : null;
+  const row = makeElement('schema-row', { schema: 'test_v1.json' });
+  const link = makeElement('schema-link', { url: '/docs/example.io/test_v1.json' });
+  const copyButton = makeElement('schema-copy', { url: '/docs/example.io/test_v1.json' });
+  copyButton.classList.toggle('schema-copy', true);
+  copyButton.closest = (selector) => selector === '.schema-copy' ? copyButton : null;
+  link.closest = (selector) => selector === '.schema-row a' || selector === '.schemas a' ? link : null;
   const group = makeElement('group-a', { group: 'example.io' });
+  group.__rows = [row];
   group.__links = [link];
 
   function element(id) {
@@ -89,8 +100,10 @@ function loadIndexPageScript({ hash = '', savedState = '' } = {}) {
   }
 
   element('search');
+  element('search-clear').hidden = true;
   element('groups');
   element('no-results');
+  element('search-status');
   element('stat-groups').textContent = '1';
   element('stat-schemas').textContent = '1';
   element('toggle-all').textContent = 'Expand all';
@@ -140,6 +153,9 @@ function loadIndexPageScript({ hash = '', savedState = '' } = {}) {
     window: {
       scrollY: 0,
       addEventListener() {},
+      matchMedia(query) {
+        return { matches: reducedMotion && query === '(prefers-reduced-motion: reduce)' };
+      },
       scrollTo(...args) { calls.scrolls.push(args); },
     },
     document: {
@@ -148,6 +164,7 @@ function loadIndexPageScript({ hash = '', savedState = '' } = {}) {
       activeElement: null,
       querySelectorAll(selector) {
         if (selector === '.group') return [group];
+        if (selector === '.schema-row') return [row];
         if (selector === '.schemas a') return [link];
         if (selector === '.usage-content code') return [];
         return [];
@@ -164,7 +181,7 @@ function loadIndexPageScript({ hash = '', savedState = '' } = {}) {
   context.window.SchemaSearch = {};
 
   vm.runInNewContext(script, context, { filename: 'index_page.js' });
-  return { context, calls, element, group, link, copyHint, storage, documentListeners };
+  return { context, calls, element, group, row, link, copyButton, storage, documentListeners };
 }
 
 test('index page initializes search from hash and preserves navigation state', () => {
@@ -187,14 +204,59 @@ test('index page writes hash when search query changes', () => {
   assert.equal(calls.replaceState.at(-1), '#q=certificate');
 });
 
-test('index page copy hint writes absolute schema URL', async () => {
-  const { context, element, copyHint } = loadIndexPageScript();
+test('index page announces search result counts', () => {
+  const { element } = loadIndexPageScript();
+  const search = element('search');
+  const status = element('search-status');
+
+  search.value = 'test';
+  search.dispatchEvent(new Event('input'));
+
+  assert.equal(status.textContent, '1 of 1 API groups, 1 of 1 schemas shown.');
+
+  search.value = 'missing';
+  search.dispatchEvent(new Event('input'));
+
+  assert.equal(element('no-results').style.display, 'block');
+  assert.equal(status.textContent, 'No matching groups or schemas.');
+
+  search.value = '';
+  search.dispatchEvent(new Event('input'));
+
+  assert.equal(status.textContent, '');
+});
+
+test('index page clear button follows and clears search input', () => {
+  const { calls, element } = loadIndexPageScript();
+  const search = element('search');
+  const clear = element('search-clear');
+
+  assert.equal(clear.hidden, true);
+
+  search.value = 'certificate';
+  search.dispatchEvent(new Event('input'));
+
+  assert.equal(clear.hidden, false);
+
+  clear.click();
+
+  assert.equal(search.value, '');
+  assert.equal(clear.hidden, true);
+  assert.equal(search.focused, true);
+  assert.equal(calls.replaceState.at(-1), '/docs/');
+});
+
+test('index page copy button writes absolute schema URL without saving navigation state', async () => {
+  const { context, element, copyButton, storage } = loadIndexPageScript();
   const groups = element('groups');
 
-  groups.click({ target: copyHint, preventDefault() {} });
+  groups.click({ target: copyButton, preventDefault() {} });
   await Promise.resolve();
 
   assert.equal(context.__copied, 'https://schemas.example.test/docs/example.io/test_v1.json');
+  assert.equal(element('toast').textContent, '');
+  assert.equal(element('toast').classList.contains('show'), false);
+  assert.equal(storage.has('indexState'), false);
 });
 
 test('index page theme toggle still writes localStorage', () => {
@@ -203,4 +265,13 @@ test('index page theme toggle still writes localStorage', () => {
   context.toggleTheme();
 
   assert.deepEqual(calls.localStorageWrites.at(-1), ['theme', 'light']);
+});
+
+test('index page avoids smooth scroll when reduced motion is requested', () => {
+  const { calls, element } = loadIndexPageScript({ reducedMotion: true });
+
+  element('back-to-top').click();
+
+  assert.equal(calls.scrolls.at(-1)[0].top, 0);
+  assert.equal(calls.scrolls.at(-1)[0].behavior, 'auto');
 });

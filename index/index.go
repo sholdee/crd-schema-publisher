@@ -82,7 +82,7 @@ var indexTemplate = `<!DOCTYPE html>
   .stat { font-size: 0.9rem; color: var(--fg-muted); }
   .stat strong { color: var(--stat-fg); font-size: 1.1rem; font-weight: 700; margin-right: 0.3rem; }
 ` + theme.SearchCSS + `
-  .search-box { margin-bottom: 1.5rem; }
+  .search-input-wrap { margin-bottom: 1.5rem; }
   .toolbar {
     display: flex; justify-content: flex-end; margin-bottom: 0.75rem;
   }
@@ -142,32 +142,27 @@ var indexTemplate = `<!DOCTYPE html>
   @media (min-width: 640px) {
     .schemas { columns: 2; column-gap: 1.5rem; }
   }
-  .schemas a {
-    display: block; padding: 0.2rem 0; color: var(--accent);
-    text-decoration: none; font-size: 0.875rem;
-    font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+  .schema-row {
+    display: flex; align-items: center; gap: 0.35rem;
     break-inside: avoid;
   }
+  .schemas a {
+    flex: 0 1 auto; min-width: 0; padding: 0.2rem 0; color: var(--accent);
+    text-decoration: none; font-size: 0.875rem;
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+    overflow-wrap: anywhere;
+  }
   .schemas a:hover { text-decoration: underline; }
-  .schemas a .copy-hint {
-    display: none; margin-left: 0.5rem;
-    font-size: 0.875rem; color: var(--fg-muted); font-family: inherit;
-    padding: 0.1rem 0.4rem; border-radius: 4px;
-    transition: background 0.15s, color 0.15s;
+  .schema-copy {
+    flex: 0 0 auto; border: 0; background: transparent;
+    color: var(--fg-muted); cursor: pointer; font-size: 0.75rem;
+    font-family: inherit; padding: 0.1rem 0.35rem; border-radius: 4px;
+    opacity: 0; transition: background 0.15s, color 0.15s, opacity 0.15s;
   }
-  .schemas a:hover .copy-hint { display: inline; }
-  .schemas a .copy-hint:hover { background: var(--accent-dim); color: var(--accent); }
-  .back-to-top {
-    position: fixed; bottom: 1.5rem; right: 1.5rem;
-    background: var(--bg-surface); color: var(--fg-muted);
-    border: 1px solid var(--border); border-radius: 50%;
-    width: 2.5rem; height: 2.5rem; font-size: 1.1rem;
-    cursor: pointer; display: none; align-items: center; justify-content: center;
-    transition: color 0.2s, border-color 0.2s;
-    z-index: 10;
-  }
-  .back-to-top:hover { color: var(--accent); border-color: var(--accent); }
-  .back-to-top.visible { display: flex; }
+  .schema-row:hover .schema-copy,
+  .schema-row:focus-within .schema-copy { opacity: 1; }
+  .schema-copy:hover,
+  .schema-copy:focus-visible { background: var(--accent-dim); color: var(--accent); }
 </style>
 ` + theme.HeadScript + `
 </head>
@@ -203,7 +198,7 @@ var indexTemplate = `<!DOCTYPE html>
     </div>
     ` + theme.ThemeToggleButton + `
   </div>
-  <p class="subtitle">JSON schemas extracted from live CRD definitions</p>
+  <p class="subtitle">JSON schemas extracted from live CustomResourceDefinitions</p>
   <div class="stats">
     <div class="stat"><strong id="stat-groups">{{.GroupCount}}</strong> API groups</div>
     <div class="stat"><strong id="stat-schemas">{{.TotalCount}}</strong> schemas</div>
@@ -232,14 +227,18 @@ metadata:
 </div>
 </details>
 </div>
-<input type="search" class="search-box" placeholder="Search groups and schemas...  ` + theme.SearchHintText + `" id="search" autocomplete="off" spellcheck="false" aria-label="Search groups and schemas" aria-controls="no-results">
+<div class="search-input-wrap">
+  <input type="search" class="search-box" placeholder="Search groups and schemas...  ` + theme.SearchHintText + `" id="search" autocomplete="off" spellcheck="false" aria-label="Search groups and schemas" aria-controls="no-results" aria-describedby="search-status">
+  <button type="button" class="search-clear" id="search-clear" aria-label="Clear search" title="Clear search" hidden></button>
+</div>
+<div class="visually-hidden" id="search-status" role="status" aria-live="polite" aria-atomic="true"></div>
 <div class="toolbar"><button id="toggle-all">Expand all</button></div>
 <div id="groups">
 {{range .Groups}}
 <details class="group" data-group="{{.Name}}">
 <summary><span class="group-name">{{.Name}}</span> <span class="badge">{{len .Schemas}}</span></summary>
 <div class="schemas">
-{{range .Schemas}}<a href="{{$.BasePath}}/{{.HTMLPath}}" data-schema="{{.Name}}" data-url="{{$.BasePath}}/{{.Path}}">{{.Name}}<span class="copy-hint">copy URL</span></a>
+{{range .Schemas}}<div class="schema-row" data-schema="{{.Name}}"><a href="{{$.BasePath}}/{{.HTMLPath}}" data-url="{{$.BasePath}}/{{.Path}}">{{.Name}}</a><button type="button" class="schema-copy" data-url="{{$.BasePath}}/{{.Path}}" aria-label="Copy schema URL for {{.Name}}" title="Copy schema URL">copy URL</button></div>
 {{end}}</div>
 </details>
 {{end}}
@@ -248,9 +247,11 @@ metadata:
 </main>
 ` + theme.ToastDiv + `
 ` + theme.FooterHTML + `
-<button class="back-to-top" id="back-to-top" title="Back to top" aria-label="Back to top">&#8593;</button>
+` + theme.BackToTopButton + `
 <script>
 ` + theme.SearchHashStateJS + `
+` + theme.BackToTopJS + `
+` + theme.CopyToastJS + `
 ` + theme.IndexPageJS + `
 ` + theme.ThemeToggleJS + `
 </script>

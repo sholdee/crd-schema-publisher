@@ -74,14 +74,23 @@ func TestGenerate_CreatesIndexHTML(t *testing.T) {
 		{`href="/cert-manager.io/certificate_v1.json"`, "schema link href format"},
 		{">2</strong> API groups", "group count stat"},
 		{">3</strong> schemas", "total schema count stat"},
+		{"JSON schemas extracted from live CustomResourceDefinitions", "precise index subtitle"},
 		{"id=\"search\"", "search input"},
+		{"class=\"search-input-wrap\"", "shared search input wrapper"},
+		{`type="button" class="search-clear" id="search-clear" aria-label="Clear search" title="Clear search" hidden></button>`, "index search clear button"},
+		{`id="search-status" role="status" aria-live="polite" aria-atomic="true"`, "index search live status"},
+		{".search-clear {", "shared search clear button style"},
+		{"background: var(--accent-dim);", "subtle search clear hover background"},
 		{"toggleTheme", "theme toggle JS"},
 		{"documentElement.className", "FOUC prevention script in head"},
 		{`e.key === '/'`, "slash keyboard shortcut"},
 		{"yaml-language-server", "usage section"},
 		{"data-url=\"/", "copy URL data attribute"},
-		{"copy-hint", "copy hint span"},
-		{"copied-toast", "copy toast element"},
+		{`class="schema-row" data-schema="certificate_v1.json"`, "schema row wrapper for link and copy action"},
+		{`type="button" class="schema-copy" data-url="/cert-manager.io/certificate_v1.json" aria-label="Copy schema URL for certificate_v1.json" title="Copy schema URL">copy URL</button>`, "keyboard-accessible schema copy button"},
+		{".schemas a {\n    flex: 0 1 auto;", "schema link keeps copy button adjacent instead of pushing it to the row edge"},
+		{"function copyURLWithToast(url)", "shared copy toast helper"},
+		{`<div class="copied-toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>`, "empty live copy toast element"},
 		{"id=\"stat-groups\"", "group stat ID for JS update"},
 		{"id=\"stat-schemas\"", "schema stat ID for JS update"},
 		{"id=\"toggle-all\"", "expand/collapse all button"},
@@ -100,6 +109,9 @@ func TestGenerate_CreatesIndexHTML(t *testing.T) {
 			t.Errorf("index should contain %s (looked for %q)", c.desc, c.substr)
 		}
 	}
+	if strings.Contains(html, "copy-hint") {
+		t.Error("index should use real copy buttons instead of hover-only copy hint spans")
+	}
 }
 
 func TestGenerate_IndexPageContract(t *testing.T) {
@@ -114,6 +126,7 @@ func TestGenerate_IndexPageContract(t *testing.T) {
 		`href="/docs/example.io/test_v1.html"`,
 		`readHashSearchQuery`,
 		`writeHashSearchQuery`,
+		`copyURLWithToast`,
 		`localStorage.getItem('theme')`,
 		`history.replaceState`,
 	} {

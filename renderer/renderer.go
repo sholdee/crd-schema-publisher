@@ -630,33 +630,6 @@ var schemaTemplate = `<!DOCTYPE html>
     display: flex; flex-direction: column; gap: 0.35rem;
     margin-bottom: 1rem;
   }
-  .search-input-wrap {
-    display: grid;
-    position: relative;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg-surface);
-    font: inherit; font-size: 0.95rem; line-height: 1.2;
-    font-family: inherit; font-weight: inherit; letter-spacing: inherit;
-    text-transform: inherit; text-indent: inherit; font-kerning: inherit;
-  }
-  .search-input-wrap:focus-within { border-color: var(--accent); }
-  .search-row .search-box {
-    grid-area: 1 / 1;
-    position: relative; z-index: 1;
-    background: transparent; border-color: transparent;
-    padding-right: 2.75rem;
-    margin: 0; appearance: none; -webkit-appearance: none;
-    font: inherit; line-height: inherit;
-    font-family: inherit; font-size: inherit; font-weight: inherit; letter-spacing: inherit;
-    text-transform: inherit; text-indent: inherit; font-kerning: inherit;
-    width: 100%;
-  }
-  .search-row .search-box:focus { border-color: transparent; }
-  .search-row .search-box::-webkit-search-decoration,
-  .search-row .search-box::-webkit-search-cancel-button,
-  .search-row .search-box::-webkit-search-results-button,
-  .search-row .search-box::-webkit-search-results-decoration { display: none; }
   .search-ghost {
     grid-area: 1 / 1;
     position: absolute; inset: 0;
@@ -675,29 +648,6 @@ var schemaTemplate = `<!DOCTYPE html>
   }
   .search-ghost-prefix { visibility: hidden; }
   .search-ghost-suffix { color: var(--fg-muted); opacity: 0.75; }
-  .search-clear {
-    position: absolute; right: 0.55rem; top: 50%; transform: translateY(-50%);
-    z-index: 2; width: 1.5rem; height: 1.5rem; padding: 0;
-    display: flex; align-items: center; justify-content: center;
-    border: 1px solid transparent; border-radius: 999px;
-    background: transparent; color: var(--fg-muted); cursor: pointer;
-    font: inherit; font-size: 0; line-height: 1;
-    transition: color 0.15s, border-color 0.15s, background 0.15s;
-  }
-  .search-clear::before,
-  .search-clear::after {
-    content: ""; position: absolute; left: 50%; top: 50%;
-    width: 0.7rem; height: 2px; border-radius: 999px;
-    background: currentColor; transform-origin: center;
-  }
-  .search-clear::before { transform: translate(-50%, -50%) rotate(45deg); }
-  .search-clear::after { transform: translate(-50%, -50%) rotate(-45deg); }
-  .search-clear:hover,
-  .search-clear:focus-visible {
-    color: var(--accent); border-color: var(--accent); background: var(--accent-dim);
-    outline: none;
-  }
-  .search-clear[hidden] { display: none; }
   .toolbar-groups {
     display: contents;
   }
@@ -805,7 +755,7 @@ metadata:
     <div class="search-ghost" id="search-ghost" aria-hidden="true"><span class="search-ghost-prefix" id="search-ghost-prefix"></span><span class="search-ghost-suffix" id="search-ghost-suffix"></span></div>
     <button type="button" class="search-clear" id="search-clear" aria-label="Clear search" title="Clear search" hidden></button>
   </div>
-  <div class="search-status" id="search-status" data-empty-message="Tip: use {{.SearchPathHint}} for path-only search" aria-live="polite">Tip: use {{.SearchPathHint}} for path-only search</div>
+  <div class="search-status" id="search-status" data-empty-message="Tip: use {{.SearchPathHint}} for path-only search" role="status" aria-live="polite" aria-atomic="true"></div>
 </div>
 <div class="toolbar">
   <div class="toolbar-left">
@@ -862,9 +812,12 @@ metadata:
 </main>
 ` + theme.ToastDiv + `
 ` + theme.FooterHTML + `
+` + theme.BackToTopButton + `
 <script src="{{.BasePath}}/` + theme.SchemaSearchAssetName + `"></script>
 <script>
 ` + theme.SearchHashStateJS + `
+` + theme.BackToTopJS + `
+` + theme.CopyToastJS + `
 ` + theme.SchemaPageJS + `
 ` + theme.ThemeToggleJS + `
 </script>

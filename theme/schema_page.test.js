@@ -73,12 +73,20 @@ function extractGoRawString(source, name) {
   return match[1];
 }
 
-function loadSchemaPageScript() {
+function optionalGoRawString(source, name) {
+  const pattern = new RegExp(`const ${name} = \`([\\s\\S]*?)\``);
+  const match = source.match(pattern);
+  return match ? match[1] : '';
+}
+
+function loadSchemaPageScript({ reducedMotion = false, learnedPathSearch = false } = {}) {
   const pageScript = fs.readFileSync(path.join(__dirname, 'schema_page.js'), 'utf8');
   const themeSource = fs.readFileSync(path.join(__dirname, 'theme.go'), 'utf8');
-  const script = `${extractGoRawString(themeSource, 'SearchHashStateJS')}\n${pageScript}`;
+  const script = `${extractGoRawString(themeSource, 'SearchHashStateJS')}\n${extractGoRawString(themeSource, 'BackToTopJS')}\n${optionalGoRawString(themeSource, 'CopyToastJS')}\n${pageScript}`;
+  const calls = { scrolls: [] };
   const elements = new Map();
   const documentListeners = new Map();
+  const windowListeners = new Map();
   const detailsA = makeElement('details-a', { path: 'spec', name: 'spec', text: 'Spec', parentPath: '' }, 'DETAILS');
   const detailsB = makeElement('details-b', { path: 'spec.replicas', name: 'replicas', text: 'Replica count', parentPath: 'spec' }, 'DETAILS');
   [detailsA, detailsB].forEach((el) => elements.set(el.id, el));
@@ -103,7 +111,12 @@ function loadSchemaPageScript() {
       return 1;
     },
     localStorage: {
-      getItem() { return null; },
+      getItem(key) {
+        if (key === 'crd-schema-publisher:path-search-learned' && learnedPathSearch) {
+          return '1';
+        }
+        return null;
+      },
       setItem() {},
     },
     location: {
@@ -137,6 +150,14 @@ function loadSchemaPageScript() {
       },
     },
     window: {
+      scrollY: 0,
+      addEventListener(type, fn) {
+        windowListeners.set(type, fn);
+      },
+      matchMedia(query) {
+        return { matches: reducedMotion && query === '(prefers-reduced-motion: reduce)' };
+      },
+      scrollTo(...args) { calls.scrolls.push(args); },
       SchemaSearch: {
         bestCompletionForPaths() { return ''; },
         completionCandidatesForPaths() { return []; },
@@ -154,7 +175,7 @@ function loadSchemaPageScript() {
   context.window.document = context.document;
 
   vm.runInNewContext(script, context, { filename: 'schema_page.js' });
-  return { context, element, detailsA, detailsB, documentListeners };
+  return { context, calls, element, detailsA, detailsB, documentListeners, windowListeners };
 }
 
 test('schema page expands and collapses details', () => {
@@ -172,4 +193,25 @@ test('schema page copy button writes absolute schema URL', async () => {
   element('copy-url').click();
   await Promise.resolve();
   assert.equal(context.__copied, 'https://schemas.example.test/docs/example.io/test_v1.json');
+  assert.equal(element('toast').textContent, '');
+  assert.equal(element('toast').classList.contains('show'), false);
+});
+
+test('schema page shows path hint only until path search is learned', () => {
+  assert.equal(loadSchemaPageScript().element('search-status').textContent, 'Tip');
+  assert.equal(loadSchemaPageScript({ learnedPathSearch: true }).element('search-status').textContent, '');
+});
+
+test('schema page back-to-top button appears after scrolling and respects reduced motion', () => {
+  const { calls, context, element, windowListeners } = loadSchemaPageScript({ reducedMotion: true });
+  const backToTop = element('back-to-top');
+
+  context.window.scrollY = 301;
+  windowListeners.get('scroll')();
+  assert.equal(backToTop.classList.contains('visible'), true);
+
+  backToTop.click();
+
+  assert.equal(calls.scrolls.at(-1)[0].top, 0);
+  assert.equal(calls.scrolls.at(-1)[0].behavior, 'auto');
 });

@@ -105,6 +105,17 @@ const CSSBase = `
     pointer-events: none; z-index: 10;
   }
   .copied-toast.show { opacity: 1; }
+  .back-to-top {
+    position: fixed; bottom: 1.5rem; right: 1.5rem;
+    background: var(--bg-surface); color: var(--fg-muted);
+    border: 1px solid var(--border); border-radius: 50%;
+    width: 2.5rem; height: 2.5rem; font-size: 1.1rem;
+    cursor: pointer; display: none; align-items: center; justify-content: center;
+    transition: color 0.2s, border-color 0.2s;
+    z-index: 10;
+  }
+  .back-to-top:hover { color: var(--accent); border-color: var(--accent); }
+  .back-to-top.visible { display: flex; }
   footer {
     margin-top: 3rem; padding-top: 1.5rem;
     border-top: 1px solid var(--border);
@@ -123,6 +134,56 @@ const SearchCSS = `
   }
   .search-box::placeholder { color: var(--fg-muted); }
   .search-box:focus { border-color: var(--accent); }
+  .search-input-wrap {
+    display: grid;
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-surface);
+    font: inherit; font-size: 0.95rem; line-height: 1.2;
+    font-family: inherit; font-weight: inherit; letter-spacing: inherit;
+    text-transform: inherit; text-indent: inherit; font-kerning: inherit;
+    transition: border-color 0.2s;
+  }
+  .search-input-wrap:focus-within { border-color: var(--accent); }
+  .search-input-wrap .search-box {
+    grid-area: 1 / 1;
+    position: relative; z-index: 1;
+    background: transparent; border-color: transparent;
+    padding-right: 2.75rem;
+    margin: 0; appearance: none; -webkit-appearance: none;
+    font: inherit; line-height: inherit;
+    font-family: inherit; font-size: inherit; font-weight: inherit; letter-spacing: inherit;
+    text-transform: inherit; text-indent: inherit; font-kerning: inherit;
+    width: 100%;
+  }
+  .search-input-wrap .search-box:focus { border-color: transparent; }
+  .search-input-wrap .search-box::-webkit-search-decoration,
+  .search-input-wrap .search-box::-webkit-search-cancel-button,
+  .search-input-wrap .search-box::-webkit-search-results-button,
+  .search-input-wrap .search-box::-webkit-search-results-decoration { display: none; }
+  .search-clear {
+    position: absolute; right: 0.55rem; top: 50%; transform: translateY(-50%);
+    z-index: 2; width: 1.5rem; height: 1.5rem; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid transparent; border-radius: 999px;
+    background: transparent; color: var(--accent); cursor: pointer;
+    opacity: 0.85; font: inherit; font-size: 0; line-height: 1;
+    transition: background 0.15s, opacity 0.15s;
+  }
+  .search-clear::before,
+  .search-clear::after {
+    content: ""; position: absolute; left: 50%; top: 50%;
+    width: 0.7rem; height: 2px; border-radius: 999px;
+    background: currentColor; transform-origin: center;
+  }
+  .search-clear::before { transform: translate(-50%, -50%) rotate(45deg); }
+  .search-clear::after { transform: translate(-50%, -50%) rotate(-45deg); }
+  .search-clear:hover,
+  .search-clear:focus-visible {
+    background: var(--accent-dim); opacity: 1;
+  }
+  .search-clear[hidden] { display: none; }
   .search-status {
     color: var(--fg-muted); font-size: 0.875rem;
     min-height: 1.25rem; white-space: nowrap;
@@ -140,7 +201,10 @@ const HeadScript = `<script>if(localStorage.getItem('theme')==='light')document.
 const ThemeToggleButton = `<button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode" aria-label="Toggle light/dark mode">☀/☾</button>`
 
 // ToastDiv is the clipboard copy toast notification.
-const ToastDiv = `<div class="copied-toast" id="toast" role="status" aria-live="polite">Copied!</div>`
+const ToastDiv = `<div class="copied-toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>`
+
+// BackToTopButton is the floating scroll-to-top control.
+const BackToTopButton = `<button class="back-to-top" id="back-to-top" title="Back to top" aria-label="Back to top">&#8593;</button>`
 
 // FooterHTML is the page footer.
 const FooterHTML = `<footer>
@@ -167,6 +231,37 @@ function readHashSearchQuery(){
 }
 function writeHashSearchQuery(q){
   history.replaceState(null, '', q ? '#q=' + encodeURIComponent(q) : location.pathname);
+}`
+
+// BackToTopJS wires the floating scroll-to-top button and respects reduced-motion preferences.
+const BackToTopJS = `function scrollToTop(){
+  var behavior = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  window.scrollTo({top: 0, behavior: behavior});
+}
+(function(){
+  var btt = document.getElementById('back-to-top');
+  if (!btt) return;
+  window.addEventListener('scroll', function(){
+    btt.classList.toggle('visible', window.scrollY > 300);
+  }, {passive: true});
+  btt.addEventListener('click', function(){
+    scrollToTop();
+  });
+})();`
+
+// CopyToastJS contains shared clipboard copy feedback for pages with ToastDiv.
+const CopyToastJS = `var copyToastTimer;
+function copyURLWithToast(url){
+  return navigator.clipboard.writeText(url).then(function(){
+    var toast = document.getElementById('toast');
+    clearTimeout(copyToastTimer);
+    toast.textContent = 'Copied!';
+    toast.classList.add('show');
+    copyToastTimer = setTimeout(function(){
+      toast.classList.remove('show');
+      toast.textContent = '';
+    }, 1500);
+  });
 }`
 
 // ThemeToggleJS is the JavaScript function for toggling the theme.

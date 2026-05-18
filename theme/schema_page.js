@@ -95,15 +95,8 @@
     updateSearchClear();
   }
 
-  var toast = document.getElementById('toast');
-  var toastTimer;
   document.getElementById('copy-url').addEventListener('click', function(){
-    var url = location.origin + this.dataset.url;
-    navigator.clipboard.writeText(url).then(function(){
-      clearTimeout(toastTimer);
-      toast.classList.add('show');
-      toastTimer = setTimeout(function(){ toast.classList.remove('show'); }, 1500);
-    });
+    copyURLWithToast(location.origin + this.dataset.url);
   });
 
   var schemaSearch = window.SchemaSearch;

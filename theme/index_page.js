@@ -1,33 +1,57 @@
 (function(){
   var input = document.getElementById('search');
+  var searchClear = document.getElementById('search-clear');
   var groups = document.querySelectorAll('.group');
   var noResults = document.getElementById('no-results');
+  var searchStatus = document.getElementById('search-status');
   var statGroups = document.getElementById('stat-groups');
   var statSchemas = document.getElementById('stat-schemas');
   var totalGroups = groups.length;
-  var totalSchemas = document.querySelectorAll('.schemas a').length;
+  var totalSchemas = document.querySelectorAll('.schema-row').length;
+
+  function updateSearchClear() {
+    searchClear.hidden = !input.value;
+  }
+
+  function updateSearchStatus(q, visibleGroups, visibleSchemas) {
+    if (!q) {
+      searchStatus.textContent = '';
+      return;
+    }
+    if (!visibleGroups) {
+      searchStatus.textContent = 'No matching groups or schemas.';
+      return;
+    }
+    searchStatus.textContent = visibleGroups + ' of ' + totalGroups + ' API groups, ' + visibleSchemas + ' of ' + totalSchemas + ' schemas shown.';
+  }
 
   input.addEventListener('input', function(){
     var q = this.value.toLowerCase().trim();
+    updateSearchClear();
     var visible = 0;
+    var visibleSchemas = 0;
     groups.forEach(function(g){
+      var rows = g.querySelectorAll('.schema-row');
       if (!q) {
         g.style.display = '';
         g.removeAttribute('open');
-        g.querySelectorAll('.schemas a').forEach(function(a){ a.style.display = ''; });
+        rows.forEach(function(row){ row.style.display = ''; });
         visible++;
+        visibleSchemas += rows.length;
         return;
       }
       var groupName = g.dataset.group.toLowerCase();
-      var links = g.querySelectorAll('.schemas a');
       var groupMatch = groupName.indexOf(q) !== -1;
       var schemaMatch = false;
-      links.forEach(function(a){
-        if (a.dataset.schema.toLowerCase().indexOf(q) !== -1) {
-          a.style.display = '';
+      rows.forEach(function(row){
+        if (row.dataset.schema.toLowerCase().indexOf(q) !== -1) {
+          row.style.display = '';
           schemaMatch = true;
         } else {
-          a.style.display = groupMatch ? '' : 'none';
+          row.style.display = groupMatch ? '' : 'none';
+        }
+        if (row.style.display !== 'none') {
+          visibleSchemas++;
         }
       });
       if (groupMatch || schemaMatch) {
@@ -44,17 +68,20 @@
       statGroups.textContent = totalGroups;
       statSchemas.textContent = totalSchemas;
     } else {
-      var visibleSchemas = 0;
-      groups.forEach(function(g){
-        if (g.style.display === 'none') return;
-        g.querySelectorAll('.schemas a').forEach(function(a){
-          if (a.style.display !== 'none') visibleSchemas++;
-        });
-      });
       statGroups.textContent = visible + ' / ' + totalGroups;
       statSchemas.textContent = visibleSchemas + ' / ' + totalSchemas;
     }
+    updateSearchStatus(q, visible, visibleSchemas);
     writeHashSearchQuery(q);
+  });
+
+  searchClear.addEventListener('mousedown', function(e){
+    e.preventDefault();
+  });
+  searchClear.addEventListener('click', function(){
+    input.value = '';
+    input.dispatchEvent(new Event('input'));
+    input.focus();
   });
 
   document.addEventListener('keydown', function(e){
@@ -72,7 +99,7 @@
           allExpanded = false;
           toggleAll.textContent = 'Expand all';
         } else {
-          window.scrollTo({top: 0, behavior: 'smooth'});
+          scrollToTop();
         }
         if (document.activeElement && document.activeElement !== document.body) {
           document.activeElement.blur();
@@ -85,18 +112,11 @@
     }
   });
 
-  var toast = document.getElementById('toast');
-  var toastTimer;
   document.getElementById('groups').addEventListener('click', function(e){
-    if (!e.target.classList.contains('copy-hint')) return;
+    var copyButton = e.target.closest('.schema-copy');
+    if (!copyButton) return;
     e.preventDefault();
-    var link = e.target.closest('.schemas a');
-    var url = location.origin + link.dataset.url;
-    navigator.clipboard.writeText(url).then(function(){
-      clearTimeout(toastTimer);
-      toast.classList.add('show');
-      toastTimer = setTimeout(function(){ toast.classList.remove('show'); }, 1500);
-    });
+    copyURLWithToast(location.origin + copyButton.dataset.url);
   });
 
   var toggleAll = document.getElementById('toggle-all');
@@ -112,19 +132,12 @@
   });
 
   (function(){
+    updateSearchClear();
     var query = readHashSearchQuery();
     if (!query) return;
     input.value = query;
     input.dispatchEvent(new Event('input'));
   })();
-
-  var btt = document.getElementById('back-to-top');
-  window.addEventListener('scroll', function(){
-    btt.classList.toggle('visible', window.scrollY > 300);
-  }, {passive: true});
-  btt.addEventListener('click', function(){
-    window.scrollTo({top: 0, behavior: 'smooth'});
-  });
 
   document.querySelectorAll('.usage-content code').forEach(function(el){
     var base = document.body.dataset.basePath || '';
@@ -133,8 +146,9 @@
 
   // Save view state before navigating to a schema page
   document.getElementById('groups').addEventListener('click', function(e){
-    var link = e.target.closest('.schemas a');
-    if (!link || e.target.classList.contains('copy-hint')) return;
+    if (e.target.closest('.schema-copy')) return;
+    var link = e.target.closest('.schema-row a');
+    if (!link) return;
     var expanded = [];
     groups.forEach(function(g){ if (g.hasAttribute('open')) expanded.push(g.dataset.group); });
     sessionStorage.setItem('indexState', JSON.stringify({

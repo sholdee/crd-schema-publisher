@@ -27,7 +27,7 @@ function makeClassList() {
 
 function makeElement(id, dataset = {}) {
   const listeners = new Map();
-  const attrs = new Set();
+  const attrs = new Map();
   return {
     id,
     dataset,
@@ -40,9 +40,10 @@ function makeElement(id, dataset = {}) {
     focused: false,
     focus() { this.focused = true; },
     blur() {},
-    setAttribute(name) { attrs.add(name); },
+    setAttribute(name, value = '') { attrs.set(name, String(value)); },
     removeAttribute(name) { attrs.delete(name); },
     hasAttribute(name) { return attrs.has(name); },
+    getAttribute(name) { return attrs.has(name) ? attrs.get(name) : null; },
     addEventListener(type, fn) {
       if (!listeners.has(type)) listeners.set(type, []);
       listeners.get(type).push(fn);
@@ -74,11 +75,11 @@ function optionalGoRawString(source, name) {
   return match ? match[1] : '';
 }
 
-function loadIndexPageScript({ hash = '', savedState = '', reducedMotion = false } = {}) {
+function loadIndexPageScript({ hash = '', savedState = '', reducedMotion = false, clipboard = 'success' } = {}) {
   const indexScript = fs.readFileSync(path.join(__dirname, 'index_page.js'), 'utf8');
   const themeSource = fs.readFileSync(path.join(__dirname, 'theme.go'), 'utf8');
   const script = `${extractGoRawString(themeSource, 'SearchHashStateJS')}\n${extractGoRawString(themeSource, 'BackToTopJS')}\n${optionalGoRawString(themeSource, 'CopyToastJS')}\n${indexScript}\n${extractGoRawString(themeSource, 'ThemeToggleJS')}`;
-  const calls = { replaceState: [], localStorageWrites: [], scrolls: [] };
+  const calls = { replaceState: [], localStorageWrites: [], scrolls: [], timers: [] };
   const elements = new Map();
   const documentListeners = new Map();
 
@@ -116,8 +117,8 @@ function loadIndexPageScript({ hash = '', savedState = '', reducedMotion = false
     Event,
     clearTimeout,
     setTimeout(fn) {
-      fn();
-      return 1;
+      calls.timers.push(fn);
+      return calls.timers.length;
     },
     location: {
       origin: 'https://schemas.example.test',
@@ -137,9 +138,10 @@ function loadIndexPageScript({ hash = '', savedState = '', reducedMotion = false
         calls.localStorageWrites.push([key, value]);
       },
     },
-    navigator: {
+    navigator: clipboard === null ? {} : {
       clipboard: {
         writeText(value) {
+          if (clipboard === 'reject') return Promise.reject(new Error('denied'));
           context.__copied = value;
           return Promise.resolve();
         },
@@ -254,9 +256,21 @@ test('index page copy button writes absolute schema URL without saving navigatio
   await Promise.resolve();
 
   assert.equal(context.__copied, 'https://schemas.example.test/docs/example.io/test_v1.json');
-  assert.equal(element('toast').textContent, '');
-  assert.equal(element('toast').classList.contains('show'), false);
+  assert.equal(element('toast').textContent, 'Copied!');
+  assert.equal(element('toast').classList.contains('show'), true);
   assert.equal(storage.has('indexState'), false);
+});
+
+test('index page copy button reports unavailable clipboard', async () => {
+  const { context, element, copyButton } = loadIndexPageScript({ clipboard: null });
+  const groups = element('groups');
+
+  groups.click({ target: copyButton, preventDefault() {} });
+  await Promise.resolve();
+
+  assert.equal(context.__copied, undefined);
+  assert.equal(element('toast').textContent, 'Copy unavailable');
+  assert.equal(element('toast').classList.contains('show'), true);
 });
 
 test('index page theme toggle still writes localStorage', () => {
@@ -265,6 +279,19 @@ test('index page theme toggle still writes localStorage', () => {
   context.toggleTheme();
 
   assert.deepEqual(calls.localStorageWrites.at(-1), ['theme', 'light']);
+});
+
+test('index page theme toggle updates accessible state', () => {
+  const { context, element } = loadIndexPageScript();
+  const toggle = element('theme-toggle');
+
+  assert.equal(toggle.getAttribute('aria-pressed'), 'false');
+  assert.equal(toggle.getAttribute('aria-label'), 'Light mode');
+
+  context.toggleTheme();
+
+  assert.equal(toggle.getAttribute('aria-pressed'), 'true');
+  assert.equal(toggle.getAttribute('aria-label'), 'Light mode');
 });
 
 test('index page avoids smooth scroll when reduced motion is requested', () => {

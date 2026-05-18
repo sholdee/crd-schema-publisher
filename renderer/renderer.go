@@ -674,7 +674,7 @@ var schemaTemplate = `<!DOCTYPE html>
   .prop > summary {
     padding: 0.5rem 0.75rem; cursor: pointer;
     font-size: 0.85rem; background: var(--surface-background); border-radius: 6px;
-    list-style: none; display: flex; align-items: center; gap: 0.5rem;
+    list-style: none; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
     transition: background 0.15s;
   }
   .prop.search-match > summary,
@@ -686,14 +686,15 @@ var schemaTemplate = `<!DOCTYPE html>
   .prop-content { padding: 0.5rem 0.75rem 0.75rem; padding-left: 1.5rem; min-width: 0; }
   .prop-leaf {
     padding: 0.5rem 0.75rem;
-    font-size: 0.85rem; display: flex; align-items: flex-start; gap: 0.5rem;
+    font-size: 0.85rem; display: flex; align-items: flex-start; gap: 0.5rem; flex-wrap: wrap;
     border: 1px solid var(--border); border-radius: 6px;
     margin-bottom: 0.35rem; background: var(--surface-background);
   }
   .prop-leaf .prop-name { min-width: 0; }
   .prop-name {
     font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
-    color: var(--accent); font-weight: 600; white-space: nowrap;
+    color: var(--accent); font-weight: 600; min-width: 0;
+    overflow-wrap: anywhere; white-space: normal;
   }
   .type-badge {
     background: var(--accent-dim); color: var(--accent);
@@ -751,7 +752,7 @@ metadata:
   name: example</div>
 <div class="search-row">
   <div class="search-input-wrap">
-    <input type="search" class="search-box" placeholder="Search schema fields...  ` + theme.SearchHintText + `" id="search" autocomplete="off" spellcheck="false" aria-label="Search schema fields" aria-controls="search-status" aria-describedby="search-status">
+    <input type="search" class="search-box" placeholder="Search schema fields...  ` + theme.SearchHintText + `" id="search" autocomplete="off" spellcheck="false" aria-label="Search schema fields" aria-controls="properties" aria-describedby="search-status">
     <div class="search-ghost" id="search-ghost" aria-hidden="true"><span class="search-ghost-prefix" id="search-ghost-prefix"></span><span class="search-ghost-suffix" id="search-ghost-suffix"></span></div>
     <button type="button" class="search-clear" id="search-clear" aria-label="Clear search" title="Clear search" hidden></button>
   </div>

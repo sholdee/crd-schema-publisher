@@ -132,6 +132,19 @@ curl -LO https://github.com/sholdee/crd-schema-publisher/releases/latest/downloa
 chmod +x crd-schema-publisher-linux-amd64
 ```
 
+If you manage project CLIs with [mise](https://mise.jdx.dev/), install through the aqua backend:
+
+```bash
+mise use aqua:sholdee/crd-schema-publisher@latest
+```
+
+Or pin a release in `mise.toml`:
+
+```toml
+[tools]
+"aqua:sholdee/crd-schema-publisher" = "2026.519.317"
+```
+
 ### Verify Release Artifacts
 
 ```bash

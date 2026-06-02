@@ -30,19 +30,22 @@ type groupVersionKind struct {
 // schema embeds the transitive closure of its referenced definitions locally,
 // keeping files self-contained like CRD schemas (and recursion representable).
 func WriteOpenAPISchemas(openapiPath, outputDir string, filter SchemaFilter) (int, error) {
-	defs, err := readOpenAPIDefinitions(openapiPath)
+	raw, err := os.ReadFile(openapiPath)
+	if err != nil {
+		return 0, fmt.Errorf("reading openapi spec: %w", err)
+	}
+	return WriteOpenAPISchemasFromBytes(raw, outputDir, filter)
+}
+
+func WriteOpenAPISchemasFromBytes(raw []byte, outputDir string, filter SchemaFilter) (int, error) {
+	defs, err := parseOpenAPIDefinitions(raw)
 	if err != nil {
 		return 0, err
 	}
 	return writeOpenAPIDefinitions(defs, outputDir, filter)
 }
 
-func readOpenAPIDefinitions(openapiPath string) (map[string]map[string]interface{}, error) {
-	raw, err := os.ReadFile(openapiPath)
-	if err != nil {
-		return nil, fmt.Errorf("reading openapi spec: %w", err)
-	}
-
+func parseOpenAPIDefinitions(raw []byte) (map[string]map[string]interface{}, error) {
 	var doc openAPIDoc
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return nil, fmt.Errorf("parsing openapi spec: %w", err)

@@ -76,6 +76,40 @@ func TestWriteOpenAPISchemas(t *testing.T) {
 	assertOpenAPIKindsManifest(t, out)
 }
 
+func TestWriteOpenAPISchemasFromBytesMatchesFilePath(t *testing.T) {
+	dir := t.TempDir()
+	fileOut := filepath.Join(dir, "file")
+	rawOut := filepath.Join(dir, "raw")
+	specPath := filepath.Join(dir, "swagger.json")
+	if err := os.WriteFile(specPath, []byte(sampleOpenAPI), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fileCount, err := WriteOpenAPISchemas(specPath, fileOut, SchemaFilter{})
+	if err != nil {
+		t.Fatalf("WriteOpenAPISchemas: %v", err)
+	}
+	rawCount, err := WriteOpenAPISchemasFromBytes([]byte(sampleOpenAPI), rawOut, SchemaFilter{})
+	if err != nil {
+		t.Fatalf("WriteOpenAPISchemasFromBytes: %v", err)
+	}
+	if rawCount != fileCount {
+		t.Fatalf("expected raw count %d to match file count %d", rawCount, fileCount)
+	}
+
+	fileSchema, err := os.ReadFile(filepath.Join(fileOut, "apps", "deployment_v1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawSchema, err := os.ReadFile(filepath.Join(rawOut, "apps", "deployment_v1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(rawSchema) != string(fileSchema) {
+		t.Fatalf("expected raw schema to match file schema")
+	}
+}
+
 func assertOpenAPISchemaBundlesNullableRefs(t *testing.T, schema map[string]interface{}) {
 	t.Helper()
 

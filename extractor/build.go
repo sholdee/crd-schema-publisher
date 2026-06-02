@@ -1,6 +1,7 @@
 package extractor
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,12 +35,16 @@ const (
 )
 
 type SiteBuildOptions struct {
-	Lister    CRDLister
-	OutputDir string
-	BasePath  string
-	Render    bool
-	Filter    SchemaFilter
-	Profiler  diagnostics.Snapshotter
+	Context          context.Context
+	Lister           CRDLister
+	OutputDir        string
+	BasePath         string
+	Render           bool
+	Filter           SchemaFilter
+	IncludeBuiltins  bool
+	IncludeKustomize bool
+	OpenAPISource    OpenAPISource
+	Profiler         diagnostics.Snapshotter
 }
 
 type SiteBuildResult struct {
@@ -49,6 +54,8 @@ type SiteBuildResult struct {
 }
 
 func BuildSite(opts SiteBuildOptions) (SiteBuildResult, error) {
+	ctx := buildContext(opts.Context)
+
 	snapshot(opts.Profiler, "build.start", "output_dir", opts.OutputDir, "render", opts.Render)
 	if err := ValidateOutputDir(opts.OutputDir); err != nil {
 		return SiteBuildResult{}, err
@@ -56,14 +63,14 @@ func BuildSite(opts SiteBuildOptions) (SiteBuildResult, error) {
 
 	previousGeneration := currentGenerationName(opts.OutputDir)
 
-	crds, err := ListCRDs(opts.Lister)
+	crds, err := ListCRDs(ctx, opts.Lister)
 	if err != nil {
 		return SiteBuildResult{}, fmt.Errorf("listing CRDs: %w", err)
 	}
 	snapshot(opts.Profiler, "build.after-list-crds", "crd_count", len(crds))
 	crds = FilterCRDs(crds, opts.Filter)
 	snapshot(opts.Profiler, "build.after-filter-crds", "crd_count", len(crds), "filter_active", opts.Filter.Active())
-	if len(crds) == 0 && !opts.Filter.Active() {
+	if shouldSkipBuild(len(crds), opts) {
 		return SiteBuildResult{Status: BuildResultNoop}, nil
 	}
 
@@ -83,6 +90,12 @@ func BuildSite(opts SiteBuildOptions) (SiteBuildResult, error) {
 		return SiteBuildResult{}, fmt.Errorf("writing schemas: %w", err)
 	}
 	snapshot(opts.Profiler, "build.after-write-schemas", "schema_count", count, "generation", generationName)
+
+	extraCount, err := writeOptionalSchemas(ctx, opts, generationDir, generationName)
+	if err != nil {
+		return SiteBuildResult{}, err
+	}
+	count += extraCount
 
 	if opts.Render {
 		if err := renderAllFunc(generationDir, opts.BasePath); err != nil {
@@ -115,6 +128,54 @@ func BuildSite(opts SiteBuildOptions) (SiteBuildResult, error) {
 		CRDCount:    len(crds),
 		SchemaCount: count,
 	}, nil
+}
+
+func buildContext(ctx context.Context) context.Context {
+	if ctx != nil {
+		return ctx
+	}
+	return context.Background()
+}
+
+func shouldSkipBuild(crdCount int, opts SiteBuildOptions) bool {
+	return crdCount == 0 && !opts.Filter.Active() && !opts.IncludeBuiltins && !opts.IncludeKustomize
+}
+
+func writeOptionalSchemas(ctx context.Context, opts SiteBuildOptions, generationDir, generationName string) (int, error) {
+	count := 0
+	if opts.IncludeBuiltins {
+		n, err := writeBuiltinSchemas(ctx, opts.OpenAPISource, generationDir, opts.Filter)
+		if err != nil {
+			return 0, err
+		}
+		count += n
+		snapshot(opts.Profiler, "build.after-write-builtins", "schema_count", count, "generation", generationName)
+	}
+
+	if opts.IncludeKustomize {
+		n, err := WriteKustomizeSchemas(generationDir)
+		if err != nil {
+			return 0, fmt.Errorf("writing kustomize schema: %w", err)
+		}
+		count += n
+		snapshot(opts.Profiler, "build.after-write-kustomize", "schema_count", count, "generation", generationName)
+	}
+	return count, nil
+}
+
+func writeBuiltinSchemas(ctx context.Context, source OpenAPISource, generationDir string, filter SchemaFilter) (int, error) {
+	if source == nil {
+		return 0, fmt.Errorf("writing built-in schemas: OpenAPI source is required")
+	}
+	raw, err := source.FetchOpenAPIV2(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("fetching built-in OpenAPI: %w", err)
+	}
+	n, err := WriteOpenAPISchemasFromBytes(raw, generationDir, filter)
+	if err != nil {
+		return 0, fmt.Errorf("writing built-in schemas: %w", err)
+	}
+	return n, nil
 }
 
 func snapshot(profiler diagnostics.Snapshotter, phase string, attrs ...any) {

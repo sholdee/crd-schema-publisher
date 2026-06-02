@@ -1,6 +1,8 @@
 package extractor
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +14,39 @@ import (
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
+
+const buildSiteOpenAPI = `{
+  "definitions": {
+    "io.k8s.api.core.v1.Pod": {
+      "type": "object",
+      "x-kubernetes-group-version-kind": [{"group": "", "version": "v1", "kind": "Pod"}],
+      "properties": {
+        "apiVersion": {"type": "string"},
+        "kind": {"type": "string"}
+      }
+    },
+    "io.k8s.api.apps.v1.Deployment": {
+      "type": "object",
+      "x-kubernetes-group-version-kind": [{"group": "apps", "version": "v1", "kind": "Deployment"}],
+      "properties": {
+        "apiVersion": {"type": "string"},
+        "kind": {"type": "string"}
+      }
+    }
+  }
+}`
+
+type fakeOpenAPISource struct {
+	raw []byte
+	err error
+}
+
+func (f fakeOpenAPISource) FetchOpenAPIV2(context.Context) ([]byte, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.raw, nil
+}
 
 type recordingSnapshotter struct {
 	phases []string
@@ -185,6 +220,153 @@ func TestBuildSite_ZeroCRDsIsNoopAndPreservesOutput(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(outputDir, "current", "index.html")); err != nil {
 		t.Fatalf("expected active generation to remain readable: %v", err)
+	}
+}
+
+func TestBuildSite_UsesContextForCRDList(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := BuildSite(SiteBuildOptions{
+		Context:   ctx,
+		Lister:    &fakeLister{},
+		OutputDir: t.TempDir(),
+	})
+	if err == nil || !strings.Contains(err.Error(), context.Canceled.Error()) {
+		t.Fatalf("expected canceled context error, got %v", err)
+	}
+}
+
+func TestBuildSite_IncludeBuiltinsWithZeroCRDsBuildsGeneration(t *testing.T) {
+	outputDir := t.TempDir()
+
+	result, err := BuildSite(SiteBuildOptions{
+		Lister:          &fakeLister{},
+		OutputDir:       outputDir,
+		IncludeBuiltins: true,
+		OpenAPISource:   fakeOpenAPISource{raw: []byte(buildSiteOpenAPI)},
+	})
+	if err != nil {
+		t.Fatalf("BuildSite error: %v", err)
+	}
+	if result.Status != BuildResultBuilt {
+		t.Fatalf("expected BuildResultBuilt, got %q", result.Status)
+	}
+	if result.CRDCount != 0 || result.SchemaCount != 2 {
+		t.Fatalf("expected CRDCount=0 SchemaCount=2, got CRDCount=%d SchemaCount=%d", result.CRDCount, result.SchemaCount)
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "current", "core", "pod_v1.json")); err != nil {
+		t.Fatalf("expected Pod schema: %v", err)
+	}
+}
+
+func TestBuildSite_IncludeBuiltinsHonorsFilter(t *testing.T) {
+	outputDir := t.TempDir()
+
+	result, err := BuildSite(SiteBuildOptions{
+		Lister:          &fakeLister{},
+		OutputDir:       outputDir,
+		Filter:          ParseFilter("pod", "", ""),
+		IncludeBuiltins: true,
+		OpenAPISource:   fakeOpenAPISource{raw: []byte(buildSiteOpenAPI)},
+	})
+	if err != nil {
+		t.Fatalf("BuildSite error: %v", err)
+	}
+	if result.SchemaCount != 1 {
+		t.Fatalf("expected one filtered schema, got %d", result.SchemaCount)
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "current", "core", "pod_v1.json")); err != nil {
+		t.Fatalf("expected Pod schema: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "current", "apps", "deployment_v1.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected Deployment schema to be filtered out, got err=%v", err)
+	}
+}
+
+func TestBuildSite_IncludeKustomizeWithZeroCRDsBuildsGeneration(t *testing.T) {
+	outputDir := t.TempDir()
+
+	result, err := BuildSite(SiteBuildOptions{
+		Lister:           &fakeLister{},
+		OutputDir:        outputDir,
+		IncludeKustomize: true,
+	})
+	if err != nil {
+		t.Fatalf("BuildSite error: %v", err)
+	}
+	if result.Status != BuildResultBuilt {
+		t.Fatalf("expected BuildResultBuilt, got %q", result.Status)
+	}
+	if result.CRDCount != 0 || result.SchemaCount != 1 {
+		t.Fatalf("expected CRDCount=0 SchemaCount=1, got CRDCount=%d SchemaCount=%d", result.CRDCount, result.SchemaCount)
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "current", "kustomize.config.k8s.io", "kustomization_v1beta1.json")); err != nil {
+		t.Fatalf("expected Kustomization schema: %v", err)
+	}
+}
+
+func TestBuildSite_MergesCRDsBuiltinsAndKustomizeKindsManifest(t *testing.T) {
+	outputDir := t.TempDir()
+
+	result, err := BuildSite(SiteBuildOptions{
+		Lister:           &fakeLister{crds: []apiextensionsv1.CustomResourceDefinition{fakeCRD()}},
+		OutputDir:        outputDir,
+		IncludeBuiltins:  true,
+		IncludeKustomize: true,
+		OpenAPISource:    fakeOpenAPISource{raw: []byte(buildSiteOpenAPI)},
+	})
+	if err != nil {
+		t.Fatalf("BuildSite error: %v", err)
+	}
+	if result.CRDCount != 1 || result.SchemaCount != 4 {
+		t.Fatalf("expected CRDCount=1 SchemaCount=4, got CRDCount=%d SchemaCount=%d", result.CRDCount, result.SchemaCount)
+	}
+
+	data, err := os.ReadFile(filepath.Join(outputDir, "current", "_meta", "kinds.json"))
+	if err != nil {
+		t.Fatalf("reading kinds manifest: %v", err)
+	}
+	var kinds map[string]string
+	if err := json.Unmarshal(data, &kinds); err != nil {
+		t.Fatal(err)
+	}
+	for path, kind := range map[string]string{
+		"example.io/test_v1.json":                            "Test",
+		"core/pod_v1.json":                                   "Pod",
+		"kustomize.config.k8s.io/kustomization_v1beta1.json": "Kustomization",
+		"apps/deployment_v1.json":                            "Deployment",
+	} {
+		if kinds[path] != kind {
+			t.Fatalf("expected kinds[%q]=%q, got %q in %v", path, kind, kinds[path], kinds)
+		}
+	}
+}
+
+func TestBuildSite_BuiltinFetchFailurePreservesPreviousOutput(t *testing.T) {
+	outputDir := t.TempDir()
+	seedActiveGeneration(t, outputDir, map[string]string{
+		"index.html": "keep",
+	})
+	before := currentTarget(t, outputDir)
+
+	_, err := BuildSite(SiteBuildOptions{
+		Lister:          &fakeLister{},
+		OutputDir:       outputDir,
+		IncludeBuiltins: true,
+		OpenAPISource:   fakeOpenAPISource{err: fmt.Errorf("openapi unavailable")},
+	})
+	if err == nil {
+		t.Fatal("expected BuildSite error")
+	}
+	if !strings.Contains(err.Error(), "fetching built-in OpenAPI") {
+		t.Fatalf("expected built-in fetch error, got %v", err)
+	}
+	if got := currentTarget(t, outputDir); got != before {
+		t.Fatalf("expected current to remain %q, got %q", before, got)
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "current", "index.html")); err != nil {
+		t.Fatalf("expected prior active generation to remain readable: %v", err)
 	}
 }
 

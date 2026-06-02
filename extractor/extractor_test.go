@@ -18,7 +18,10 @@ type fakeLister struct {
 	err  error
 }
 
-func (f *fakeLister) List(_ context.Context, _ metav1.ListOptions) (*apiextensionsv1.CustomResourceDefinitionList, error) {
+func (f *fakeLister) List(ctx context.Context, _ metav1.ListOptions) (*apiextensionsv1.CustomResourceDefinitionList, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -125,7 +128,7 @@ func TestWriteSchemas_CreatesMasterStandalone(t *testing.T) {
 
 func TestListCRDs_SingleCRD(t *testing.T) {
 	lister := &fakeLister{crds: []apiextensionsv1.CustomResourceDefinition{fakeCRD()}}
-	crds, err := ListCRDs(lister)
+	crds, err := ListCRDs(context.Background(), lister)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -136,7 +139,7 @@ func TestListCRDs_SingleCRD(t *testing.T) {
 
 func TestListCRDs_MultipleCRDs(t *testing.T) {
 	lister := &fakeLister{crds: []apiextensionsv1.CustomResourceDefinition{fakeCRD(), fakeCRD(), fakeCRD()}}
-	crds, err := ListCRDs(lister)
+	crds, err := ListCRDs(context.Background(), lister)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -147,7 +150,7 @@ func TestListCRDs_MultipleCRDs(t *testing.T) {
 
 func TestListCRDs_EmptyList(t *testing.T) {
 	lister := &fakeLister{crds: []apiextensionsv1.CustomResourceDefinition{}}
-	crds, err := ListCRDs(lister)
+	crds, err := ListCRDs(context.Background(), lister)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -158,7 +161,7 @@ func TestListCRDs_EmptyList(t *testing.T) {
 
 func TestListCRDs_APIError(t *testing.T) {
 	lister := &fakeLister{err: errors.New("api server unavailable")}
-	_, err := ListCRDs(lister)
+	_, err := ListCRDs(context.Background(), lister)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -167,6 +170,16 @@ func TestListCRDs_APIError(t *testing.T) {
 	}
 	if !errors.Is(err, lister.err) {
 		t.Fatalf("expected wrapped original error, got: %v", err)
+	}
+}
+
+func TestListCRDsUsesProvidedContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := ListCRDs(ctx, &fakeLister{})
+	if err == nil || !strings.Contains(err.Error(), context.Canceled.Error()) {
+		t.Fatalf("expected canceled context error, got %v", err)
 	}
 }
 

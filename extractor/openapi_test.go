@@ -38,7 +38,7 @@ func TestWriteOpenAPISchemas(t *testing.T) {
 	}
 	out := filepath.Join(dir, "out")
 
-	count, err := WriteOpenAPISchemas(specPath, out)
+	count, err := WriteOpenAPISchemas(specPath, out, SchemaFilter{})
 	if err != nil {
 		t.Fatalf("WriteOpenAPISchemas: %v", err)
 	}

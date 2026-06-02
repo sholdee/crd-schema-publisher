@@ -270,6 +270,7 @@ type schemaPageData struct {
 	Kind           string
 	Group          string
 	Version        string
+	APIVersion     string
 	JSONPath       string
 	BasePath       string
 	Schema         *SchemaNode
@@ -313,6 +314,7 @@ func renderSchemaFileWithKinds(tmpl *template.Template, jsonPath, group, filenam
 		Kind:           kind,
 		Group:          group,
 		Version:        version,
+		APIVersion:     renderAPIVersion(group, version),
 		JSONPath:       basePath + "/" + group + "/" + filename,
 		BasePath:       basePath,
 		Schema:         &schema,
@@ -489,6 +491,16 @@ func lookupManifestKind(kinds map[string]string, group, filename string) string 
 		return ""
 	}
 	return strings.TrimSpace(kinds[filepath.ToSlash(filepath.Join(group, filename))])
+}
+
+func renderAPIVersion(group, version string) string {
+	if group == "" || group == "core" {
+		return version
+	}
+	if version == "" {
+		return group
+	}
+	return group + "/" + version
 }
 
 type renderJob struct {
@@ -746,7 +758,7 @@ var schemaTemplate = `<!DOCTYPE html>
   <h1 class="schema-title">{{.Kind}}</h1>
   <p class="schema-title-group">{{.Group}} / {{.Version}}</p>
 </header>
-<div class="yaml-block">apiVersion: {{.Group}}/{{.Version}}
+<div class="yaml-block">apiVersion: {{.APIVersion}}
 kind: {{.Kind}}
 metadata:
   name: example</div>

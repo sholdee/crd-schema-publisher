@@ -1164,6 +1164,46 @@ spec:
 	}
 }
 
+func TestRunConvert_OpenAPIHonorsFilters(t *testing.T) {
+	dir := t.TempDir()
+	outputDir := filepath.Join(dir, "output")
+	specPath := filepath.Join(dir, "swagger.json")
+	openAPI := `{
+  "definitions": {
+    "io.k8s.api.core.v1.Pod": {
+      "type": "object",
+      "x-kubernetes-group-version-kind": [{"group": "", "version": "v1", "kind": "Pod"}],
+      "properties": {
+        "apiVersion": {"type": "string"},
+        "kind": {"type": "string"}
+      }
+    },
+    "io.k8s.api.apps.v1.Deployment": {
+      "type": "object",
+      "x-kubernetes-group-version-kind": [{"group": "apps", "version": "v1", "kind": "Deployment"}],
+      "properties": {
+        "apiVersion": {"type": "string"},
+        "kind": {"type": "string"}
+      }
+    }
+  }
+}`
+	if err := os.WriteFile(specPath, []byte(openAPI), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runConvert([]string{"--openapi", specPath, "--output-dir", outputDir, "--kind", "pod"}); err != nil {
+		t.Fatalf("runConvert --openapi error: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(outputDir, "core", "pod_v1.json")); err != nil {
+		t.Fatal("expected Pod schema to match --kind filter")
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "apps", "deployment_v1.json")); !os.IsNotExist(err) {
+		t.Fatal("expected Deployment schema to be filtered out")
+	}
+}
+
 func TestRunConvert_ValidatesOutputDir(t *testing.T) {
 	dir := t.TempDir()
 	inputFile := filepath.Join(dir, "crd.yaml")

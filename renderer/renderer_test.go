@@ -853,6 +853,35 @@ func TestRenderSchema_PreservesOriginalKindFromManifest(t *testing.T) {
 	}
 }
 
+func TestRenderSchema_CoreGroupUsesVersionOnlyAPIVersion(t *testing.T) {
+	schema := `{"type":"object"}`
+
+	tmpDir := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(tmpDir, "core"), 0o755)
+	_ = os.MkdirAll(filepath.Join(tmpDir, "_meta"), 0o755)
+	_ = os.WriteFile(filepath.Join(tmpDir, "core", "pod_v1.json"), []byte(schema), 0o644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "_meta", "kinds.json"), []byte(`{"core/pod_v1.json":"Pod"}`), 0o644)
+
+	err := renderSchemaFile(
+		testTemplate(t),
+		filepath.Join(tmpDir, "core", "pod_v1.json"),
+		"core",
+		"pod_v1.json",
+		"",
+	)
+	if err != nil {
+		t.Fatalf("renderSchemaFile error: %v", err)
+	}
+
+	html := string(readFile(t, filepath.Join(tmpDir, "core", "pod_v1.html")))
+	if !strings.Contains(html, "apiVersion: v1\nkind: Pod") {
+		t.Fatal("expected core resources to render apiVersion without synthetic core group")
+	}
+	if strings.Contains(html, "apiVersion: core/v1") {
+		t.Fatal("core resources must not render synthetic core group in apiVersion")
+	}
+}
+
 func TestRenderAll_CreatesHTMLFiles(t *testing.T) {
 	tmpDir := t.TempDir()
 	_ = os.MkdirAll(filepath.Join(tmpDir, "cert-manager.io"), 0o755)

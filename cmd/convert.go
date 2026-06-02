@@ -212,13 +212,14 @@ func runConvert(args []string) error {
 		return fmt.Errorf("one of --file, --dir, or --openapi is required")
 	}
 
+	filter := extractor.ParseFilter(*kind, *group, *version)
 	var crds []apiextensionsv1.CustomResourceDefinition
 	if fileFlag != "" || dirFlag != "" {
 		loaded, err := loadCRDs(fileFlag, dirFlag)
 		if err != nil {
 			return err
 		}
-		crds = extractor.FilterCRDs(loaded, extractor.ParseFilter(*kind, *group, *version))
+		crds = extractor.FilterCRDs(loaded, filter)
 	}
 
 	if err := cleanConvertArtifacts(outputDir); err != nil {
@@ -243,7 +244,7 @@ func runConvert(args []string) error {
 		count += n
 	}
 	if *openapiFlag != "" {
-		n, err := extractor.WriteOpenAPISchemas(*openapiFlag, outputDir)
+		n, err := extractor.WriteOpenAPISchemas(*openapiFlag, outputDir, filter)
 		if err != nil {
 			return fmt.Errorf("writing openapi schemas: %w", err)
 		}

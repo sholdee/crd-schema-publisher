@@ -29,7 +29,7 @@ type groupVersionKind struct {
 // layout. OpenAPI definitions cross-reference via "#/definitions/...", so each
 // schema embeds the transitive closure of its referenced definitions locally,
 // keeping files self-contained like CRD schemas (and recursion representable).
-func WriteOpenAPISchemas(openapiPath, outputDir string) (int, error) {
+func WriteOpenAPISchemas(openapiPath, outputDir string, filter SchemaFilter) (int, error) {
 	raw, err := os.ReadFile(openapiPath)
 	if err != nil {
 		return 0, fmt.Errorf("reading openapi spec: %w", err)
@@ -71,6 +71,9 @@ func WriteOpenAPISchemas(openapiPath, outputDir string) (int, error) {
 			group := gvk.Group
 			if group == "" {
 				group = "core"
+			}
+			if !filter.Matches(gvk.Kind, group, gvk.Version) {
+				continue
 			}
 			schema := standaloneSchema(def, defs, closure)
 

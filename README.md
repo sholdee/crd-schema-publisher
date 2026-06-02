@@ -387,7 +387,7 @@ Commands:
 | `convert`                 | Supports comma-separated, case-insensitive `--kind`, `--group`, and `--version` filters for CRD YAML and OpenAPI inputs.                                                                             |
 | `convert`                 | Supports `--file`/`-f`, non-recursive `--dir`/`-d` YAML loading, optional `--render`, and `--base-path` for rendered links.                                                                          |
 | `convert`                 | `--openapi` converts a Kubernetes OpenAPI v2 (swagger) document of built-in types into self-contained per-kind schemas, combinable with `--file`/`--dir` to render CRDs and built-ins into one site. |
-| `convert`                 | `--kustomize` explicitly publishes kustomize's `Kustomization` schema, reflected from the pinned `sigs.k8s.io/kustomize/api` types. It is not filtered.                                               |
+| `convert`                 | `--kustomize` explicitly publishes kustomize's `Kustomization` schema, reflected from the pinned `sigs.k8s.io/kustomize/api` types. It is not filtered.                                              |
 
 ## 📋 Using Your Schemas
 

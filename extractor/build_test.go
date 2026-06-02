@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/sholdee/crd-schema-publisher/diagnostics"
+	"github.com/sholdee/crd-schema-publisher/schemametadata"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
@@ -31,6 +32,37 @@ const buildSiteOpenAPI = `{
       "properties": {
         "apiVersion": {"type": "string"},
         "kind": {"type": "string"}
+      }
+    }
+  }
+}`
+
+const buildSiteOpenAPIWithCRDs = `{
+  "definitions": {
+    "io.k8s.api.core.v1.Pod": {
+      "type": "object",
+      "x-kubernetes-group-version-kind": [{"group": "", "version": "v1", "kind": "Pod"}],
+      "properties": {
+        "apiVersion": {"type": "string"},
+        "kind": {"type": "string"}
+      }
+    },
+    "io.example.v1.Test": {
+      "type": "object",
+      "x-kubernetes-group-version-kind": [{"group": "example.io", "version": "v1", "kind": "Test"}],
+      "properties": {
+        "apiVersion": {"type": "string"},
+        "kind": {"type": "string"},
+        "openapiOnly": {"type": "string"}
+      }
+    },
+    "io.example.v1.TestList": {
+      "type": "object",
+      "x-kubernetes-group-version-kind": [{"group": "example.io", "version": "v1", "kind": "TestList"}],
+      "properties": {
+        "apiVersion": {"type": "string"},
+        "kind": {"type": "string"},
+        "items": {"type": "array"}
       }
     }
   }
@@ -340,6 +372,51 @@ func TestBuildSite_MergesCRDsBuiltinsAndKustomizeKindsManifest(t *testing.T) {
 		if kinds[path] != kind {
 			t.Fatalf("expected kinds[%q]=%q, got %q in %v", path, kind, kinds[path], kinds)
 		}
+	}
+}
+
+func TestBuildSite_IncludeBuiltinsSkipsOpenAPICRDDefinitions(t *testing.T) {
+	outputDir := t.TempDir()
+
+	result, err := BuildSite(SiteBuildOptions{
+		Lister:          &fakeLister{crds: []apiextensionsv1.CustomResourceDefinition{fakeCRD()}},
+		OutputDir:       outputDir,
+		IncludeBuiltins: true,
+		OpenAPISource:   fakeOpenAPISource{raw: []byte(buildSiteOpenAPIWithCRDs)},
+	})
+	if err != nil {
+		t.Fatalf("BuildSite error: %v", err)
+	}
+	if result.CRDCount != 1 || result.SchemaCount != 2 {
+		t.Fatalf("expected CRDCount=1 SchemaCount=2, got CRDCount=%d SchemaCount=%d", result.CRDCount, result.SchemaCount)
+	}
+	assertCRDPreferredOverOpenAPI(t, filepath.Join(outputDir, "current"))
+}
+
+func assertCRDPreferredOverOpenAPI(t *testing.T, dir string) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, "example.io", "test_v1.json"))
+	if err != nil {
+		t.Fatalf("reading CRD schema: %v", err)
+	}
+	if !strings.Contains(string(data), `"spec"`) {
+		t.Fatalf("expected CRD schema to remain in primary path, got:\n%s", data)
+	}
+	if strings.Contains(string(data), "openapiOnly") {
+		t.Fatalf("expected OpenAPI CRD definition not to overwrite primary CRD schema:\n%s", data)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "example.io", "testlist_v1.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected CRD List OpenAPI schema to be skipped, got err=%v", err)
+	}
+	metadata := readSchemaMetadata(t, dir)
+	if got := metadata["example.io/test_v1.json"].Source; got != schemametadata.SchemaSourceCRD {
+		t.Fatalf("expected CRD metadata source, got %q in %v", got, metadata)
+	}
+	if got := metadata["core/pod_v1.json"].Source; got != schemametadata.SchemaSourceBuiltin {
+		t.Fatalf("expected Pod metadata source builtin, got %q in %v", got, metadata)
+	}
+	if _, ok := metadata["example.io/testlist_v1.json"]; ok {
+		t.Fatalf("expected CRD List metadata to be skipped, got %v", metadata)
 	}
 }
 

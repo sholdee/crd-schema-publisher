@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/sholdee/crd-schema-publisher/extractor"
+	"github.com/sholdee/crd-schema-publisher/schemametadata"
 	"github.com/sholdee/crd-schema-publisher/site"
 )
 
@@ -229,60 +230,73 @@ func copyPreviewFile(srcPath, dstPath string, mode os.FileMode) error {
 
 func scaffoldSampleData(dir string) error {
 	type sampleSchema struct {
-		file string
-		kind string
+		file   string
+		kind   string
+		source schemametadata.SchemaSource
 	}
 
 	sampleGroups := map[string][]sampleSchema{
 		"cert-manager.io": {
-			{file: "certificate_v1.json", kind: "Certificate"},
-			{file: "clusterissuer_v1.json", kind: "ClusterIssuer"},
-			{file: "issuer_v1.json", kind: "Issuer"},
+			{file: "certificate_v1.json", kind: "Certificate", source: schemametadata.SchemaSourceCRD},
+			{file: "clusterissuer_v1.json", kind: "ClusterIssuer", source: schemametadata.SchemaSourceCRD},
+			{file: "issuer_v1.json", kind: "Issuer", source: schemametadata.SchemaSourceCRD},
 		},
 		"monitoring.coreos.com": {
-			{file: "alertmanager_v1.json", kind: "Alertmanager"},
-			{file: "podmonitor_v1.json", kind: "PodMonitor"},
-			{file: "prometheus_v1.json", kind: "Prometheus"},
-			{file: "servicemonitor_v1.json", kind: "ServiceMonitor"},
+			{file: "alertmanager_v1.json", kind: "Alertmanager", source: schemametadata.SchemaSourceCRD},
+			{file: "podmonitor_v1.json", kind: "PodMonitor", source: schemametadata.SchemaSourceCRD},
+			{file: "prometheus_v1.json", kind: "Prometheus", source: schemametadata.SchemaSourceCRD},
+			{file: "servicemonitor_v1.json", kind: "ServiceMonitor", source: schemametadata.SchemaSourceCRD},
 		},
 		"helm.toolkit.fluxcd.io": {
-			{file: "helmrelease_v2.json", kind: "HelmRelease"},
-			{file: "helmrelease_v2beta1.json", kind: "HelmRelease"},
+			{file: "helmrelease_v2.json", kind: "HelmRelease", source: schemametadata.SchemaSourceCRD},
+			{file: "helmrelease_v2beta1.json", kind: "HelmRelease", source: schemametadata.SchemaSourceCRD},
 		},
 		"source.toolkit.fluxcd.io": {
-			{file: "gitrepository_v1.json", kind: "GitRepository"},
-			{file: "helmchart_v1.json", kind: "HelmChart"},
-			{file: "helmrepository_v1.json", kind: "HelmRepository"},
-			{file: "ocirepository_v1beta2.json", kind: "OCIRepository"},
+			{file: "gitrepository_v1.json", kind: "GitRepository", source: schemametadata.SchemaSourceCRD},
+			{file: "helmchart_v1.json", kind: "HelmChart", source: schemametadata.SchemaSourceCRD},
+			{file: "helmrepository_v1.json", kind: "HelmRepository", source: schemametadata.SchemaSourceCRD},
+			{file: "ocirepository_v1beta2.json", kind: "OCIRepository", source: schemametadata.SchemaSourceCRD},
 		},
 		"kustomize.toolkit.fluxcd.io": {
-			{file: "kustomization_v1.json", kind: "Kustomization"},
+			{file: "kustomization_v1.json", kind: "Kustomization", source: schemametadata.SchemaSourceCRD},
 		},
 		"cilium.io": {
-			{file: "ciliumnetworkpolicy_v2.json", kind: "CiliumNetworkPolicy"},
-			{file: "ciliumclusterwidenetworkpolicy_v2.json", kind: "CiliumClusterwideNetworkPolicy"},
-			{file: "ciliumendpoint_v2.json", kind: "CiliumEndpoint"},
+			{file: "ciliumnetworkpolicy_v2.json", kind: "CiliumNetworkPolicy", source: schemametadata.SchemaSourceCRD},
+			{file: "ciliumclusterwidenetworkpolicy_v2.json", kind: "CiliumClusterwideNetworkPolicy", source: schemametadata.SchemaSourceCRD},
+			{file: "ciliumendpoint_v2.json", kind: "CiliumEndpoint", source: schemametadata.SchemaSourceCRD},
 		},
 		"traefik.io": {
-			{file: "ingressroute_v1alpha1.json", kind: "IngressRoute"},
-			{file: "middleware_v1alpha1.json", kind: "Middleware"},
-			{file: "tlsoption_v1alpha1.json", kind: "TLSOption"},
+			{file: "ingressroute_v1alpha1.json", kind: "IngressRoute", source: schemametadata.SchemaSourceCRD},
+			{file: "middleware_v1alpha1.json", kind: "Middleware", source: schemametadata.SchemaSourceCRD},
+			{file: "tlsoption_v1alpha1.json", kind: "TLSOption", source: schemametadata.SchemaSourceCRD},
 		},
 		"external-secrets.io": {
-			{file: "externalsecret_v1beta1.json", kind: "ExternalSecret"},
-			{file: "clustersecretstore_v1beta1.json", kind: "ClusterSecretStore"},
-			{file: "secretstore_v1beta1.json", kind: "SecretStore"},
+			{file: "externalsecret_v1beta1.json", kind: "ExternalSecret", source: schemametadata.SchemaSourceCRD},
+			{file: "clustersecretstore_v1beta1.json", kind: "ClusterSecretStore", source: schemametadata.SchemaSourceCRD},
+			{file: "secretstore_v1beta1.json", kind: "SecretStore", source: schemametadata.SchemaSourceCRD},
 		},
 		"metallb.io": {
-			{file: "ipaddresspool_v1beta1.json", kind: "IPAddressPool"},
-			{file: "l2advertisement_v1beta1.json", kind: "L2Advertisement"},
+			{file: "ipaddresspool_v1beta1.json", kind: "IPAddressPool", source: schemametadata.SchemaSourceCRD},
+			{file: "l2advertisement_v1beta1.json", kind: "L2Advertisement", source: schemametadata.SchemaSourceCRD},
 		},
 		"volsync.backube": {
-			{file: "replicationsource_v1alpha1.json", kind: "ReplicationSource"},
-			{file: "replicationdestination_v1alpha1.json", kind: "ReplicationDestination"},
+			{file: "replicationsource_v1alpha1.json", kind: "ReplicationSource", source: schemametadata.SchemaSourceCRD},
+			{file: "replicationdestination_v1alpha1.json", kind: "ReplicationDestination", source: schemametadata.SchemaSourceCRD},
+		},
+		"core": {
+			{file: "pod_v1.json", kind: "Pod", source: schemametadata.SchemaSourceBuiltin},
+			{file: "service_v1.json", kind: "Service", source: schemametadata.SchemaSourceBuiltin},
+		},
+		"apps": {
+			{file: "deployment_v1.json", kind: "Deployment", source: schemametadata.SchemaSourceBuiltin},
+			{file: "statefulset_v1.json", kind: "StatefulSet", source: schemametadata.SchemaSourceBuiltin},
+		},
+		"kustomize.config.k8s.io": {
+			{file: "kustomization_v1beta1.json", kind: "Kustomization", source: schemametadata.SchemaSourceKustomize},
 		},
 	}
 	kinds := make(map[string]string)
+	metadata := make(map[string]schemametadata.SchemaMetadataEntry)
 	for group, files := range sampleGroups {
 		groupDir := filepath.Join(dir, group)
 		if err := os.MkdirAll(groupDir, 0o755); err != nil {
@@ -293,10 +307,15 @@ func scaffoldSampleData(dir string) error {
 			if err := os.WriteFile(path, []byte(`{"type":"object"}`), 0o644); err != nil {
 				return fmt.Errorf("writing %s/%s: %w", group, schema.file, err)
 			}
-			kinds[filepath.ToSlash(filepath.Join(group, schema.file))] = schema.kind
+			relPath := filepath.ToSlash(filepath.Join(group, schema.file))
+			kinds[relPath] = schema.kind
+			metadata[relPath] = schemametadata.SchemaMetadataEntry{
+				Kind:   schema.kind,
+				Source: schema.source,
+			}
 		}
 	}
-	manifestDir := filepath.Join(dir, "_meta")
+	manifestDir := filepath.Join(dir, schemametadata.MetadataDirName)
 	if err := os.MkdirAll(manifestDir, 0o755); err != nil {
 		return fmt.Errorf("creating metadata dir: %w", err)
 	}
@@ -304,8 +323,15 @@ func scaffoldSampleData(dir string) error {
 	if err != nil {
 		return fmt.Errorf("encoding kind manifest: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(manifestDir, "kinds.json"), append(manifestBytes, '\n'), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(manifestDir, schemametadata.KindsManifestName), append(manifestBytes, '\n'), 0o644); err != nil {
 		return fmt.Errorf("writing kind manifest: %w", err)
+	}
+	metadataBytes, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encoding schema metadata manifest: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(manifestDir, schemametadata.SchemaMetadataManifestName), append(metadataBytes, '\n'), 0o644); err != nil {
+		return fmt.Errorf("writing schema metadata manifest: %w", err)
 	}
 	return nil
 }

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sholdee/crd-schema-publisher/schemametadata"
+
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -76,7 +78,25 @@ func TestWriteSchemas_CreatesGroupDirAndFile(t *testing.T) {
 	if err := json.Unmarshal(data, &schema); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	// After conversion, type may be "object" or ["object", "null"]
+	assertSchemaTypeIncludesObject(t, schema)
+	kinds := readKindManifest(t, tmpDir)
+	if got := kinds["example.io/test_v1.json"]; got != "Test" {
+		t.Fatalf("expected kind manifest to contain original Kind, got %q", got)
+	}
+	metadata := readSchemaMetadata(t, tmpDir)
+	entry := metadata["example.io/test_v1.json"]
+	if entry.Kind != "Test" || entry.Source != schemametadata.SchemaSourceCRD {
+		t.Fatalf("expected CRD schema metadata, got %#v", entry)
+	}
+	if _, err := os.Stat(filepath.Join(tmpDir, "example.io", "test_v1.kind")); !os.IsNotExist(err) {
+		t.Fatalf("expected per-schema .kind sidecar to be removed, got err=%v", err)
+	}
+}
+
+func assertSchemaTypeIncludesObject(t *testing.T, schema map[string]interface{}) {
+	t.Helper()
+
+	// After conversion, type may be "object" or ["object", "null"].
 	switch v := schema["type"].(type) {
 	case string:
 		if v != "object" {
@@ -96,9 +116,12 @@ func TestWriteSchemas_CreatesGroupDirAndFile(t *testing.T) {
 	default:
 		t.Fatalf("unexpected type field: %T %v", schema["type"], schema["type"])
 	}
+}
 
-	kindManifest := filepath.Join(tmpDir, "_meta", "kinds.json")
-	data, err = os.ReadFile(kindManifest)
+func readKindManifest(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	kindManifest := filepath.Join(dir, "_meta", "kinds.json")
+	data, err := os.ReadFile(kindManifest)
 	if err != nil {
 		t.Fatalf("kind manifest not found: %v", err)
 	}
@@ -106,12 +129,20 @@ func TestWriteSchemas_CreatesGroupDirAndFile(t *testing.T) {
 	if err := json.Unmarshal(data, &kinds); err != nil {
 		t.Fatalf("invalid kind manifest JSON: %v", err)
 	}
-	if got := kinds["example.io/test_v1.json"]; got != "Test" {
-		t.Fatalf("expected kind manifest to contain original Kind, got %q", got)
+	return kinds
+}
+
+func readSchemaMetadata(t *testing.T, dir string) map[string]schemametadata.SchemaMetadataEntry {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, "_meta", "schema-metadata.json"))
+	if err != nil {
+		t.Fatalf("reading schema metadata: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(tmpDir, "example.io", "test_v1.kind")); !os.IsNotExist(err) {
-		t.Fatalf("expected per-schema .kind sidecar to be removed, got err=%v", err)
+	var metadata map[string]schemametadata.SchemaMetadataEntry
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		t.Fatalf("parsing schema metadata: %v", err)
 	}
+	return metadata
 }
 
 func TestWriteSchemas_CreatesMasterStandalone(t *testing.T) {

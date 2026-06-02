@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/sholdee/crd-schema-publisher/extractor"
+	"github.com/sholdee/crd-schema-publisher/schemametadata"
 	"github.com/sholdee/crd-schema-publisher/watcher"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/client-go/rest"
@@ -664,6 +665,20 @@ func TestPreparePreviewSite_CreatesSampleGenerationUnderCurrent(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(serveDir, "index.html")); err != nil {
 		t.Fatalf("expected generated index under current: %v", err)
 	}
+	assertSamplePreviewKindManifest(t, serveDir)
+	assertSamplePreviewSchemaMetadata(t, serveDir)
+	if _, err := os.Stat(filepath.Join(serveDir, "monitoring.coreos.com", "servicemonitor_v1.kind")); !os.IsNotExist(err) {
+		t.Fatalf("expected sample preview to stop writing .kind sidecars, got err=%v", err)
+	}
+
+	cleanup()
+	if _, err := os.Stat(rootDir); !os.IsNotExist(err) {
+		t.Fatalf("expected cleanup to remove temp preview root, got err=%v", err)
+	}
+}
+
+func assertSamplePreviewKindManifest(t *testing.T, serveDir string) {
+	t.Helper()
 	manifestPath := filepath.Join(serveDir, "_meta", "kinds.json")
 	manifestBytes, err := os.ReadFile(manifestPath)
 	if err != nil {
@@ -676,13 +691,27 @@ func TestPreparePreviewSite_CreatesSampleGenerationUnderCurrent(t *testing.T) {
 	if got := manifest["monitoring.coreos.com/servicemonitor_v1.json"]; got != "ServiceMonitor" {
 		t.Fatalf("expected ServiceMonitor in sample kind manifest, got %q", got)
 	}
-	if _, err := os.Stat(filepath.Join(serveDir, "monitoring.coreos.com", "servicemonitor_v1.kind")); !os.IsNotExist(err) {
-		t.Fatalf("expected sample preview to stop writing .kind sidecars, got err=%v", err)
-	}
+}
 
-	cleanup()
-	if _, err := os.Stat(rootDir); !os.IsNotExist(err) {
-		t.Fatalf("expected cleanup to remove temp preview root, got err=%v", err)
+func assertSamplePreviewSchemaMetadata(t *testing.T, serveDir string) {
+	t.Helper()
+	metadataPath := filepath.Join(serveDir, "_meta", "schema-metadata.json")
+	metadataBytes, err := os.ReadFile(metadataPath)
+	if err != nil {
+		t.Fatalf("expected sample schema metadata manifest under current: %v", err)
+	}
+	var metadata map[string]schemametadata.SchemaMetadataEntry
+	if err := json.Unmarshal(metadataBytes, &metadata); err != nil {
+		t.Fatalf("parse sample schema metadata manifest: %v", err)
+	}
+	for path, wantSource := range map[string]schemametadata.SchemaSource{
+		"monitoring.coreos.com/servicemonitor_v1.json": schemametadata.SchemaSourceCRD,
+		"core/pod_v1.json": schemametadata.SchemaSourceBuiltin,
+		"kustomize.config.k8s.io/kustomization_v1beta1.json": schemametadata.SchemaSourceKustomize,
+	} {
+		if got := metadata[path].Source; got != wantSource {
+			t.Fatalf("expected sample metadata %s source %q, got %q", path, wantSource, got)
+		}
 	}
 }
 

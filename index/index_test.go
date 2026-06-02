@@ -1,6 +1,7 @@
 package index
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,15 +33,45 @@ func readFile(t *testing.T, path string) string {
 
 func writeIndexFixtureSchemas(t *testing.T, outputDir string) {
 	t.Helper()
-	groupDir := filepath.Join(outputDir, "example.io")
+	writeIndexSchema(t, outputDir, "example.io", "test_v1.json")
+	if err := os.WriteFile(filepath.Join(outputDir, "example.io", "test_v1.html"), []byte(`<html></html>`), 0o644); err != nil {
+		t.Fatalf("write schema html: %v", err)
+	}
+}
+
+func writeIndexSchema(t *testing.T, outputDir, group, name string) {
+	t.Helper()
+	groupDir := filepath.Join(outputDir, group)
 	if err := os.MkdirAll(groupDir, 0o755); err != nil {
 		t.Fatalf("mkdir group dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(groupDir, "test_v1.json"), []byte(`{"type":"object"}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(groupDir, name), []byte(`{"type":"object"}`), 0o644); err != nil {
 		t.Fatalf("write schema: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(groupDir, "test_v1.html"), []byte(`<html></html>`), 0o644); err != nil {
-		t.Fatalf("write schema html: %v", err)
+}
+
+func writeIndexMetadata(t *testing.T, outputDir string, entries map[string]string) {
+	t.Helper()
+	metaDir := filepath.Join(outputDir, "_meta")
+	if err := os.MkdirAll(metaDir, 0o755); err != nil {
+		t.Fatalf("mkdir metadata dir: %v", err)
+	}
+	manifest := map[string]struct {
+		Kind   string `json:"kind"`
+		Source string `json:"source"`
+	}{}
+	for path, source := range entries {
+		manifest[path] = struct {
+			Kind   string `json:"kind"`
+			Source string `json:"source"`
+		}{Kind: "IgnoredKind", Source: source}
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal metadata: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(metaDir, "schema-metadata.json"), data, 0o644); err != nil {
+		t.Fatalf("write metadata: %v", err)
 	}
 }
 
@@ -72,6 +103,7 @@ func TestGenerate_CreatesIndexHTML(t *testing.T) {
 		{"monitoring.coreos.com", "group name monitoring.coreos.com"},
 		{"certificate_v1.json", "schema link"},
 		{`href="/cert-manager.io/certificate_v1.json"`, "schema link href format"},
+		{`class="group" data-group="cert-manager.io"`, "flat CRD-only API group"},
 		{">2</strong> API groups", "group count stat"},
 		{">3</strong> schemas", "total schema count stat"},
 		{"JSON schemas extracted from live CustomResourceDefinitions", "precise index subtitle"},
@@ -119,6 +151,9 @@ func TestGenerate_CreatesIndexHTML(t *testing.T) {
 	if strings.Contains(html, "copy-hint") {
 		t.Error("index should use real copy buttons instead of hover-only copy hint spans")
 	}
+	if strings.Contains(html, `class="source-section"`) || strings.Contains(html, "Custom Resources") {
+		t.Error("CRD-only index should not render source section chrome")
+	}
 }
 
 func TestGenerate_IndexPageContract(t *testing.T) {
@@ -130,6 +165,7 @@ func TestGenerate_IndexPageContract(t *testing.T) {
 	page := readFile(t, filepath.Join(tmpDir, "index.html"))
 	contract := normalizeHTMLForContract(page)
 	for _, needle := range []string{
+		`<details class="group" data-group="example.io">`,
 		`href="/docs/example.io/test_v1.html"`,
 		`readHashSearchQuery`,
 		`writeHashSearchQuery`,
@@ -140,6 +176,221 @@ func TestGenerate_IndexPageContract(t *testing.T) {
 		if !strings.Contains(contract, needle) {
 			t.Fatalf("index page contract missing %q", needle)
 		}
+	}
+	if strings.Contains(contract, `class="source-section"`) {
+		t.Fatal("single-source index should not render source section wrapper")
+	}
+}
+
+func TestGenerate_MixedSourcesRenderInSourceOrder(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeIndexSchema(t, tmpDir, "kustomize.config.k8s.io", "kustomization_v1beta1.json")
+	writeIndexSchema(t, tmpDir, "core", "pod_v1.json")
+	writeIndexSchema(t, tmpDir, "cert-manager.io", "certificate_v1.json")
+	writeIndexMetadata(t, tmpDir, map[string]string{
+		"kustomize.config.k8s.io/kustomization_v1beta1.json": "kustomize",
+		"core/pod_v1.json":                    "builtin",
+		"cert-manager.io/certificate_v1.json": "crd",
+	})
+
+	if err := Generate(tmpDir, ""); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	html := readFile(t, filepath.Join(tmpDir, "index.html"))
+	crdIdx := strings.Index(html, `data-source="crd"`)
+	builtinIdx := strings.Index(html, `data-source="builtin"`)
+	kustomizeIdx := strings.Index(html, `data-source="kustomize"`)
+	if crdIdx == -1 || builtinIdx == -1 || kustomizeIdx == -1 {
+		t.Fatalf("expected all source sections, got html:\n%s", html)
+	}
+	if crdIdx >= builtinIdx || builtinIdx >= kustomizeIdx {
+		t.Fatalf("source sections rendered out of order: crd=%d builtin=%d kustomize=%d", crdIdx, builtinIdx, kustomizeIdx)
+	}
+	if !strings.Contains(html, `data-source-label="Kubernetes Built-ins"`) {
+		t.Fatal("expected built-in source label")
+	}
+	if !strings.Contains(html, `data-source-label="Kustomize"`) {
+		t.Fatal("expected kustomize source label")
+	}
+	if !strings.Contains(html, `data-source="crd" data-source-label="Custom Resources" data-default-open="true" open`) {
+		t.Fatal("CRD source should be open by default in mixed output")
+	}
+}
+
+func TestGenerate_GroupCountIsUniqueAcrossSources(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeIndexSchema(t, tmpDir, "apps", "deployment_v1.json")
+	writeIndexSchema(t, tmpDir, "apps", "custom_v1.json")
+	writeIndexMetadata(t, tmpDir, map[string]string{
+		"apps/deployment_v1.json": "builtin",
+		"apps/custom_v1.json":     "crd",
+	})
+
+	if err := Generate(tmpDir, ""); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	html := readFile(t, filepath.Join(tmpDir, "index.html"))
+	if !strings.Contains(html, ">1</strong> API groups") {
+		t.Fatal("group count should count unique API groups across source sections")
+	}
+	if !strings.Contains(html, ">2</strong> schemas") {
+		t.Fatal("schema count should still include both schemas")
+	}
+}
+
+func TestGenerate_MissingMetadataFallsBackToCustomResources(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeIndexSchema(t, tmpDir, "example.io", "test_v1.json")
+
+	if err := Generate(tmpDir, ""); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	html := readFile(t, filepath.Join(tmpDir, "index.html"))
+	if strings.Contains(html, `class="source-section"`) || strings.Contains(html, "Custom Resources") {
+		t.Fatal("single-source CRD fallback should not render source section chrome")
+	}
+	if !strings.Contains(html, `class="group" data-group="example.io"`) {
+		t.Fatal("schema without metadata should render as a flat API group")
+	}
+	if strings.Contains(html, `data-source="builtin"`) || strings.Contains(html, `data-source="kustomize"`) {
+		t.Fatal("missing metadata should not create optional source sections")
+	}
+}
+
+func TestGenerate_PartialMetadataClassifiesOnlyMatchingPaths(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeIndexSchema(t, tmpDir, "apps", "deployment_v1.json")
+	writeIndexSchema(t, tmpDir, "example.io", "test_v1.json")
+	writeIndexMetadata(t, tmpDir, map[string]string{
+		"apps/deployment_v1.json": "builtin",
+	})
+
+	if err := Generate(tmpDir, ""); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	html := readFile(t, filepath.Join(tmpDir, "index.html"))
+	crdSection := strings.Index(html, `data-source="crd"`)
+	exampleGroup := strings.Index(html, `data-group="example.io"`)
+	builtinSection := strings.Index(html, `data-source="builtin"`)
+	appsGroup := strings.Index(html, `data-group="apps"`)
+	if crdSection == -1 || exampleGroup == -1 || builtinSection == -1 || appsGroup == -1 {
+		t.Fatalf("expected CRD and built-in sections, got html:\n%s", html)
+	}
+	if crdSection >= exampleGroup || builtinSection >= appsGroup {
+		t.Fatal("partial metadata should classify only the matching path")
+	}
+}
+
+func TestGenerate_StaleMetadataForMissingFilesIgnored(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeIndexSchema(t, tmpDir, "example.io", "test_v1.json")
+	writeIndexMetadata(t, tmpDir, map[string]string{
+		"core/pod_v1.json": "builtin",
+	})
+
+	if err := Generate(tmpDir, ""); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	html := readFile(t, filepath.Join(tmpDir, "index.html"))
+	if strings.Contains(html, `data-source="builtin"`) || strings.Contains(html, "Kubernetes Built-ins") {
+		t.Fatal("stale metadata should not create a source section")
+	}
+	if strings.Contains(html, `class="source-section"`) {
+		t.Fatal("single-source stale metadata fallback should not render source section chrome")
+	}
+	if !strings.Contains(html, `class="group" data-group="example.io"`) {
+		t.Fatal("discovered schema should still render as a flat CRD fallback")
+	}
+}
+
+func TestGenerate_MalformedMetadataTreatedAsAbsent(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeIndexSchema(t, tmpDir, "core", "pod_v1.json")
+	metaDir := filepath.Join(tmpDir, "_meta")
+	if err := os.MkdirAll(metaDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(metaDir, "schema-metadata.json"), []byte(`{"core/pod_v1.json":{"source":5}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Generate(tmpDir, ""); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	html := readFile(t, filepath.Join(tmpDir, "index.html"))
+	if strings.Contains(html, `class="source-section"`) {
+		t.Fatal("single-source malformed metadata fallback should not render source section chrome")
+	}
+	if !strings.Contains(html, `class="group" data-group="core"`) {
+		t.Fatal("malformed optional metadata should be ignored")
+	}
+}
+
+func TestGenerate_UnknownSourceRendersUnknownSection(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeIndexSchema(t, tmpDir, "external.example.io", "thing_v1.json")
+	writeIndexMetadata(t, tmpDir, map[string]string{
+		"external.example.io/thing_v1.json": "external",
+	})
+
+	if err := Generate(tmpDir, ""); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	html := readFile(t, filepath.Join(tmpDir, "index.html"))
+	if strings.Contains(html, `class="source-section"`) || strings.Contains(html, "Unknown") {
+		t.Fatal("single unknown source should not render source section chrome")
+	}
+	if !strings.Contains(html, `class="group" data-group="external.example.io"`) {
+		t.Fatal("unknown source values should still render as flat API groups when they are the only source")
+	}
+}
+
+func TestGenerate_KustomizeOnlyRendersFlatGroups(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeIndexSchema(t, tmpDir, "kustomize.config.k8s.io", "kustomization_v1beta1.json")
+	writeIndexMetadata(t, tmpDir, map[string]string{
+		"kustomize.config.k8s.io/kustomization_v1beta1.json": "kustomize",
+	})
+
+	if err := Generate(tmpDir, ""); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	html := readFile(t, filepath.Join(tmpDir, "index.html"))
+	if strings.Contains(html, `class="source-section"`) || strings.Contains(html, "Kustomize") {
+		t.Fatal("single kustomize source should not render source section chrome")
+	}
+	if !strings.Contains(html, `class="group" data-group="kustomize.config.k8s.io"`) {
+		t.Fatal("single kustomize source should render flat API groups")
+	}
+}
+
+func TestGenerate_BuiltinsPlusKustomizeWithoutCRDsOpensBuiltins(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeIndexSchema(t, tmpDir, "core", "pod_v1.json")
+	writeIndexSchema(t, tmpDir, "kustomize.config.k8s.io", "kustomization_v1beta1.json")
+	writeIndexMetadata(t, tmpDir, map[string]string{
+		"core/pod_v1.json": "builtin",
+		"kustomize.config.k8s.io/kustomization_v1beta1.json": "kustomize",
+	})
+
+	if err := Generate(tmpDir, ""); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	html := readFile(t, filepath.Join(tmpDir, "index.html"))
+	if !strings.Contains(html, `data-source="builtin" data-source-label="Kubernetes Built-ins" data-default-open="true" open`) {
+		t.Fatal("built-ins should be open by default when no CRDs are present")
+	}
+	if strings.Contains(html, `data-source="kustomize" data-source-label="Kustomize" data-default-open="true" open`) {
+		t.Fatal("kustomize should be collapsed when built-ins are the default source")
 	}
 }
 

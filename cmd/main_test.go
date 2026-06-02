@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/sholdee/crd-schema-publisher/extractor"
+	"github.com/sholdee/crd-schema-publisher/schemametadata"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/client-go/rest"
 )
@@ -1228,6 +1230,112 @@ spec:
 	}
 }
 
+func TestRunConvert_CleansStaleSchemaMetadataBeforeRender(t *testing.T) {
+	dir := t.TempDir()
+	outputDir := filepath.Join(dir, "output")
+
+	specPath := writePodOpenAPIFixture(t, dir)
+	if err := runConvert([]string{"--openapi", specPath, "--output-dir", outputDir, "--render"}); err != nil {
+		t.Fatalf("first run error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "core", "pod_v1.json")); err != nil {
+		t.Fatal("expected Pod schema after first run")
+	}
+
+	userMetaPath := filepath.Join(outputDir, "_meta", "operator-notes.txt")
+	if err := os.WriteFile(userMetaPath, []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	inputFile := writeCertificateCRDFixture(t, dir)
+	if err := runConvert([]string{"--file", inputFile, "--output-dir", outputDir, "--render"}); err != nil {
+		t.Fatalf("second run error: %v", err)
+	}
+	assertStaleSchemaMetadataCleaned(t, outputDir, userMetaPath)
+}
+
+func writePodOpenAPIFixture(t *testing.T, dir string) string {
+	t.Helper()
+	specPath := filepath.Join(dir, "swagger.json")
+	openAPI := `{
+  "definitions": {
+    "io.k8s.api.core.v1.Pod": {
+      "type": "object",
+      "x-kubernetes-group-version-kind": [{"group": "", "version": "v1", "kind": "Pod"}],
+      "properties": {
+        "apiVersion": {"type": "string"},
+        "kind": {"type": "string"}
+      }
+    }
+  }
+}`
+	if err := os.WriteFile(specPath, []byte(openAPI), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return specPath
+}
+
+func writeCertificateCRDFixture(t *testing.T, dir string) string {
+	t.Helper()
+	crdYAML := `apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: certificates.cert-manager.io
+spec:
+  group: cert-manager.io
+  names:
+    kind: Certificate
+    plural: certificates
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+`
+	inputFile := filepath.Join(dir, "crd.yaml")
+	if err := os.WriteFile(inputFile, []byte(crdYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return inputFile
+}
+
+func assertStaleSchemaMetadataCleaned(t *testing.T, outputDir, userMetaPath string) {
+	t.Helper()
+	if _, err := os.Stat(filepath.Join(outputDir, "core", "pod_v1.json")); !os.IsNotExist(err) {
+		t.Fatal("expected stale Pod schema to be cleaned")
+	}
+	userBytes, err := os.ReadFile(userMetaPath)
+	if err != nil {
+		t.Fatal("expected user _meta file to survive convert cleanup")
+	}
+	if string(userBytes) != "keep me" {
+		t.Fatalf("user _meta file content changed: %q", userBytes)
+	}
+	metadataBytes, err := os.ReadFile(filepath.Join(outputDir, "_meta", "schema-metadata.json"))
+	if err != nil {
+		t.Fatal("expected fresh schema metadata manifest after second run")
+	}
+	if strings.Contains(string(metadataBytes), "core/pod_v1.json") {
+		t.Fatalf("stale built-in metadata leaked into second run:\n%s", metadataBytes)
+	}
+	if !strings.Contains(string(metadataBytes), "cert-manager.io/certificate_v1.json") {
+		t.Fatalf("expected fresh CRD metadata in second run:\n%s", metadataBytes)
+	}
+	indexBytes, err := os.ReadFile(filepath.Join(outputDir, "index.html"))
+	if err != nil {
+		t.Fatal("expected rendered index after second run")
+	}
+	if strings.Contains(string(indexBytes), "Kubernetes Built-ins") {
+		t.Fatal("expected rendered index to omit stale built-in source section")
+	}
+	if strings.Contains(string(indexBytes), "pod_v1") {
+		t.Fatal("expected rendered index to omit stale Pod schema")
+	}
+}
+
 func TestRunConvert_OpenAPIHonorsFilters(t *testing.T) {
 	dir := t.TempDir()
 	outputDir := filepath.Join(dir, "output")
@@ -1266,6 +1374,90 @@ func TestRunConvert_OpenAPIHonorsFilters(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(outputDir, "apps", "deployment_v1.json")); !os.IsNotExist(err) {
 		t.Fatal("expected Deployment schema to be filtered out")
 	}
+}
+
+func TestRunConvert_OpenAPISkipsProvidedCRDs(t *testing.T) {
+	dir := t.TempDir()
+	outputDir := filepath.Join(dir, "output")
+	inputFile := writeCertificateCRDFixture(t, dir)
+	specPath := writePodAndCertificateOpenAPIFixture(t, dir)
+
+	if err := runConvert([]string{"--file", inputFile, "--openapi", specPath, "--output-dir", outputDir}); err != nil {
+		t.Fatalf("runConvert error: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(outputDir, "cert-manager.io", "certificate_v1.json")); err != nil {
+		t.Fatal("expected provided CRD schema to exist")
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "cert-manager.io", "certificatelist_v1.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected OpenAPI CRD list schema to be skipped, got err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "core", "pod_v1.json")); err != nil {
+		t.Fatal("expected non-CRD OpenAPI schema to be emitted")
+	}
+
+	metadata := readConvertSchemaMetadata(t, outputDir)
+	if got := metadata["cert-manager.io/certificate_v1.json"].Source; got != schemametadata.SchemaSourceCRD {
+		t.Fatalf("expected provided CRD metadata source, got %q in %v", got, metadata)
+	}
+	if got := metadata["core/pod_v1.json"].Source; got != schemametadata.SchemaSourceBuiltin {
+		t.Fatalf("expected Pod metadata source builtin, got %q in %v", got, metadata)
+	}
+	if _, ok := metadata["cert-manager.io/certificatelist_v1.json"]; ok {
+		t.Fatalf("expected CRD list metadata to be skipped, got %v", metadata)
+	}
+}
+
+func writePodAndCertificateOpenAPIFixture(t *testing.T, dir string) string {
+	t.Helper()
+	specPath := filepath.Join(dir, "swagger-with-crd.json")
+	openAPI := `{
+  "definitions": {
+    "io.k8s.api.core.v1.Pod": {
+      "type": "object",
+      "x-kubernetes-group-version-kind": [{"group": "", "version": "v1", "kind": "Pod"}],
+      "properties": {
+        "apiVersion": {"type": "string"},
+        "kind": {"type": "string"}
+      }
+    },
+    "io.cert-manager.v1.Certificate": {
+      "type": "object",
+      "x-kubernetes-group-version-kind": [{"group": "cert-manager.io", "version": "v1", "kind": "Certificate"}],
+      "properties": {
+        "apiVersion": {"type": "string"},
+        "kind": {"type": "string"},
+        "openapiOnly": {"type": "string"}
+      }
+    },
+    "io.cert-manager.v1.CertificateList": {
+      "type": "object",
+      "x-kubernetes-group-version-kind": [{"group": "cert-manager.io", "version": "v1", "kind": "CertificateList"}],
+      "properties": {
+        "apiVersion": {"type": "string"},
+        "kind": {"type": "string"},
+        "items": {"type": "array"}
+      }
+    }
+  }
+}`
+	if err := os.WriteFile(specPath, []byte(openAPI), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return specPath
+}
+
+func readConvertSchemaMetadata(t *testing.T, dir string) map[string]schemametadata.SchemaMetadataEntry {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, "_meta", "schema-metadata.json"))
+	if err != nil {
+		t.Fatalf("reading schema metadata: %v", err)
+	}
+	var metadata map[string]schemametadata.SchemaMetadataEntry
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		t.Fatalf("parsing schema metadata: %v", err)
+	}
+	return metadata
 }
 
 func TestRunConvert_KustomizeExplicitOptInIgnoresFilters(t *testing.T) {

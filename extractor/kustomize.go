@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/sholdee/crd-schema-publisher/schemametadata"
+
 	"github.com/invopop/jsonschema"
 	"sigs.k8s.io/kustomize/api/types"
 )
@@ -33,8 +35,15 @@ func WriteKustomizeSchemas(outputDir string) (int, error) {
 		return 0, err
 	}
 
-	kinds := map[string]string{filepath.ToSlash(filepath.Join(group, filename)): "Kustomization"}
+	relPath := filepath.ToSlash(filepath.Join(group, filename))
+	kinds := map[string]string{relPath: "Kustomization"}
 	if err := writeKindsManifest(outputDir, kinds); err != nil {
+		return 1, err
+	}
+	metadata := map[string]schemametadata.SchemaMetadataEntry{
+		relPath: {Kind: "Kustomization", Source: schemametadata.SchemaSourceKustomize},
+	}
+	if err := writeSchemaMetadataManifest(outputDir, metadata); err != nil {
 		return 1, err
 	}
 	return 1, nil

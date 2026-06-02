@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/sholdee/crd-schema-publisher/schemametadata"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
 
 // draft04 is the JSON Schema dialect Kubernetes OpenAPI v2 definitions use.
@@ -37,12 +40,24 @@ func WriteOpenAPISchemas(openapiPath, outputDir string, filter SchemaFilter) (in
 	return WriteOpenAPISchemasFromBytes(raw, outputDir, filter)
 }
 
+func WriteOpenAPISchemasExcludingCRDs(openapiPath, outputDir string, filter SchemaFilter, crds []apiextensionsv1.CustomResourceDefinition) (int, error) {
+	raw, err := os.ReadFile(openapiPath)
+	if err != nil {
+		return 0, fmt.Errorf("reading openapi spec: %w", err)
+	}
+	return WriteOpenAPISchemasFromBytesExcludingCRDs(raw, outputDir, filter, crds)
+}
+
 func WriteOpenAPISchemasFromBytes(raw []byte, outputDir string, filter SchemaFilter) (int, error) {
+	return WriteOpenAPISchemasFromBytesExcludingCRDs(raw, outputDir, filter, nil)
+}
+
+func WriteOpenAPISchemasFromBytesExcludingCRDs(raw []byte, outputDir string, filter SchemaFilter, crds []apiextensionsv1.CustomResourceDefinition) (int, error) {
 	defs, err := parseOpenAPIDefinitions(raw)
 	if err != nil {
 		return 0, err
 	}
-	return writeOpenAPIDefinitions(defs, outputDir, filter)
+	return writeOpenAPIDefinitions(defs, outputDir, filter, openAPICRDExclusions(crds))
 }
 
 func parseOpenAPIDefinitions(raw []byte) (map[string]map[string]interface{}, error) {
@@ -62,7 +77,7 @@ func parseOpenAPIDefinitions(raw []byte) (map[string]map[string]interface{}, err
 	return defs, nil
 }
 
-func writeOpenAPIDefinitions(defs map[string]map[string]interface{}, outputDir string, filter SchemaFilter) (int, error) {
+func writeOpenAPIDefinitions(defs map[string]map[string]interface{}, outputDir string, filter SchemaFilter, exclusions map[groupVersionKind]struct{}) (int, error) {
 	var (
 		mu       sync.Mutex
 		wg       sync.WaitGroup
@@ -70,6 +85,7 @@ func writeOpenAPIDefinitions(defs map[string]map[string]interface{}, outputDir s
 		count    int
 		firstErr error
 		kinds    = make(map[string]string)
+		metadata = make(map[string]schemametadata.SchemaMetadataEntry)
 	)
 
 	for name, def := range defs {
@@ -82,11 +98,11 @@ func writeOpenAPIDefinitions(defs map[string]map[string]interface{}, outputDir s
 
 		closure := definitionClosure(name, defs)
 		for _, gvk := range gvks {
-			group := gvk.Group
-			if group == "" {
-				group = "core"
+			gvk = normalizedOpenAPIGVK(gvk)
+			if _, excluded := exclusions[gvk]; excluded {
+				continue
 			}
-			if !filter.Matches(gvk.Kind, group, gvk.Version) {
+			if !filter.Matches(gvk.Kind, gvk.Group, gvk.Version) {
 				continue
 			}
 			schema := standaloneSchema(def, defs, closure)
@@ -108,10 +124,12 @@ func writeOpenAPIDefinitions(defs map[string]map[string]interface{}, outputDir s
 				}
 
 				mu.Lock()
-				kinds[filepath.ToSlash(filepath.Join(group, filename))] = originalKind
+				relPath := filepath.ToSlash(filepath.Join(group, filename))
+				kinds[relPath] = originalKind
+				metadata[relPath] = schemametadata.SchemaMetadataEntry{Kind: originalKind, Source: schemametadata.SchemaSourceBuiltin}
 				count++
 				mu.Unlock()
-			}(schema, strings.ToLower(gvk.Kind), group, gvk.Version, gvk.Kind)
+			}(schema, strings.ToLower(gvk.Kind), gvk.Group, gvk.Version, gvk.Kind)
 		}
 	}
 
@@ -123,8 +141,40 @@ func writeOpenAPIDefinitions(defs map[string]map[string]interface{}, outputDir s
 		if err := writeKindsManifest(outputDir, kinds); err != nil {
 			return count, err
 		}
+		if err := writeSchemaMetadataManifest(outputDir, metadata); err != nil {
+			return count, err
+		}
 	}
 	return count, nil
+}
+
+func openAPICRDExclusions(crds []apiextensionsv1.CustomResourceDefinition) map[groupVersionKind]struct{} {
+	exclusions := make(map[groupVersionKind]struct{})
+	for _, crd := range crds {
+		for _, version := range crd.Spec.Versions {
+			if crd.Spec.Group == "" || crd.Spec.Names.Kind == "" || version.Name == "" {
+				continue
+			}
+			exclusions[groupVersionKind{
+				Group:   crd.Spec.Group,
+				Version: version.Name,
+				Kind:    crd.Spec.Names.Kind,
+			}] = struct{}{}
+			exclusions[groupVersionKind{
+				Group:   crd.Spec.Group,
+				Version: version.Name,
+				Kind:    crd.Spec.Names.Kind + "List",
+			}] = struct{}{}
+		}
+	}
+	return exclusions
+}
+
+func normalizedOpenAPIGVK(gvk groupVersionKind) groupVersionKind {
+	if gvk.Group == "" {
+		gvk.Group = "core"
+	}
+	return gvk
 }
 
 // groupVersionKinds reads the x-kubernetes-group-version-kind extension. A type

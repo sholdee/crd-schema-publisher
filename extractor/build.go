@@ -11,6 +11,7 @@ import (
 	"github.com/sholdee/crd-schema-publisher/diagnostics"
 	"github.com/sholdee/crd-schema-publisher/index"
 	"github.com/sholdee/crd-schema-publisher/renderer"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
 
 var (
@@ -67,6 +68,7 @@ func BuildSite(opts SiteBuildOptions) (SiteBuildResult, error) {
 	if err != nil {
 		return SiteBuildResult{}, fmt.Errorf("listing CRDs: %w", err)
 	}
+	allCRDs := crds
 	snapshot(opts.Profiler, "build.after-list-crds", "crd_count", len(crds))
 	crds = FilterCRDs(crds, opts.Filter)
 	snapshot(opts.Profiler, "build.after-filter-crds", "crd_count", len(crds), "filter_active", opts.Filter.Active())
@@ -91,7 +93,7 @@ func BuildSite(opts SiteBuildOptions) (SiteBuildResult, error) {
 	}
 	snapshot(opts.Profiler, "build.after-write-schemas", "schema_count", count, "generation", generationName)
 
-	extraCount, err := writeOptionalSchemas(ctx, opts, generationDir, generationName)
+	extraCount, err := writeOptionalSchemas(ctx, opts, generationDir, generationName, allCRDs)
 	if err != nil {
 		return SiteBuildResult{}, err
 	}
@@ -141,10 +143,10 @@ func shouldSkipBuild(crdCount int, opts SiteBuildOptions) bool {
 	return crdCount == 0 && !opts.Filter.Active() && !opts.IncludeBuiltins && !opts.IncludeKustomize
 }
 
-func writeOptionalSchemas(ctx context.Context, opts SiteBuildOptions, generationDir, generationName string) (int, error) {
+func writeOptionalSchemas(ctx context.Context, opts SiteBuildOptions, generationDir, generationName string, allCRDs []apiextensionsv1.CustomResourceDefinition) (int, error) {
 	count := 0
 	if opts.IncludeBuiltins {
-		n, err := writeBuiltinSchemas(ctx, opts.OpenAPISource, generationDir, opts.Filter)
+		n, err := writeBuiltinSchemas(ctx, opts.OpenAPISource, generationDir, opts.Filter, allCRDs)
 		if err != nil {
 			return 0, err
 		}
@@ -163,7 +165,7 @@ func writeOptionalSchemas(ctx context.Context, opts SiteBuildOptions, generation
 	return count, nil
 }
 
-func writeBuiltinSchemas(ctx context.Context, source OpenAPISource, generationDir string, filter SchemaFilter) (int, error) {
+func writeBuiltinSchemas(ctx context.Context, source OpenAPISource, generationDir string, filter SchemaFilter, allCRDs []apiextensionsv1.CustomResourceDefinition) (int, error) {
 	if source == nil {
 		return 0, fmt.Errorf("writing built-in schemas: OpenAPI source is required")
 	}
@@ -171,7 +173,7 @@ func writeBuiltinSchemas(ctx context.Context, source OpenAPISource, generationDi
 	if err != nil {
 		return 0, fmt.Errorf("fetching built-in OpenAPI: %w", err)
 	}
-	n, err := WriteOpenAPISchemasFromBytes(raw, generationDir, filter)
+	n, err := WriteOpenAPISchemasFromBytesExcludingCRDs(raw, generationDir, filter, allCRDs)
 	if err != nil {
 		return 0, fmt.Errorf("writing built-in schemas: %w", err)
 	}

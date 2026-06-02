@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/sholdee/crd-schema-publisher/schemametadata"
 )
 
 func TestWriteKustomizeSchemas(t *testing.T) {
@@ -43,5 +45,10 @@ func TestWriteKustomizeSchemas(t *testing.T) {
 	}
 	if kinds["kustomize.config.k8s.io/kustomization_v1beta1.json"] != "Kustomization" {
 		t.Fatalf("expected kinds manifest entry, got %v", kinds)
+	}
+	metadata := readSchemaMetadata(t, dir)
+	entry := metadata["kustomize.config.k8s.io/kustomization_v1beta1.json"]
+	if entry.Kind != "Kustomization" || entry.Source != schemametadata.SchemaSourceKustomize {
+		t.Fatalf("expected Kustomize schema metadata, got %#v", entry)
 	}
 }

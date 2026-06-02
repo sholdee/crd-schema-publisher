@@ -382,6 +382,7 @@ Commands:
 | `extract` | Supports `--context`, `--base-path`, and `--skip-render`. |
 | `convert` | Supports comma-separated, case-insensitive `--kind`, `--group`, and `--version` filters. |
 | `convert` | Supports `--file`/`-f`, non-recursive `--dir`/`-d` YAML loading, optional `--render`, and `--base-path` for rendered links. |
+| `convert` | `--openapi` converts a Kubernetes OpenAPI v2 (swagger) document of built-in types into self-contained per-kind schemas, combinable with `--file`/`--dir` to render CRDs and built-ins into one site. |
 
 ## 📋 Using Your Schemas
 
@@ -557,6 +558,13 @@ For cluster-backed commands (`run`, `extract`, and `watch`), the pipeline is:
 8. Uploads the active generation to Cloudflare Pages via the direct upload API (BLAKE3 content hashing, batched uploads with retry)
 
 The `convert` command skips Kubernetes access and reads CRD YAML from `--file`/`-f`, stdin (`-f -`), and/or a non-recursive `--dir`/`-d`. It applies the same schema transforms and writes flat output directly to `--output-dir`/`-o`; with `--render`, it also renders HTML pages and an index.
+
+`--openapi <swagger.json>` converts Kubernetes' built-in (non-CRD) types from an OpenAPI v2 document (e.g. `kubectl get --raw /openapi/v2`). Each type declaring a group/version/kind becomes a self-contained `<group>/<kind>_<version>.json`, with referenced definitions bundled inline. It can be combined with `--file`/`--dir` to render CRDs and built-ins into one site.
+
+```sh
+kubectl get --raw /openapi/v2 > swagger.json
+crd-schema-publisher convert --openapi swagger.json -o ./schemas --render
+```
 
 ## 🔧 Development
 

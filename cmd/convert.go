@@ -189,6 +189,7 @@ func runConvert(args []string) error {
 	stringFlagWithAlias(fs, &fileFlag, "file", "f", "", "CRD YAML file(s), comma-separated (use - for stdin)")
 	var dirFlag string
 	stringFlagWithAlias(fs, &dirFlag, "dir", "d", "", "directory containing CRD YAML files")
+	openapiFlag := fs.String("openapi", "", "Kubernetes OpenAPI v2 (swagger) file; converts built-in types (combinable with --file/--dir)")
 	var outputDir string
 	stringFlagWithAlias(fs, &outputDir, "output-dir", "o", "", "output directory for JSON schemas (required)")
 	basePath := fs.String("base-path", os.Getenv("BASE_PATH"), "URL path prefix for subpath deployments")
@@ -207,31 +208,46 @@ func runConvert(args []string) error {
 	if err := extractor.ValidateOutputDir(outputDir); err != nil {
 		return err
 	}
-	if fileFlag == "" && dirFlag == "" {
-		return fmt.Errorf("at least one of --file or --dir is required")
+	if fileFlag == "" && dirFlag == "" && *openapiFlag == "" {
+		return fmt.Errorf("one of --file, --dir, or --openapi is required")
 	}
 
-	crds, err := loadCRDs(fileFlag, dirFlag)
-	if err != nil {
-		return err
+	var crds []apiextensionsv1.CustomResourceDefinition
+	if fileFlag != "" || dirFlag != "" {
+		loaded, err := loadCRDs(fileFlag, dirFlag)
+		if err != nil {
+			return err
+		}
+		crds = extractor.FilterCRDs(loaded, extractor.ParseFilter(*kind, *group, *version))
 	}
-
-	crds = extractor.FilterCRDs(crds, extractor.ParseFilter(*kind, *group, *version))
 
 	if err := cleanConvertArtifacts(outputDir); err != nil {
 		return fmt.Errorf("preparing output directory: %w", err)
 	}
 
-	if len(crds) == 0 {
+	if len(crds) == 0 && *openapiFlag == "" {
 		slog.Info("no CRDs matched filters")
 		return nil
 	}
 
 	preExisting := snapshotFiles(outputDir)
 
-	count, err := extractor.WriteSchemas(crds, outputDir)
-	if err != nil {
-		return fmt.Errorf("writing schemas: %w", err)
+	// CRD and OpenAPI inputs can be combined; both write into outputDir and
+	// their kinds manifests merge.
+	var count int
+	if len(crds) > 0 {
+		n, err := extractor.WriteSchemas(crds, outputDir)
+		if err != nil {
+			return fmt.Errorf("writing schemas: %w", err)
+		}
+		count += n
+	}
+	if *openapiFlag != "" {
+		n, err := extractor.WriteOpenAPISchemas(*openapiFlag, outputDir)
+		if err != nil {
+			return fmt.Errorf("writing openapi schemas: %w", err)
+		}
+		count += n
 	}
 
 	normalizedBasePath := normalizeBasePath(*basePath)

@@ -36,8 +36,12 @@ func newSiteReadyChecker(outputDir string) func() bool {
 }
 
 func runLeader(ctx context.Context, cfg Config) {
-	// Set up CRD informer
 	trigger := make(chan struct{}, 1)
+	controller := newCRDController(ctx, cfg, trigger)
+	runLeaderWithController(ctx, cfg, trigger, controller)
+}
+
+func newCRDController(ctx context.Context, cfg Config, trigger chan struct{}) cache.Controller {
 	lw := &cache.ListWatch{
 		ListFunc: func(opts metav1.ListOptions) (k8sruntime.Object, error) {
 			return cfg.Client.ApiextensionsV1().CustomResourceDefinitions().List(ctx, opts)
@@ -58,13 +62,18 @@ func runLeader(ctx context.Context, cfg Config) {
 		ObjectType:    &apiextensionsv1.CustomResourceDefinition{},
 		Handler:       notify,
 	})
+	return controller
+}
 
+func runLeaderWithController(ctx context.Context, cfg Config, trigger chan struct{}, controller cache.Controller) {
 	go controller.Run(ctx.Done())
 	if !cache.WaitForCacheSync(ctx.Done(), controller.HasSynced) {
 		slog.Error("failed to sync informer cache")
 		return
 	}
 	slog.Info("CRD informer synced, watching for changes")
+	// Publish once after sync so zero-CRD clusters can still emit optional schemas.
+	signalTrigger(trigger)
 
 	debounceLoop(trigger, cfg.Debounce, func() error {
 		cycleCfg := cfg

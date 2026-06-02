@@ -22,6 +22,7 @@ import (
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/cache"
 )
 
 // --- helpers ---
@@ -245,6 +246,61 @@ func startDebounceWithClock(trigger <-chan struct{}, duration time.Duration, pub
 		debounceLoopWithClock(trigger, duration, publish, m, done, clock)
 	}()
 	return loopDone
+}
+
+type syncedController struct{}
+
+func (syncedController) Run(stopCh <-chan struct{}) {
+	<-stopCh
+}
+
+func (syncedController) RunWithContext(ctx context.Context) {
+	<-ctx.Done()
+}
+
+func (syncedController) HasSynced() bool {
+	return true
+}
+
+func (syncedController) HasSyncedChecker() cache.DoneChecker {
+	return nil
+}
+
+func (syncedController) LastSyncResourceVersion() string {
+	return ""
+}
+
+// --- lifecycle tests ---
+
+func TestRunLeader_PublishesOptionalSchemasWithZeroCRDs(t *testing.T) {
+	t.Setenv("SKIP_RENDER", "true")
+	dir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg := Config{
+		OutputDir:        dir,
+		CRDLister:        &fakeLister{},
+		Debounce:         time.Hour,
+		Metrics:          metrics.New(),
+		IncludeBuiltins:  true,
+		IncludeKustomize: true,
+		OpenAPISource:    &recordingOpenAPISource{raw: []byte(watcherOpenAPI)},
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runLeaderWithController(ctx, cfg, make(chan struct{}, 1), syncedController{})
+	}()
+
+	waitUntil(t, time.Second, func() bool {
+		_, podErr := os.Stat(filepath.Join(dir, "current", "core", "pod_v1.json"))
+		_, kustomizeErr := os.Stat(filepath.Join(dir, "current", "kustomize.config.k8s.io", "kustomization_v1beta1.json"))
+		return podErr == nil && kustomizeErr == nil
+	})
+	cancel()
+	waitForClosed(t, done)
 }
 
 // --- debounce tests ---

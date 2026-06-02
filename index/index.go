@@ -1,6 +1,7 @@
 package index
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sholdee/crd-schema-publisher/schemametadata"
 	"github.com/sholdee/crd-schema-publisher/theme"
 )
 
@@ -23,15 +25,30 @@ type groupData struct {
 	Schemas []schemaEntry
 }
 
+type sourceSectionData struct {
+	Source        string
+	Label         string
+	OpenByDefault bool
+	Groups        []groupData
+	Count         int
+}
+
 type indexData struct {
-	Groups     []groupData
+	Sources    []sourceSectionData
 	GroupCount int
 	TotalCount int
 	UpdatedAt  string
 	BasePath   string
 }
 
-const metadataDirName = "_meta"
+const sourceUnknown = "unknown"
+
+var orderedSources = []string{
+	string(schemametadata.SchemaSourceCRD),
+	string(schemametadata.SchemaSourceBuiltin),
+	string(schemametadata.SchemaSourceKustomize),
+	sourceUnknown,
+}
 
 var indexTemplate = `<!DOCTYPE html>
 <html lang="en">
@@ -104,6 +121,19 @@ var indexTemplate = `<!DOCTYPE html>
   .group summary:hover { background: var(--surface-hover-background); }
   .group summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
   .usage-section summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
+  .source-section { margin-bottom: 1rem; }
+  .source-section > summary {
+    padding: 0.7rem 0.2rem; cursor: pointer; font-weight: 700;
+    font-size: 0.95rem; list-style: none; display: flex; align-items: center; gap: 0.5rem;
+    border-bottom: 1px solid var(--border); color: var(--fg);
+  }
+  .source-section > summary::-webkit-details-marker { display: none; }
+  .source-section > summary::before { content: "▸"; color: var(--fg); font-size: 0.875rem; transition: transform 0.15s; }
+  .source-section[open] > summary::before { content: "▾"; color: var(--accent); }
+  .source-section > summary:hover { color: var(--accent); }
+  .source-section > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
+  .source-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .source-groups { padding-top: 0.6rem; }
   .group-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .badge {
     background: var(--accent-dim); color: var(--accent);
@@ -207,8 +237,13 @@ metadata:
 <div class="visually-hidden" id="search-status" role="status" aria-live="polite" aria-atomic="true"></div>
 <div class="toolbar"><button id="toggle-all">Expand all</button></div>
 <div id="groups">
+{{range .Sources}}
+{{$source := .Source}}
+<details class="source-section" data-source="{{.Source}}" data-source-label="{{.Label}}" data-default-open="{{.OpenByDefault}}"{{if .OpenByDefault}} open{{end}}>
+<summary><span class="source-label">{{.Label}}</span> <span class="badge source-badge">{{.Count}}</span></summary>
+<div class="source-groups">
 {{range .Groups}}
-<details class="group" data-group="{{.Name}}">
+<details class="group" data-source="{{$source}}" data-group="{{.Name}}">
 <summary><span class="group-name">{{.Name}}</span> <span class="badge">{{len .Schemas}}</span></summary>
 <div class="schemas">
 {{range .Schemas}}<div class="schema-row" data-schema="{{.Name}}"><a href="{{$.BasePath}}/{{.HTMLPath}}" data-url="{{$.BasePath}}/{{.Path}}">{{.Name}}</a><button type="button" class="schema-copy" data-url="{{$.BasePath}}/{{.Path}}" aria-label="Copy schema URL for {{.Name}}" title="Copy schema URL">copy URL</button></div>
@@ -216,7 +251,10 @@ metadata:
 </details>
 {{end}}
 </div>
-<p class="no-results" id="no-results">No matching groups or schemas.</p>
+</details>
+{{end}}
+</div>
+<p class="no-results" id="no-results">No matching sources, groups, or schemas.</p>
 </main>
 ` + theme.ToastDiv + `
 ` + theme.FooterHTML + `
@@ -232,17 +270,10 @@ metadata:
 </html>`
 
 func Generate(outputDir, basePath string) error {
-	groups, totalCount, err := collectGroups(outputDir)
+	sources, groupCount, totalCount, err := collectSourceSections(outputDir)
 	if err != nil {
 		return err
 	}
-
-	var sortedGroups []groupData
-	for name, schemas := range groups {
-		sort.Slice(schemas, func(i, j int) bool { return schemas[i].Name < schemas[j].Name })
-		sortedGroups = append(sortedGroups, groupData{Name: name, Schemas: schemas})
-	}
-	sort.Slice(sortedGroups, func(i, j int) bool { return sortedGroups[i].Name < sortedGroups[j].Name })
 
 	if err := theme.WriteFavicon(outputDir); err != nil {
 		return fmt.Errorf("writing favicon: %w", err)
@@ -260,8 +291,8 @@ func Generate(outputDir, basePath string) error {
 	defer func() { _ = f.Close() }()
 
 	if err := tmpl.Execute(f, indexData{
-		Groups:     sortedGroups,
-		GroupCount: len(sortedGroups),
+		Sources:    sources,
+		GroupCount: groupCount,
 		TotalCount: totalCount,
 		UpdatedAt:  time.Now().UTC().Format("2006-01-02 15:04 UTC"),
 		BasePath:   basePath,
@@ -271,42 +302,131 @@ func Generate(outputDir, basePath string) error {
 	return f.Close()
 }
 
-func collectGroups(outputDir string) (map[string][]schemaEntry, int, error) {
-	groups := map[string][]schemaEntry{}
+func collectSourceSections(outputDir string) ([]sourceSectionData, int, int, error) {
+	metadata := loadSchemaMetadata(outputDir)
+	sourceGroups := map[string]map[string][]schemaEntry{}
+	groupNames := map[string]struct{}{}
 
 	entries, err := os.ReadDir(outputDir)
 	if err != nil {
-		return nil, 0, fmt.Errorf("reading output dir: %w", err)
+		return nil, 0, 0, fmt.Errorf("reading output dir: %w", err)
 	}
 
 	totalCount := 0
 	for _, entry := range entries {
-		if !entry.IsDir() || entry.Name() == "master-standalone" || entry.Name() == metadataDirName {
+		if !entry.IsDir() || entry.Name() == "master-standalone" || entry.Name() == schemametadata.MetadataDirName {
 			continue
 		}
 		groupName := entry.Name()
 		groupDir := filepath.Join(outputDir, groupName)
 		files, err := os.ReadDir(groupDir)
 		if err != nil {
-			return nil, 0, fmt.Errorf("reading group dir %s: %w", groupName, err)
+			return nil, 0, 0, fmt.Errorf("reading group dir %s: %w", groupName, err)
 		}
 		for _, f := range files {
 			if f.IsDir() || !strings.HasSuffix(f.Name(), ".json") {
 				continue
 			}
-			jsonPath := groupName + "/" + f.Name()
+			jsonPath := filepath.ToSlash(filepath.Join(groupName, f.Name()))
 			htmlPath := jsonPath
 			htmlFile := strings.TrimSuffix(f.Name(), ".json") + ".html"
 			if _, err := os.Stat(filepath.Join(groupDir, htmlFile)); err == nil {
-				htmlPath = groupName + "/" + htmlFile
+				htmlPath = filepath.ToSlash(filepath.Join(groupName, htmlFile))
 			}
-			groups[groupName] = append(groups[groupName], schemaEntry{
+			source := classifySource(metadata[jsonPath])
+			if sourceGroups[source] == nil {
+				sourceGroups[source] = map[string][]schemaEntry{}
+			}
+			sourceGroups[source][groupName] = append(sourceGroups[source][groupName], schemaEntry{
 				Name:     f.Name(),
 				Path:     jsonPath,
 				HTMLPath: htmlPath,
 			})
+			groupNames[groupName] = struct{}{}
 			totalCount++
 		}
 	}
-	return groups, totalCount, nil
+
+	sections := make([]sourceSectionData, 0, len(sourceGroups))
+	for _, source := range orderedSources {
+		groups := sourceGroups[source]
+		if len(groups) == 0 {
+			continue
+		}
+		section := sourceSectionData{
+			Source: source,
+			Label:  sourceLabel(source),
+			Groups: sortedGroupData(groups),
+		}
+		for _, group := range section.Groups {
+			section.Count += len(group.Schemas)
+		}
+		sections = append(sections, section)
+	}
+	applyDefaultOpenSources(sections)
+
+	return sections, len(groupNames), totalCount, nil
+}
+
+func loadSchemaMetadata(outputDir string) map[string]schemametadata.SchemaMetadataEntry {
+	manifestPath := filepath.Join(outputDir, schemametadata.MetadataDirName, schemametadata.SchemaMetadataManifestName)
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return nil
+	}
+	var metadata map[string]schemametadata.SchemaMetadataEntry
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return nil
+	}
+	return metadata
+}
+
+func classifySource(entry schemametadata.SchemaMetadataEntry) string {
+	switch entry.Source {
+	case "", schemametadata.SchemaSourceCRD:
+		return string(schemametadata.SchemaSourceCRD)
+	case schemametadata.SchemaSourceBuiltin:
+		return string(schemametadata.SchemaSourceBuiltin)
+	case schemametadata.SchemaSourceKustomize:
+		return string(schemametadata.SchemaSourceKustomize)
+	default:
+		return sourceUnknown
+	}
+}
+
+func sourceLabel(source string) string {
+	switch source {
+	case string(schemametadata.SchemaSourceCRD):
+		return "Custom Resources"
+	case string(schemametadata.SchemaSourceBuiltin):
+		return "Kubernetes Built-ins"
+	case string(schemametadata.SchemaSourceKustomize):
+		return "Kustomize"
+	default:
+		return "Unknown"
+	}
+}
+
+func sortedGroupData(groups map[string][]schemaEntry) []groupData {
+	sortedGroups := make([]groupData, 0, len(groups))
+	for name, schemas := range groups {
+		sort.Slice(schemas, func(i, j int) bool { return schemas[i].Name < schemas[j].Name })
+		sortedGroups = append(sortedGroups, groupData{Name: name, Schemas: schemas})
+	}
+	sort.Slice(sortedGroups, func(i, j int) bool { return sortedGroups[i].Name < sortedGroups[j].Name })
+	return sortedGroups
+}
+
+func applyDefaultOpenSources(sections []sourceSectionData) {
+	if len(sections) == 0 {
+		return
+	}
+	defaultIndex := 0
+	for i := range sections {
+		if sections[i].Source == string(schemametadata.SchemaSourceCRD) {
+			defaultIndex = i
+			break
+		}
+	}
+	sections[defaultIndex].OpenByDefault = true
 }

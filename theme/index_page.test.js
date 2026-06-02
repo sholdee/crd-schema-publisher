@@ -54,7 +54,11 @@ function makeElement(id, dataset = {}) {
     dispatchEvent(event) {
       for (const fn of listeners.get(event.type) || []) fn.call(this, event);
     },
+    closest() {
+      return null;
+    },
     querySelectorAll(selector) {
+      if (selector === '.group') return this.__groups || [];
       if (selector === '.schema-row') return this.__rows || [];
       if (selector === '.schemas a') return this.__links || [];
       return [];
@@ -75,23 +79,114 @@ function optionalGoRawString(source, name) {
   return match ? match[1] : '';
 }
 
-function loadIndexPageScript({ hash = '', savedState = '', reducedMotion = false, clipboard = 'success' } = {}) {
+function defaultFixtures() {
+  return [
+    {
+      source: 'crd',
+      label: 'Custom Resources',
+      defaultOpen: true,
+      groups: [{ name: 'example.io', schemas: ['test_v1.json'] }],
+    },
+  ];
+}
+
+function mixedFixtures() {
+  return [
+    {
+      source: 'crd',
+      label: 'Custom Resources',
+      defaultOpen: true,
+      groups: [{ name: 'example.io', schemas: ['certificate_v1.json'] }],
+    },
+    {
+      source: 'builtin',
+      label: 'Kubernetes Built-ins',
+      defaultOpen: false,
+      groups: [
+        { name: 'apps', schemas: ['deployment_v1.json'] },
+        { name: 'core', schemas: ['pod_v1.json', 'service_v1.json'] },
+      ],
+    },
+    {
+      source: 'kustomize',
+      label: 'Kustomize',
+      defaultOpen: false,
+      groups: [{ name: 'kustomize.config.k8s.io', schemas: ['kustomization_v1beta1.json'] }],
+    },
+  ];
+}
+
+function buildFixtureDom(fixtures) {
+  const sources = [];
+  const groups = [];
+  const rows = [];
+  const links = [];
+  const copyButtons = [];
+  const sourceByKey = new Map();
+  const groupByKey = new Map();
+  const linkByKey = new Map();
+
+  for (const sourceDef of fixtures) {
+    const source = makeElement(`source-${sourceDef.source}`, {
+      source: sourceDef.source,
+      sourceLabel: sourceDef.label,
+      defaultOpen: sourceDef.defaultOpen ? 'true' : 'false',
+    });
+    if (sourceDef.defaultOpen) source.setAttribute('open', '');
+    source.__groups = [];
+    sources.push(source);
+    sourceByKey.set(sourceDef.source, source);
+
+    for (const groupDef of sourceDef.groups) {
+      const group = makeElement(`${sourceDef.source}-${groupDef.name}`, {
+        source: sourceDef.source,
+        group: groupDef.name,
+      });
+      group.__rows = [];
+      group.__links = [];
+      source.__groups.push(group);
+      groups.push(group);
+      groupByKey.set(`${sourceDef.source}:${groupDef.name}`, group);
+
+      for (const schema of groupDef.schemas) {
+        const url = `/docs/${groupDef.name}/${schema}`;
+        const row = makeElement(`${sourceDef.source}-${groupDef.name}-${schema}`, { schema });
+        const link = makeElement(`link-${sourceDef.source}-${groupDef.name}-${schema}`, { url });
+        const copyButton = makeElement(`copy-${sourceDef.source}-${groupDef.name}-${schema}`, { url });
+        copyButton.classList.toggle('schema-copy', true);
+        copyButton.closest = (selector) => selector === '.schema-copy' ? copyButton : null;
+        link.closest = (selector) => selector === '.schema-row a' || selector === '.schemas a' ? link : null;
+        group.__rows.push(row);
+        group.__links.push(link);
+        rows.push(row);
+        links.push(link);
+        copyButtons.push(copyButton);
+        linkByKey.set(`${sourceDef.source}:${groupDef.name}:${schema}`, link);
+      }
+    }
+  }
+
+  return { sources, groups, rows, links, copyButtons, sourceByKey, groupByKey, linkByKey };
+}
+
+function uniqueGroupCount(groups) {
+  return new Set(groups.map((group) => group.dataset.group)).size;
+}
+
+function loadIndexPageScript({
+  hash = '',
+  savedState = '',
+  reducedMotion = false,
+  clipboard = 'success',
+  fixtures = defaultFixtures(),
+} = {}) {
   const indexScript = fs.readFileSync(path.join(__dirname, 'index_page.js'), 'utf8');
   const themeSource = fs.readFileSync(path.join(__dirname, 'theme.go'), 'utf8');
   const script = `${extractGoRawString(themeSource, 'SearchHashStateJS')}\n${extractGoRawString(themeSource, 'BackToTopJS')}\n${optionalGoRawString(themeSource, 'CopyToastJS')}\n${indexScript}\n${extractGoRawString(themeSource, 'ThemeToggleJS')}`;
   const calls = { replaceState: [], localStorageWrites: [], scrolls: [], timers: [] };
   const elements = new Map();
   const documentListeners = new Map();
-
-  const row = makeElement('schema-row', { schema: 'test_v1.json' });
-  const link = makeElement('schema-link', { url: '/docs/example.io/test_v1.json' });
-  const copyButton = makeElement('schema-copy', { url: '/docs/example.io/test_v1.json' });
-  copyButton.classList.toggle('schema-copy', true);
-  copyButton.closest = (selector) => selector === '.schema-copy' ? copyButton : null;
-  link.closest = (selector) => selector === '.schema-row a' || selector === '.schemas a' ? link : null;
-  const group = makeElement('group-a', { group: 'example.io' });
-  group.__rows = [row];
-  group.__links = [link];
+  const fixtureDom = buildFixtureDom(fixtures);
 
   function element(id) {
     if (!elements.has(id)) {
@@ -105,8 +200,8 @@ function loadIndexPageScript({ hash = '', savedState = '', reducedMotion = false
   element('groups');
   element('no-results');
   element('search-status');
-  element('stat-groups').textContent = '1';
-  element('stat-schemas').textContent = '1';
+  element('stat-groups').textContent = String(uniqueGroupCount(fixtureDom.groups));
+  element('stat-schemas').textContent = String(fixtureDom.rows.length);
   element('toggle-all').textContent = 'Expand all';
   element('toast');
   element('back-to-top');
@@ -161,13 +256,14 @@ function loadIndexPageScript({ hash = '', savedState = '', reducedMotion = false
       scrollTo(...args) { calls.scrolls.push(args); },
     },
     document: {
-      body: {},
+      body: { dataset: { basePath: '/docs' } },
       documentElement: { classList: makeClassList() },
       activeElement: null,
       querySelectorAll(selector) {
-        if (selector === '.group') return [group];
-        if (selector === '.schema-row') return [row];
-        if (selector === '.schemas a') return [link];
+        if (selector === '.source-section') return fixtureDom.sources;
+        if (selector === '.group') return fixtureDom.groups;
+        if (selector === '.schema-row') return fixtureDom.rows;
+        if (selector === '.schemas a') return fixtureDom.links;
         if (selector === '.usage-content code') return [];
         return [];
       },
@@ -183,16 +279,26 @@ function loadIndexPageScript({ hash = '', savedState = '', reducedMotion = false
   context.window.SchemaSearch = {};
 
   vm.runInNewContext(script, context, { filename: 'index_page.js' });
-  return { context, calls, element, group, row, link, copyButton, storage, documentListeners };
+  return {
+    context,
+    calls,
+    element,
+    storage,
+    documentListeners,
+    ...fixtureDom,
+    source(key) { return fixtureDom.sourceByKey.get(key); },
+    group(source, group) { return fixtureDom.groupByKey.get(`${source}:${group}`); },
+    link(source, group, schema) { return fixtureDom.linkByKey.get(`${source}:${group}:${schema}`); },
+  };
 }
 
 test('index page initializes search from hash and preserves navigation state', () => {
-  const savedState = JSON.stringify({ expanded: ['example.io'], search: 'old', scroll: 10 });
+  const savedState = JSON.stringify({ sources: ['crd'], groups: ['crd:example.io'], search: 'old', scroll: 10 });
   const { calls, element, group, storage } = loadIndexPageScript({ hash: '#q=deployment', savedState });
 
   assert.equal(element('search').value, 'deployment');
   assert.deepEqual(calls.replaceState, ['#q=deployment']);
-  assert.equal(group.hasAttribute('open'), false);
+  assert.equal(group('crd', 'example.io').hasAttribute('open'), false);
   assert.equal(storage.has('indexState'), true);
 });
 
@@ -220,7 +326,7 @@ test('index page announces search result counts', () => {
   search.dispatchEvent(new Event('input'));
 
   assert.equal(element('no-results').style.display, 'block');
-  assert.equal(status.textContent, 'No matching groups or schemas.');
+  assert.equal(status.textContent, 'No matching sources, groups, or schemas.');
 
   search.value = '';
   search.dispatchEvent(new Event('input'));
@@ -228,31 +334,131 @@ test('index page announces search result counts', () => {
   assert.equal(status.textContent, '');
 });
 
-test('index page clear button follows and clears search input', () => {
-  const { calls, element } = loadIndexPageScript();
-  const search = element('search');
-  const clear = element('search-clear');
+test('index page source-only search shows all groups in matching source', () => {
+  const page = loadIndexPageScript({ fixtures: mixedFixtures() });
+  const search = page.element('search');
 
-  assert.equal(clear.hidden, true);
+  search.value = 'builtin';
+  search.dispatchEvent(new Event('input'));
 
-  search.value = 'certificate';
+  assert.equal(page.source('crd').style.display, 'none');
+  assert.equal(page.source('builtin').style.display, '');
+  assert.equal(page.source('builtin').hasAttribute('open'), true);
+  assert.equal(page.source('kustomize').style.display, 'none');
+  assert.equal(page.group('builtin', 'apps').hasAttribute('open'), true);
+  assert.equal(page.group('builtin', 'core').hasAttribute('open'), true);
+  assert.equal(page.group('builtin', 'core').__rows.every((row) => row.style.display === ''), true);
+  assert.equal(page.element('stat-groups').textContent, '2 / 4');
+  assert.equal(page.element('stat-schemas').textContent, '3 / 5');
+});
+
+test('index page group search opens only matching group unless source label matches', () => {
+  const page = loadIndexPageScript({ fixtures: mixedFixtures() });
+  const search = page.element('search');
+
+  search.value = 'core';
+  search.dispatchEvent(new Event('input'));
+
+  assert.equal(page.source('builtin').hasAttribute('open'), true);
+  assert.equal(page.group('builtin', 'core').style.display, '');
+  assert.equal(page.group('builtin', 'core').hasAttribute('open'), true);
+  assert.equal(page.group('builtin', 'apps').style.display, 'none');
+
+  search.value = 'kubernetes';
+  search.dispatchEvent(new Event('input'));
+
+  assert.equal(page.group('builtin', 'core').style.display, '');
+  assert.equal(page.group('builtin', 'apps').style.display, '');
+  assert.equal(page.group('builtin', 'core').hasAttribute('open'), true);
+  assert.equal(page.group('builtin', 'apps').hasAttribute('open'), true);
+});
+
+test('index page clear button restores default source and group state', () => {
+  const page = loadIndexPageScript({ fixtures: mixedFixtures() });
+  const search = page.element('search');
+  const clear = page.element('search-clear');
+
+  search.value = 'pod';
   search.dispatchEvent(new Event('input'));
 
   assert.equal(clear.hidden, false);
+  assert.equal(page.source('builtin').hasAttribute('open'), true);
+  assert.equal(page.group('builtin', 'core').hasAttribute('open'), true);
 
   clear.click();
 
   assert.equal(search.value, '');
   assert.equal(clear.hidden, true);
   assert.equal(search.focused, true);
-  assert.equal(calls.replaceState.at(-1), '/docs/');
+  assert.equal(page.source('crd').hasAttribute('open'), true);
+  assert.equal(page.source('builtin').hasAttribute('open'), false);
+  assert.equal(page.source('kustomize').hasAttribute('open'), false);
+  assert.equal(page.groups.some((group) => group.hasAttribute('open')), false);
+  assert.equal(page.calls.replaceState.at(-1), '/docs/');
+});
+
+test('index page expand and collapse all affects visible source sections and groups', () => {
+  const page = loadIndexPageScript({ fixtures: mixedFixtures() });
+  const toggle = page.element('toggle-all');
+
+  toggle.click();
+
+  assert.equal(toggle.textContent, 'Collapse all');
+  assert.equal(page.sources.every((source) => source.hasAttribute('open')), true);
+  assert.equal(page.groups.every((group) => group.hasAttribute('open')), true);
+
+  toggle.click();
+
+  assert.equal(toggle.textContent, 'Expand all');
+  assert.equal(page.source('crd').hasAttribute('open'), true);
+  assert.equal(page.source('builtin').hasAttribute('open'), false);
+  assert.equal(page.source('kustomize').hasAttribute('open'), false);
+  assert.equal(page.groups.every((group) => !group.hasAttribute('open')), true);
+});
+
+test('index page saves source-qualified navigation state', () => {
+  const page = loadIndexPageScript({ fixtures: mixedFixtures() });
+  page.source('builtin').setAttribute('open', '');
+  page.group('builtin', 'core').setAttribute('open', '');
+  page.context.window.scrollY = 42;
+
+  page.element('groups').click({
+    target: page.link('builtin', 'core', 'pod_v1.json'),
+    preventDefault() {},
+  });
+
+  const state = JSON.parse(page.storage.get('indexState'));
+  assert.deepEqual(state.sources, ['crd', 'builtin']);
+  assert.deepEqual(state.groups, ['builtin:core']);
+  assert.equal(state.scroll, 42);
+});
+
+test('index page restores source and group session state', () => {
+  const savedState = JSON.stringify({ sources: ['builtin'], groups: ['builtin:core'], scroll: 10 });
+  const page = loadIndexPageScript({ fixtures: mixedFixtures(), savedState });
+
+  assert.equal(page.storage.has('indexState'), false);
+  assert.equal(page.source('crd').hasAttribute('open'), false);
+  assert.equal(page.source('builtin').hasAttribute('open'), true);
+  assert.equal(page.group('builtin', 'core').hasAttribute('open'), true);
+  assert.equal(page.group('builtin', 'apps').hasAttribute('open'), false);
+  assert.deepEqual(page.calls.scrolls.at(-1), [0, 10]);
+});
+
+test('index page restores old expanded group session state as CRD groups', () => {
+  const savedState = JSON.stringify({ expanded: ['example.io'] });
+  const page = loadIndexPageScript({ fixtures: mixedFixtures(), savedState });
+
+  assert.equal(page.source('crd').hasAttribute('open'), true);
+  assert.equal(page.group('crd', 'example.io').hasAttribute('open'), true);
+  assert.equal(page.source('builtin').hasAttribute('open'), false);
 });
 
 test('index page copy button writes absolute schema URL without saving navigation state', async () => {
-  const { context, element, copyButton, storage } = loadIndexPageScript();
+  const { context, element, copyButtons, storage } = loadIndexPageScript();
   const groups = element('groups');
 
-  groups.click({ target: copyButton, preventDefault() {} });
+  groups.click({ target: copyButtons[0], preventDefault() {} });
   await Promise.resolve();
 
   assert.equal(context.__copied, 'https://schemas.example.test/docs/example.io/test_v1.json');
@@ -262,10 +468,10 @@ test('index page copy button writes absolute schema URL without saving navigatio
 });
 
 test('index page copy button reports unavailable clipboard', async () => {
-  const { context, element, copyButton } = loadIndexPageScript({ clipboard: null });
+  const { context, element, copyButtons } = loadIndexPageScript({ clipboard: null });
   const groups = element('groups');
 
-  groups.click({ target: copyButton, preventDefault() {} });
+  groups.click({ target: copyButtons[0], preventDefault() {} });
   await Promise.resolve();
 
   assert.equal(context.__copied, undefined);

@@ -248,11 +248,11 @@ helm install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-schema-publis
   -f examples/<example>/values.yaml
 ```
 
-| Example | Backend | Description |
-| ------- | ------- | ----------- |
-| [`caddy-sidecar`](examples/caddy-sidecar/values.yaml) | Local HTTP | Caddy serves schemas directly from the cluster with directory browsing and a Gateway API HTTPRoute. Adaptable to nginx or any web server. |
-| [`rclone-s3`](examples/rclone-s3/values.yaml) | S3-compatible storage | rclone syncs schemas to any S3-compatible provider (AWS S3, Backblaze B2, MinIO, Cloudflare R2, GCS) on a 60-second interval. Provider-specific configuration documented in the file header. |
-| [`git-push`](examples/git-push/values.yaml) | Git repository | Commits and pushes schema changes to a GitHub repository for GitHub Pages hosting. Works with any git host (GitLab, Gitea, Bitbucket) by adjusting the remote URL. |
+| Example                                               | Backend               | Description                                                                                                                                                                                  |
+| ----------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`caddy-sidecar`](examples/caddy-sidecar/values.yaml) | Local HTTP            | Caddy serves schemas directly from the cluster with directory browsing and a Gateway API HTTPRoute. Adaptable to nginx or any web server.                                                    |
+| [`rclone-s3`](examples/rclone-s3/values.yaml)         | S3-compatible storage | rclone syncs schemas to any S3-compatible provider (AWS S3, Backblaze B2, MinIO, Cloudflare R2, GCS) on a 60-second interval. Provider-specific configuration documented in the file header. |
+| [`git-push`](examples/git-push/values.yaml)           | Git repository        | Commits and pushes schema changes to a GitHub repository for GitHub Pages hosting. Works with any git host (GitLab, Gitea, Bitbucket) by adjusting the remote URL.                           |
 
 Each example is a self-contained values file — copy it, fill in your credentials, and install. See the comments in each file for what to customize.
 
@@ -331,31 +331,31 @@ cosign verify ghcr.io/sholdee/crd-schema-publisher:latest \
 
 ### Environment Variables
 
-Deployment/runtime configuration is primarily via environment variables. For local CLI use, `extract`, `convert`, `run`, `watch`, `upload`, and `preview` also expose command-specific flags such as `--output-dir`/`-o`. Variables marked *(watch)* apply only to watch mode deployment.
+Deployment/runtime configuration is primarily via environment variables. For local CLI use, `extract`, `convert`, `run`, `watch`, `upload`, and `preview` also expose command-specific flags such as `--output-dir`/`-o`. Variables marked _(watch)_ apply only to watch mode deployment.
 
-| Variable | Required | Default | Description |
-| -------- | -------- | ------- | ----------- |
-| `CLOUDFLARE_API_TOKEN` | Upload only | — | Cloudflare API token with Pages permissions |
-| `CLOUDFLARE_ACCOUNT_ID` | Upload only | — | Cloudflare account ID |
-| `CF_PAGES_PROJECT` | No | `kubernetes-schemas` | Cloudflare Pages project name |
-| `OUTPUT_DIR` | No | `/output` | Site output root. The active snapshot is exposed at `OUTPUT_DIR/current` |
-| `KUBECTL_CONTEXT` | No | — | Kubernetes context name (local development only) |
-| `DEBOUNCE_SECONDS` | No | `15` | Seconds to wait after last CRD event before publishing (watch mode) |
-| `POD_NAME` | Yes (watch) | — | Pod identity for leader election (set via downward API) |
-| `POD_NAMESPACE` | Yes (watch) | — | Namespace for leader lease (set via downward API) |
-| `LEASE_NAME` | No | `crd-schema-publisher` | Name of the Lease resource (watch mode) |
-| `HEALTH_PORT` | No | `8080` | Port for liveness/readiness probes (watch mode) |
-| `SERVE_SITE` | No | — | Set to `true` to serve `OUTPUT_DIR/current` from watch mode |
-| `SITE_PORT` | No | `8081` | Non-privileged static site server port when `SERVE_SITE=true` |
-| `SERVE_ACCESS_LOG` | No | — | Set to `true` to log each request served by the built-in static site server |
-| `PREVIEW_ADDR` | No | `127.0.0.1:8989` | Listen address for preview server (preview mode) |
-| `SKIP_RENDER` | No | — | Set to `true` to skip HTML schema page rendering |
-| `UPLOAD_BUCKET_SIZE_BYTES` | No | `41943040` | Cloudflare upload bucket size in bytes. Lower values reduce peak upload memory at the cost of more requests |
-| `UPLOAD_CONCURRENCY` | No | `3` | Concurrent Cloudflare upload buckets. Lower values reduce peak upload memory at the cost of slower cache-miss uploads |
-| `BASE_PATH` | No | — | URL path prefix for subpath deployments (e.g., `/iac` for GitHub Pages at `user.github.io/iac/`) |
-| `SCHEMA_FILTER_KIND` | No | — | Restrict generated schemas to matching CRD kinds, comma-separated and case-insensitive (`run`, `extract`, `watch`) |
-| `SCHEMA_FILTER_GROUP` | No | — | Restrict generated schemas to matching API groups, comma-separated and case-insensitive (`run`, `extract`, `watch`) |
-| `SCHEMA_FILTER_VERSION` | No | — | Restrict generated schemas to matching API versions, comma-separated and case-insensitive (`run`, `extract`, `watch`) |
+| Variable                   | Required    | Default                | Description                                                                                                           |
+| -------------------------- | ----------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `CLOUDFLARE_API_TOKEN`     | Upload only | —                      | Cloudflare API token with Pages permissions                                                                           |
+| `CLOUDFLARE_ACCOUNT_ID`    | Upload only | —                      | Cloudflare account ID                                                                                                 |
+| `CF_PAGES_PROJECT`         | No          | `kubernetes-schemas`   | Cloudflare Pages project name                                                                                         |
+| `OUTPUT_DIR`               | No          | `/output`              | Site output root. The active snapshot is exposed at `OUTPUT_DIR/current`                                              |
+| `KUBECTL_CONTEXT`          | No          | —                      | Kubernetes context name (local development only)                                                                      |
+| `DEBOUNCE_SECONDS`         | No          | `15`                   | Seconds to wait after last CRD event before publishing (watch mode)                                                   |
+| `POD_NAME`                 | Yes (watch) | —                      | Pod identity for leader election (set via downward API)                                                               |
+| `POD_NAMESPACE`            | Yes (watch) | —                      | Namespace for leader lease (set via downward API)                                                                     |
+| `LEASE_NAME`               | No          | `crd-schema-publisher` | Name of the Lease resource (watch mode)                                                                               |
+| `HEALTH_PORT`              | No          | `8080`                 | Port for liveness/readiness probes (watch mode)                                                                       |
+| `SERVE_SITE`               | No          | —                      | Set to `true` to serve `OUTPUT_DIR/current` from watch mode                                                           |
+| `SITE_PORT`                | No          | `8081`                 | Non-privileged static site server port when `SERVE_SITE=true`                                                         |
+| `SERVE_ACCESS_LOG`         | No          | —                      | Set to `true` to log each request served by the built-in static site server                                           |
+| `PREVIEW_ADDR`             | No          | `127.0.0.1:8989`       | Listen address for preview server (preview mode)                                                                      |
+| `SKIP_RENDER`              | No          | —                      | Set to `true` to skip HTML schema page rendering                                                                      |
+| `UPLOAD_BUCKET_SIZE_BYTES` | No          | `41943040`             | Cloudflare upload bucket size in bytes. Lower values reduce peak upload memory at the cost of more requests           |
+| `UPLOAD_CONCURRENCY`       | No          | `3`                    | Concurrent Cloudflare upload buckets. Lower values reduce peak upload memory at the cost of slower cache-miss uploads |
+| `BASE_PATH`                | No          | —                      | URL path prefix for subpath deployments (e.g., `/iac` for GitHub Pages at `user.github.io/iac/`)                      |
+| `SCHEMA_FILTER_KIND`       | No          | —                      | Restrict generated schemas to matching CRD kinds, comma-separated and case-insensitive (`run`, `extract`, `watch`)    |
+| `SCHEMA_FILTER_GROUP`      | No          | —                      | Restrict generated schemas to matching API groups, comma-separated and case-insensitive (`run`, `extract`, `watch`)   |
+| `SCHEMA_FILTER_VERSION`    | No          | —                      | Restrict generated schemas to matching API versions, comma-separated and case-insensitive (`run`, `extract`, `watch`) |
 
 Schema filters limit generated output only. In watch mode, the controller still watches all cluster CRDs and applies the filters during each publish cycle. If active filters match no CRDs, runtime builds publish an empty catalog instead of leaving stale schemas in place.
 
@@ -373,20 +373,21 @@ Commands:
   preview   Serve a local preview of the documentation site
 ```
 
-| Command(s) | Output directory behavior |
-| --- | --- |
-| `extract` | Requires explicit `--output-dir`/`-o` or `OUTPUT_DIR`; does not fall back to `/output`. |
-| `convert` | Requires `--output-dir`/`-o`; does not read `OUTPUT_DIR`. |
-| `run`, `watch`, `upload` | Accept `--output-dir`/`-o`; output root must already exist. |
-| `preview` | Uses sample data by default; reads real extracted output only when `--output-dir`/`-o` is passed explicitly. |
+| Command(s)               | Output directory behavior                                                                                    |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `extract`                | Requires explicit `--output-dir`/`-o` or `OUTPUT_DIR`; does not fall back to `/output`.                      |
+| `convert`                | Requires `--output-dir`/`-o`; does not read `OUTPUT_DIR`.                                                    |
+| `run`, `watch`, `upload` | Accept `--output-dir`/`-o`; output root must already exist.                                                  |
+| `preview`                | Uses sample data by default; reads real extracted output only when `--output-dir`/`-o` is passed explicitly. |
 
-| Command(s) | Filters and command-specific flags |
-| --- | --- |
-| `run`, `extract`, `watch` | Support comma-separated, case-insensitive `--kind`, `--group`, and `--version` filters. Defaults can also come from `SCHEMA_FILTER_KIND`, `SCHEMA_FILTER_GROUP`, and `SCHEMA_FILTER_VERSION`. |
-| `extract` | Supports `--context`, `--base-path`, and `--skip-render`. |
-| `convert` | Supports comma-separated, case-insensitive `--kind`, `--group`, and `--version` filters. |
-| `convert` | Supports `--file`/`-f`, non-recursive `--dir`/`-d` YAML loading, optional `--render`, and `--base-path` for rendered links. |
-| `convert` | `--openapi` converts a Kubernetes OpenAPI v2 (swagger) document of built-in types into self-contained per-kind schemas, combinable with `--file`/`--dir` to render CRDs and built-ins into one site. |
+| Command(s)                | Filters and command-specific flags                                                                                                                                                                   |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `run`, `extract`, `watch` | Support comma-separated, case-insensitive `--kind`, `--group`, and `--version` filters. Defaults can also come from `SCHEMA_FILTER_KIND`, `SCHEMA_FILTER_GROUP`, and `SCHEMA_FILTER_VERSION`.        |
+| `extract`                 | Supports `--context`, `--base-path`, and `--skip-render`.                                                                                                                                            |
+| `convert`                 | Supports comma-separated, case-insensitive `--kind`, `--group`, and `--version` filters.                                                                                                             |
+| `convert`                 | Supports `--file`/`-f`, non-recursive `--dir`/`-d` YAML loading, optional `--render`, and `--base-path` for rendered links.                                                                          |
+| `convert`                 | `--openapi` converts a Kubernetes OpenAPI v2 (swagger) document of built-in types into self-contained per-kind schemas, combinable with `--file`/`--dir` to render CRDs and built-ins into one site. |
+| `convert`                 | `--kustomize` publishes a schema for kustomize's `Kustomization`, reflected from the pinned `sigs.k8s.io/kustomize/api` types. Combinable with the inputs above.                                     |
 
 ## 📋 Using Your Schemas
 
@@ -410,8 +411,8 @@ Or configure schemas globally in VS Code:
 // .vscode/settings.json
 {
   "yaml.schemas": {
-    "https://kube-schemas.example.com/cert-manager.io/certificate_v1.json": ["**/certificates/*.yaml"]
-  }
+    "https://kube-schemas.example.com/cert-manager.io/certificate_v1.json": ["**/certificates/*.yaml"],
+  },
 }
 ```
 
@@ -440,16 +441,16 @@ This validates Kubernetes built-ins and CRDs against the same published schema s
 
 In watch mode, the health server exposes a `/metrics` endpoint on `HEALTH_PORT` (default 8080) in Prometheus text format.
 
-| Metric | Type | Description |
-| ------ | ---- | ----------- |
-| `crdpublisher_publish_cycle_duration_seconds` | gauge | Duration of the most recent publish cycle |
-| `crdpublisher_publish_cycle_total` | counter | Publish cycles by result (`success`, `error`) |
-| `crdpublisher_crds_discovered` | gauge | CRDs found in the most recent cycle |
-| `crdpublisher_schemas_written` | gauge | Schemas written in the most recent cycle |
-| `crdpublisher_last_successful_publish_timestamp` | gauge | Unix epoch of the last successful publish |
-| `crdpublisher_watchdog_timestamp` | gauge | Unix epoch of the last debounce loop tick |
-| `crdpublisher_publish_skipped_total` | counter | Debounce skips (publish already in progress) |
-| `crdpublisher_leader` | gauge | Whether this pod is the current leader |
+| Metric                                           | Type    | Description                                   |
+| ------------------------------------------------ | ------- | --------------------------------------------- |
+| `crdpublisher_publish_cycle_duration_seconds`    | gauge   | Duration of the most recent publish cycle     |
+| `crdpublisher_publish_cycle_total`               | counter | Publish cycles by result (`success`, `error`) |
+| `crdpublisher_crds_discovered`                   | gauge   | CRDs found in the most recent cycle           |
+| `crdpublisher_schemas_written`                   | gauge   | Schemas written in the most recent cycle      |
+| `crdpublisher_last_successful_publish_timestamp` | gauge   | Unix epoch of the last successful publish     |
+| `crdpublisher_watchdog_timestamp`                | gauge   | Unix epoch of the last debounce loop tick     |
+| `crdpublisher_publish_skipped_total`             | counter | Debounce skips (publish already in progress)  |
+| `crdpublisher_leader`                            | gauge   | Whether this pod is the current leader        |
 
 The watchdog timestamp enables dead man's switch alerting — it updates on every debounce loop tick (regardless of whether a publish occurs), so `time() - crdpublisher_watchdog_timestamp` staying fresh proves the watcher is alive. The publish timestamp separately tracks when content was last pushed.
 
@@ -557,6 +558,7 @@ For cluster-backed commands (`run`, `extract`, and `watch`), the pipeline is:
    - Allows null for optional fields (per-field precision, including optional `$ref` fields as ref-or-null `anyOf` wrappers)
 
    These transforms handle nullable fields, int-or-string types, root objects, and keyword-colliding property names. A frozen golden test locks converter output to prevent regressions.
+
 4. Writes schemas to both primary and kubeval-compatible directory formats inside a new generation snapshot
 5. Renders an interactive HTML documentation page for each schema with collapsible property trees, local `$ref` expansion, path-aware search, and autocomplete powered by a shared emitted `schema-search.js` asset
 6. Generates an HTML index grouped by API group with client-side search, schema statistics, and yaml-language-server usage examples
@@ -573,6 +575,10 @@ crd-schema-publisher convert --openapi swagger.json -o ./schemas --render
 ```
 
 Combine `--openapi` with `--file` or `--dir` when you want one local site containing both built-ins and CRDs.
+
+`--kustomize` publishes a schema for kustomize's `Kustomization` at `kustomize.config.k8s.io/kustomization_v1beta1.json`. It's a client-side type with no usable upstream schema, so it's reflected from the `sigs.k8s.io/kustomize/api` Go types pinned in this module — bumping that dependency updates the schema. Combine it with the other inputs in a single run:
+
+crd-schema-publisher convert -d ./crds --openapi swagger.json --kustomize -o ./schemas --render
 
 ## 🔧 Development
 

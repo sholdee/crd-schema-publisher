@@ -1228,6 +1228,112 @@ spec:
 	}
 }
 
+func TestRunConvert_CleansStaleSchemaMetadataBeforeRender(t *testing.T) {
+	dir := t.TempDir()
+	outputDir := filepath.Join(dir, "output")
+
+	specPath := writePodOpenAPIFixture(t, dir)
+	if err := runConvert([]string{"--openapi", specPath, "--output-dir", outputDir, "--render"}); err != nil {
+		t.Fatalf("first run error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "core", "pod_v1.json")); err != nil {
+		t.Fatal("expected Pod schema after first run")
+	}
+
+	userMetaPath := filepath.Join(outputDir, "_meta", "operator-notes.txt")
+	if err := os.WriteFile(userMetaPath, []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	inputFile := writeCertificateCRDFixture(t, dir)
+	if err := runConvert([]string{"--file", inputFile, "--output-dir", outputDir, "--render"}); err != nil {
+		t.Fatalf("second run error: %v", err)
+	}
+	assertStaleSchemaMetadataCleaned(t, outputDir, userMetaPath)
+}
+
+func writePodOpenAPIFixture(t *testing.T, dir string) string {
+	t.Helper()
+	specPath := filepath.Join(dir, "swagger.json")
+	openAPI := `{
+  "definitions": {
+    "io.k8s.api.core.v1.Pod": {
+      "type": "object",
+      "x-kubernetes-group-version-kind": [{"group": "", "version": "v1", "kind": "Pod"}],
+      "properties": {
+        "apiVersion": {"type": "string"},
+        "kind": {"type": "string"}
+      }
+    }
+  }
+}`
+	if err := os.WriteFile(specPath, []byte(openAPI), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return specPath
+}
+
+func writeCertificateCRDFixture(t *testing.T, dir string) string {
+	t.Helper()
+	crdYAML := `apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: certificates.cert-manager.io
+spec:
+  group: cert-manager.io
+  names:
+    kind: Certificate
+    plural: certificates
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+`
+	inputFile := filepath.Join(dir, "crd.yaml")
+	if err := os.WriteFile(inputFile, []byte(crdYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return inputFile
+}
+
+func assertStaleSchemaMetadataCleaned(t *testing.T, outputDir, userMetaPath string) {
+	t.Helper()
+	if _, err := os.Stat(filepath.Join(outputDir, "core", "pod_v1.json")); !os.IsNotExist(err) {
+		t.Fatal("expected stale Pod schema to be cleaned")
+	}
+	userBytes, err := os.ReadFile(userMetaPath)
+	if err != nil {
+		t.Fatal("expected user _meta file to survive convert cleanup")
+	}
+	if string(userBytes) != "keep me" {
+		t.Fatalf("user _meta file content changed: %q", userBytes)
+	}
+	metadataBytes, err := os.ReadFile(filepath.Join(outputDir, "_meta", "schema-metadata.json"))
+	if err != nil {
+		t.Fatal("expected fresh schema metadata manifest after second run")
+	}
+	if strings.Contains(string(metadataBytes), "core/pod_v1.json") {
+		t.Fatalf("stale built-in metadata leaked into second run:\n%s", metadataBytes)
+	}
+	if !strings.Contains(string(metadataBytes), "cert-manager.io/certificate_v1.json") {
+		t.Fatalf("expected fresh CRD metadata in second run:\n%s", metadataBytes)
+	}
+	indexBytes, err := os.ReadFile(filepath.Join(outputDir, "index.html"))
+	if err != nil {
+		t.Fatal("expected rendered index after second run")
+	}
+	if strings.Contains(string(indexBytes), "Kubernetes Built-ins") {
+		t.Fatal("expected rendered index to omit stale built-in source section")
+	}
+	if strings.Contains(string(indexBytes), "pod_v1") {
+		t.Fatal("expected rendered index to omit stale Pod schema")
+	}
+}
+
 func TestRunConvert_OpenAPIHonorsFilters(t *testing.T) {
 	dir := t.TempDir()
 	outputDir := filepath.Join(dir, "output")

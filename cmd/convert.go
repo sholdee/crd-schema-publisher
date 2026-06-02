@@ -224,6 +224,25 @@ func renderConvertOutput(outputDir, basePath string) error {
 	return nil
 }
 
+func validateConvertInputs(fileFlag, dirFlag, openapiPath string, kustomize bool) error {
+	if fileFlag == "" && dirFlag == "" && openapiPath == "" && !kustomize {
+		return fmt.Errorf("one of --file, --dir, --openapi, or --kustomize is required")
+	}
+	return nil
+}
+
+func shouldSkipConvertAfterFiltering(crds []apiextensionsv1.CustomResourceDefinition, openapiPath string, kustomize bool) bool {
+	return len(crds) == 0 && openapiPath == "" && !kustomize
+}
+
+func writeKustomizeInput(outputDir string) (int, error) {
+	n, err := extractor.WriteKustomizeSchemas(outputDir)
+	if err != nil {
+		return 0, fmt.Errorf("writing kustomize schema: %w", err)
+	}
+	return n, nil
+}
+
 func runConvert(args []string) error {
 	fs := newCommandFlagSet("convert")
 	var fileFlag string
@@ -231,6 +250,7 @@ func runConvert(args []string) error {
 	var dirFlag string
 	stringFlagWithAlias(fs, &dirFlag, "dir", "d", "", "directory containing CRD YAML files")
 	openapiFlag := fs.String("openapi", "", "Kubernetes OpenAPI v2 (swagger) file; converts built-in types (combinable with --file/--dir)")
+	kustomizeFlag := fs.Bool("kustomize", false, "also publish the kustomize Kustomization schema (combinable with --file/--dir/--openapi)")
 	var outputDir string
 	stringFlagWithAlias(fs, &outputDir, "output-dir", "o", "", "output directory for JSON schemas (required)")
 	basePath := fs.String("base-path", os.Getenv("BASE_PATH"), "URL path prefix for subpath deployments")
@@ -249,8 +269,8 @@ func runConvert(args []string) error {
 	if err := extractor.ValidateOutputDir(outputDir); err != nil {
 		return err
 	}
-	if fileFlag == "" && dirFlag == "" && *openapiFlag == "" {
-		return fmt.Errorf("one of --file, --dir, or --openapi is required")
+	if err := validateConvertInputs(fileFlag, dirFlag, *openapiFlag, *kustomizeFlag); err != nil {
+		return err
 	}
 
 	filter := extractor.ParseFilter(*kind, *group, *version)
@@ -263,7 +283,7 @@ func runConvert(args []string) error {
 		return fmt.Errorf("preparing output directory: %w", err)
 	}
 
-	if len(crds) == 0 && *openapiFlag == "" {
+	if shouldSkipConvertAfterFiltering(crds, *openapiFlag, *kustomizeFlag) {
 		slog.Info("no CRDs matched filters")
 		return nil
 	}
@@ -273,6 +293,13 @@ func runConvert(args []string) error {
 	count, err := writeConvertInputs(crds, *openapiFlag, outputDir, filter)
 	if err != nil {
 		return err
+	}
+	if *kustomizeFlag {
+		n, err := writeKustomizeInput(outputDir)
+		if err != nil {
+			return err
+		}
+		count += n
 	}
 
 	if *render {

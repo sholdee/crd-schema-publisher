@@ -1204,6 +1204,22 @@ func TestRunConvert_OpenAPIHonorsFilters(t *testing.T) {
 	}
 }
 
+func TestRunConvert_KustomizeExplicitOptInIgnoresFilters(t *testing.T) {
+	dir := t.TempDir()
+	outputDir := filepath.Join(dir, "output")
+
+	if err := runConvert([]string{"--kustomize", "--output-dir", outputDir, "--kind", "pod"}); err != nil {
+		t.Fatalf("runConvert --kustomize error: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(outputDir, "kustomize.config.k8s.io", "kustomization_v1beta1.json")); err != nil {
+		t.Fatal("expected Kustomization schema because --kustomize is an explicit opt-in")
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "master-standalone", "kustomize.config.k8s.io-kustomization-stable-v1beta1.json")); err != nil {
+		t.Fatal("expected standalone Kustomization schema")
+	}
+}
+
 func TestRunConvert_ValidatesOutputDir(t *testing.T) {
 	dir := t.TempDir()
 	inputFile := filepath.Join(dir, "crd.yaml")

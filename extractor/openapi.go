@@ -30,25 +30,36 @@ type groupVersionKind struct {
 // schema embeds the transitive closure of its referenced definitions locally,
 // keeping files self-contained like CRD schemas (and recursion representable).
 func WriteOpenAPISchemas(openapiPath, outputDir string, filter SchemaFilter) (int, error) {
+	defs, err := readOpenAPIDefinitions(openapiPath)
+	if err != nil {
+		return 0, err
+	}
+	return writeOpenAPIDefinitions(defs, outputDir, filter)
+}
+
+func readOpenAPIDefinitions(openapiPath string) (map[string]map[string]interface{}, error) {
 	raw, err := os.ReadFile(openapiPath)
 	if err != nil {
-		return 0, fmt.Errorf("reading openapi spec: %w", err)
+		return nil, fmt.Errorf("reading openapi spec: %w", err)
 	}
 
 	var doc openAPIDoc
 	if err := json.Unmarshal(raw, &doc); err != nil {
-		return 0, fmt.Errorf("parsing openapi spec: %w", err)
+		return nil, fmt.Errorf("parsing openapi spec: %w", err)
 	}
 
 	defs := make(map[string]map[string]interface{}, len(doc.Definitions))
 	for name, rawDef := range doc.Definitions {
 		var def map[string]interface{}
 		if err := json.Unmarshal(rawDef, &def); err != nil {
-			return 0, fmt.Errorf("parsing definition %s: %w", name, err)
+			return nil, fmt.Errorf("parsing definition %s: %w", name, err)
 		}
 		defs[name] = def
 	}
+	return defs, nil
+}
 
+func writeOpenAPIDefinitions(defs map[string]map[string]interface{}, outputDir string, filter SchemaFilter) (int, error) {
 	var (
 		mu       sync.Mutex
 		wg       sync.WaitGroup

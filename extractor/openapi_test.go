@@ -20,7 +20,22 @@ const sampleOpenAPI = `{
     },
     "io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta": {
       "type": "object",
-      "properties": {"name": {"type": "string"}}
+      "required": ["uid"],
+      "properties": {
+        "name": {"type": "string"},
+        "creationTimestamp": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.Time",
+          "description": "Populated by the system. Null for lists."
+        },
+        "uid": {"$ref": "#/definitions/io.k8s.apimachinery.pkg.types.UID"}
+      }
+    },
+    "io.k8s.apimachinery.pkg.apis.meta.v1.Time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "io.k8s.apimachinery.pkg.types.UID": {
+      "type": "string"
     },
     "io.k8s.apimachinery.pkg.apis.meta.v1.WatchEvent": {
       "type": "object",
@@ -56,22 +71,68 @@ func TestWriteOpenAPISchemas(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	assertOpenAPISchemaBundlesNullableRefs(t, schema)
+	assertOpenAPIWatchEventSkipped(t, out)
+	assertOpenAPIKindsManifest(t, out)
+}
+
+func assertOpenAPISchemaBundlesNullableRefs(t *testing.T, schema map[string]interface{}) {
+	t.Helper()
+
 	// Self-contained: the referenced ObjectMeta is bundled under definitions,
 	// and the $ref stays internal to the file.
 	defs, ok := schema["definitions"].(map[string]interface{})
 	if !ok || defs["io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"] == nil {
 		t.Fatalf("expected ObjectMeta bundled under definitions, got %v", schema["definitions"])
 	}
-	meta := schema["properties"].(map[string]interface{})["metadata"].(map[string]interface{})
-	if ref := meta["$ref"]; ref != "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta" {
-		t.Fatalf("expected internal $ref, got %v", ref)
+	props, ok := schema["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected schema properties, got %v", schema["properties"])
 	}
+	meta, ok := props["metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected metadata property, got %v", props["metadata"])
+	}
+	assertAnyOfHasRefAndNull(t, meta, "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta")
 
+	objectMeta, ok := defs["io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected ObjectMeta definition to be a map, got %T", defs["io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"])
+	}
+	objectMetaProps, ok := objectMeta["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected ObjectMeta properties to be a map, got %T", objectMeta["properties"])
+	}
+	creationTimestamp, ok := objectMetaProps["creationTimestamp"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected creationTimestamp to be a map, got %T", objectMetaProps["creationTimestamp"])
+	}
+	assertAnyOfHasRefAndNull(t, creationTimestamp, "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.Time")
+	uid, ok := objectMetaProps["uid"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected uid to be a map, got %T", objectMetaProps["uid"])
+	}
+	if uid["$ref"] != "#/definitions/io.k8s.apimachinery.pkg.types.UID" {
+		t.Fatalf("required ref field should stay direct, got %v", uid)
+	}
+	if defs["io.k8s.apimachinery.pkg.apis.meta.v1.Time"] == nil {
+		t.Fatalf("expected Time definition to be bundled")
+	}
+	if defs["io.k8s.apimachinery.pkg.types.UID"] == nil {
+		t.Fatalf("expected UID definition to be bundled")
+	}
+}
+
+func assertOpenAPIWatchEventSkipped(t *testing.T, out string) {
+	t.Helper()
 	// WatchEvent must not be written.
 	if _, err := os.Stat(filepath.Join(out, "core", "watchevent_v1.json")); !os.IsNotExist(err) {
 		t.Fatalf("expected WatchEvent to be skipped")
 	}
+}
 
+func assertOpenAPIKindsManifest(t *testing.T, out string) {
+	t.Helper()
 	// kinds manifest maps the file to its kind so the index/search picks it up.
 	manifest, err := os.ReadFile(filepath.Join(out, "_meta", "kinds.json"))
 	if err != nil {
@@ -83,6 +144,34 @@ func TestWriteOpenAPISchemas(t *testing.T) {
 	}
 	if kinds["apps/deployment_v1.json"] != "Deployment" {
 		t.Fatalf("expected kinds manifest entry for Deployment, got %v", kinds)
+	}
+}
+
+func assertAnyOfHasRefAndNull(t *testing.T, schema map[string]interface{}, ref string) {
+	t.Helper()
+	if _, hasRef := schema["$ref"]; hasRef {
+		t.Fatalf("nullable ref wrapper must not keep sibling $ref, got %v", schema)
+	}
+	anyOf, ok := schema["anyOf"].([]interface{})
+	if !ok {
+		t.Fatalf("expected anyOf array, got %T", schema["anyOf"])
+	}
+	hasRef := false
+	hasNull := false
+	for _, item := range anyOf {
+		branch, ok := item.(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected anyOf branch to be map, got %T", item)
+		}
+		if branch["$ref"] == ref {
+			hasRef = true
+		}
+		if branch["type"] == "null" {
+			hasNull = true
+		}
+	}
+	if !hasRef || !hasNull {
+		t.Fatalf("expected anyOf to contain %q and null, got %v", ref, anyOf)
 	}
 }
 

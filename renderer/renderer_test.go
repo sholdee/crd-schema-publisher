@@ -269,6 +269,299 @@ func TestSortedProperties(t *testing.T) {
 	}
 }
 
+func TestBuildRenderPropertiesResolvesLocalDefinitionRefs(t *testing.T) {
+	props := refBackedSpecProperties(t)
+	assertRefBackedSpecProperty(t, props[0], "firstSpec", "First spec description", "pattern: ^[a-z]+$")
+	assertRefBackedSpecProperty(t, props[1], "secondSpec", "Second spec description", "")
+}
+
+func TestBuildRenderPropertiesResolvesNullableAnyOfLocalDefinitionRefs(t *testing.T) {
+	root := &SchemaNode{
+		Type: "object",
+		Properties: map[string]*SchemaNode{
+			"spec": {
+				AnyOf: []*SchemaNode{
+					{Ref: "#/definitions/io.k8s.example.Spec"},
+					{Type: "null"},
+				},
+				Description: "Spec defines desired state",
+			},
+		},
+		Definitions: map[string]*SchemaNode{
+			"io.k8s.example.Spec": {
+				Type:     "object",
+				Required: []string{"containers"},
+				Properties: map[string]*SchemaNode{
+					"containers": {
+						Type: "array",
+						Items: &SchemaNode{
+							Ref: "#/definitions/io.k8s.example.Container",
+						},
+					},
+				},
+			},
+			"io.k8s.example.Container": {
+				Type: "object",
+				Properties: map[string]*SchemaNode{
+					"name": {Type: "string"},
+				},
+			},
+		},
+	}
+
+	props := buildRenderProperties(root, "", "", "")
+	if len(props) != 1 {
+		t.Fatalf("got %d top-level properties, want 1", len(props))
+	}
+	spec := props[0]
+	if spec.Name != "spec" {
+		t.Fatalf("property = %q, want spec", spec.Name)
+	}
+	if !spec.Expandable() {
+		t.Fatalf("nullable ref-backed spec should expand, got %#v", spec)
+	}
+	if got := spec.Node.Description; got != "Spec defines desired state" {
+		t.Fatalf("spec description = %q, want wrapper description", got)
+	}
+	if got := spec.Node.DisplayType(); got != "object" {
+		t.Fatalf("spec type = %q, want object", got)
+	}
+	if len(spec.Children) != 1 || spec.Children[0].Path != "spec.containers" {
+		t.Fatalf("spec children = %#v, want spec.containers", spec.Children)
+	}
+	if !spec.Children[0].Required {
+		t.Fatal("required fields from the referenced definition should be preserved")
+	}
+	if len(spec.Children[0].Children) != 1 || spec.Children[0].Children[0].Path != "spec.containers[].name" {
+		t.Fatalf("container children = %#v, want spec.containers[].name", spec.Children[0].Children)
+	}
+}
+
+func TestBuildRenderPropertiesResolvesNullableOneOfLocalDefinitionRefs(t *testing.T) {
+	root := &SchemaNode{
+		Type: "object",
+		Properties: map[string]*SchemaNode{
+			"status": {
+				OneOf: []*SchemaNode{
+					{Ref: "#/definitions/io.k8s.example.Status"},
+					{Type: "null"},
+				},
+				Description: "Status records observed state",
+			},
+		},
+		Definitions: map[string]*SchemaNode{
+			"io.k8s.example.Status": {
+				Type: "object",
+				Properties: map[string]*SchemaNode{
+					"phase": {Type: "string"},
+				},
+			},
+		},
+	}
+
+	props := buildRenderProperties(root, "", "", "")
+	if len(props) != 1 {
+		t.Fatalf("got %d top-level properties, want 1", len(props))
+	}
+	status := props[0]
+	if !status.Expandable() {
+		t.Fatalf("nullable oneOf ref-backed status should expand, got %#v", status)
+	}
+	if got := status.Node.Description; got != "Status records observed state" {
+		t.Fatalf("status description = %q, want wrapper description", got)
+	}
+	if len(status.Children) != 1 || status.Children[0].Path != "status.phase" {
+		t.Fatalf("status children = %#v, want status.phase", status.Children)
+	}
+}
+
+func TestBuildRenderPropertiesDoesNotCollapseSingleBranchAnyOfWithoutNull(t *testing.T) {
+	root := &SchemaNode{
+		Type: "object",
+		Properties: map[string]*SchemaNode{
+			"spec": {
+				AnyOf: []*SchemaNode{
+					{Ref: "#/definitions/io.k8s.example.Spec"},
+				},
+			},
+		},
+		Definitions: map[string]*SchemaNode{
+			"io.k8s.example.Spec": {
+				Type: "object",
+				Properties: map[string]*SchemaNode{
+					"replicas": {Type: "integer"},
+				},
+			},
+		},
+	}
+
+	props := buildRenderProperties(root, "", "", "")
+	if len(props) != 1 {
+		t.Fatalf("got %d top-level properties, want 1", len(props))
+	}
+	if props[0].Expandable() {
+		t.Fatalf("single-branch anyOf without null should not expand, got %#v", props[0])
+	}
+}
+
+func TestBuildRenderPropertiesDoesNotCollapseMultiBranchAnyOf(t *testing.T) {
+	root := &SchemaNode{
+		Type: "object",
+		Properties: map[string]*SchemaNode{
+			"value": {
+				AnyOf: []*SchemaNode{
+					{Ref: "#/definitions/io.k8s.example.Spec"},
+					{Type: "string"},
+					{Type: "null"},
+				},
+			},
+		},
+		Definitions: map[string]*SchemaNode{
+			"io.k8s.example.Spec": {
+				Type: "object",
+				Properties: map[string]*SchemaNode{
+					"replicas": {Type: "integer"},
+				},
+			},
+		},
+	}
+
+	props := buildRenderProperties(root, "", "", "")
+	if len(props) != 1 {
+		t.Fatalf("got %d top-level properties, want 1", len(props))
+	}
+	if props[0].Expandable() {
+		t.Fatalf("multi-branch union should not expand into the ref branch, got %#v", props[0])
+	}
+	if got := props[0].Node.DisplayType(); got != "object" {
+		t.Fatalf("current anyOf display type should remain stable, got %q", got)
+	}
+}
+
+func refBackedSpecProperties(t *testing.T) []RenderProperty {
+	t.Helper()
+
+	root := &SchemaNode{
+		Type: "object",
+		Properties: map[string]*SchemaNode{
+			"firstSpec": {
+				Ref:         "#/definitions/io.k8s.example.Spec",
+				Description: "First spec description",
+				Pattern:     "^[a-z]+$",
+			},
+			"secondSpec": {
+				Ref:         "#/definitions/io.k8s.example.Spec",
+				Description: "Second spec description",
+			},
+		},
+		Definitions: map[string]*SchemaNode{
+			"io.k8s.example.Spec": {
+				Type:        "object",
+				Description: "Shared spec description",
+				Required:    []string{"replicas"},
+				Properties: map[string]*SchemaNode{
+					"replicas": {
+						Type:        "integer",
+						Description: "Replica count",
+					},
+				},
+			},
+		},
+	}
+
+	props := buildRenderProperties(root, "", "", "")
+	if len(props) != 2 {
+		t.Fatalf("got %d top-level properties, want 2", len(props))
+	}
+	return props
+}
+
+func assertRefBackedSpecProperty(t *testing.T, prop RenderProperty, name, description, constraint string) {
+	t.Helper()
+
+	if prop.Name != name {
+		t.Fatalf("property = %q, want %s", prop.Name, name)
+	}
+	if !prop.Expandable() {
+		t.Fatalf("%s should expand; seen refs must be path-local, not shared across siblings", name)
+	}
+	if got := prop.Node.Description; got != description {
+		t.Fatalf("%s description = %q, want %q", name, got, description)
+	}
+	constraints := prop.Node.RenderConstraints()
+	if constraint == "" && len(constraints) != 0 {
+		t.Fatalf("%s constraints = %#v, want no leaked constraints", name, constraints)
+	}
+	if constraint != "" && (len(constraints) != 1 || constraints[0].Text != constraint) {
+		t.Fatalf("%s constraints = %#v, want %q", name, constraints, constraint)
+	}
+	if constraint != "" && !strings.Contains(prop.SearchText, constraint) {
+		t.Fatalf("%s search text = %q, want %q", name, prop.SearchText, constraint)
+	}
+	if len(prop.Children) != 1 || prop.Children[0].Path != name+".replicas" {
+		t.Fatalf("%s children = %#v, want %s.replicas", name, prop.Children, name)
+	}
+	if !prop.Children[0].Required {
+		t.Fatal("required fields from the referenced definition should be preserved")
+	}
+	if got := prop.Children[0].Node.DisplayType(); got != "integer" {
+		t.Fatalf("replicas type = %q, want integer", got)
+	}
+}
+
+func TestBuildRenderPropertiesResolvesArrayItemRefsWithoutRecursingForever(t *testing.T) {
+	root := &SchemaNode{
+		Type: "object",
+		Properties: map[string]*SchemaNode{
+			"items": {
+				Type: "array",
+				Items: &SchemaNode{
+					Ref: "#/definitions/io.k8s.example.Item",
+				},
+			},
+		},
+		Definitions: map[string]*SchemaNode{
+			"io.k8s.example.Item": {
+				Type: "object",
+				Properties: map[string]*SchemaNode{
+					"name": {Type: "string"},
+					"children": {
+						Type: "array",
+						Items: &SchemaNode{
+							Ref: "#/definitions/io.k8s.example.Item",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	props := buildRenderProperties(root, "", "", "")
+	if len(props) != 1 {
+		t.Fatalf("got %d top-level properties, want 1", len(props))
+	}
+	items := props[0]
+	if !items.Expandable() {
+		t.Fatal("array property should expand when items ref an object definition")
+	}
+	if len(items.Children) != 2 {
+		t.Fatalf("array item children = %d, want 2", len(items.Children))
+	}
+	children := items.Children[0]
+	if children.Path != "items[].children" {
+		t.Fatalf("first child path = %q, want items[].children", children.Path)
+	}
+	if children.Expandable() {
+		t.Fatal("recursive array ref should stop at the repeated definition")
+	}
+	if got := children.Node.DisplayType(); got != "[]object" {
+		t.Fatalf("recursive array type = %q, want []object", got)
+	}
+	if items.Children[1].Path != "items[].name" {
+		t.Fatalf("second child path = %q, want items[].name", items.Children[1].Path)
+	}
+}
+
 func TestConstraints(t *testing.T) {
 	minLen := int64(1)
 	maxLen := int64(255)
@@ -873,12 +1166,66 @@ func TestRenderSchema_CoreGroupUsesVersionOnlyAPIVersion(t *testing.T) {
 		t.Fatalf("renderSchemaFile error: %v", err)
 	}
 
-	html := string(readFile(t, filepath.Join(tmpDir, "core", "pod_v1.html")))
+	html := readFile(t, filepath.Join(tmpDir, "core", "pod_v1.html"))
 	if !strings.Contains(html, "apiVersion: v1\nkind: Pod") {
 		t.Fatal("expected core resources to render apiVersion without synthetic core group")
 	}
 	if strings.Contains(html, "apiVersion: core/v1") {
 		t.Fatal("core resources must not render synthetic core group in apiVersion")
+	}
+}
+
+func TestRenderSchemaResolvesLocalDefinitionRefsInHTML(t *testing.T) {
+	schema := `{
+		"type": "object",
+		"properties": {
+			"spec": {
+				"anyOf": [
+					{"$ref": "#/definitions/io.k8s.example.Spec"},
+					{"type": "null"}
+				],
+				"description": "Spec defines desired state"
+			}
+		},
+		"definitions": {
+			"io.k8s.example.Spec": {
+				"type": "object",
+				"required": ["containers"],
+				"properties": {
+					"containers": {
+						"type": "array",
+						"items": {"$ref": "#/definitions/io.k8s.example.Container"}
+					}
+				}
+			},
+			"io.k8s.example.Container": {
+				"type": "object",
+				"properties": {
+					"name": {"type": "string"}
+				}
+			}
+		}
+	}`
+
+	tmpDir := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(tmpDir, "core"), 0o755)
+	_ = os.WriteFile(filepath.Join(tmpDir, "core", "pod_v1.json"), []byte(schema), 0o644)
+
+	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "core", "pod_v1.json"), "core", "pod_v1.json", "")
+	if err != nil {
+		t.Fatalf("renderSchemaFile error: %v", err)
+	}
+
+	html := readFile(t, filepath.Join(tmpDir, "core", "pod_v1.html"))
+	for _, needle := range []string{
+		`data-path="spec"`,
+		`Spec defines desired state`,
+		`data-path="spec.containers"`,
+		`data-path="spec.containers[].name"`,
+	} {
+		if !strings.Contains(html, needle) {
+			t.Fatalf("rendered HTML missing %q", needle)
+		}
 	}
 }
 

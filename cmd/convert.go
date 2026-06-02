@@ -183,6 +183,47 @@ func loadCRDs(fileList, dir string) ([]apiextensionsv1.CustomResourceDefinition,
 	return crds, nil
 }
 
+func loadFilteredCRDs(fileList, dir string, filter extractor.SchemaFilter) ([]apiextensionsv1.CustomResourceDefinition, error) {
+	if fileList == "" && dir == "" {
+		return nil, nil
+	}
+	loaded, err := loadCRDs(fileList, dir)
+	if err != nil {
+		return nil, err
+	}
+	return extractor.FilterCRDs(loaded, filter), nil
+}
+
+func writeConvertInputs(crds []apiextensionsv1.CustomResourceDefinition, openapiPath, outputDir string, filter extractor.SchemaFilter) (int, error) {
+	var count int
+	if len(crds) > 0 {
+		n, err := extractor.WriteSchemas(crds, outputDir)
+		if err != nil {
+			return count, fmt.Errorf("writing schemas: %w", err)
+		}
+		count += n
+	}
+	if openapiPath != "" {
+		n, err := extractor.WriteOpenAPISchemas(openapiPath, outputDir, filter)
+		if err != nil {
+			return count, fmt.Errorf("writing openapi schemas: %w", err)
+		}
+		count += n
+	}
+	return count, nil
+}
+
+func renderConvertOutput(outputDir, basePath string) error {
+	normalizedBasePath := normalizeBasePath(basePath)
+	if err := renderer.RenderAll(outputDir, normalizedBasePath); err != nil {
+		return fmt.Errorf("rendering schemas: %w", err)
+	}
+	if err := index.Generate(outputDir, normalizedBasePath); err != nil {
+		return fmt.Errorf("generating index: %w", err)
+	}
+	return nil
+}
+
 func runConvert(args []string) error {
 	fs := newCommandFlagSet("convert")
 	var fileFlag string
@@ -213,13 +254,9 @@ func runConvert(args []string) error {
 	}
 
 	filter := extractor.ParseFilter(*kind, *group, *version)
-	var crds []apiextensionsv1.CustomResourceDefinition
-	if fileFlag != "" || dirFlag != "" {
-		loaded, err := loadCRDs(fileFlag, dirFlag)
-		if err != nil {
-			return err
-		}
-		crds = extractor.FilterCRDs(loaded, filter)
+	crds, err := loadFilteredCRDs(fileFlag, dirFlag, filter)
+	if err != nil {
+		return err
 	}
 
 	if err := cleanConvertArtifacts(outputDir); err != nil {
@@ -233,31 +270,14 @@ func runConvert(args []string) error {
 
 	preExisting := snapshotFiles(outputDir)
 
-	// CRD and OpenAPI inputs can be combined; both write into outputDir and
-	// their kinds manifests merge.
-	var count int
-	if len(crds) > 0 {
-		n, err := extractor.WriteSchemas(crds, outputDir)
-		if err != nil {
-			return fmt.Errorf("writing schemas: %w", err)
-		}
-		count += n
-	}
-	if *openapiFlag != "" {
-		n, err := extractor.WriteOpenAPISchemas(*openapiFlag, outputDir, filter)
-		if err != nil {
-			return fmt.Errorf("writing openapi schemas: %w", err)
-		}
-		count += n
+	count, err := writeConvertInputs(crds, *openapiFlag, outputDir, filter)
+	if err != nil {
+		return err
 	}
 
-	normalizedBasePath := normalizeBasePath(*basePath)
 	if *render {
-		if err := renderer.RenderAll(outputDir, normalizedBasePath); err != nil {
-			return fmt.Errorf("rendering schemas: %w", err)
-		}
-		if err := index.Generate(outputDir, normalizedBasePath); err != nil {
-			return fmt.Errorf("generating index: %w", err)
+		if err := renderConvertOutput(outputDir, *basePath); err != nil {
+			return err
 		}
 	}
 

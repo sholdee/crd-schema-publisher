@@ -147,7 +147,8 @@ install_chart() {
     --set existingSecret.name=cloudflare-pages-e2e \
     --set config.cfPagesProject="${CF_PAGES_E2E_PROJECT}" \
     --set-string config.debounceSeconds=1 \
-    --set-string config.filter.group="${MARKER_GROUP}"
+    --set config.includeBuiltins=true \
+    --set config.includeKustomize=true
 }
 
 deployment_logs() {
@@ -193,6 +194,10 @@ validate_site_at() {
   assert_url_contains "${base}/${MARKER_GROUP}/releasesmoke_v1.json" "${RUN_MARKER}" || return 1
   assert_url_contains "${base}/${MARKER_GROUP}/releasesmoke_v1.html" "${RUN_MARKER}" || return 1
   assert_url_contains "${base}/master-standalone/${MARKER_GROUP}-releasesmoke-stable-v1.json" "${RUN_MARKER}" || return 1
+  assert_url_reachable "${base}/core/pod_v1.json" || return 1
+  assert_url_reachable "${base}/core/pod_v1.html" || return 1
+  assert_url_reachable "${base}/kustomize.config.k8s.io/kustomization_v1beta1.json" || return 1
+  assert_url_reachable "${base}/kustomize.config.k8s.io/kustomization_v1beta1.html" || return 1
   assert_url_reachable "${base}/schema-search.js" || return 1
   assert_url_reachable "${base}/favicon.svg" || return 1
 }

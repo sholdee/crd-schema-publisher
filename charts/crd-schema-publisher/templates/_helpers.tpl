@@ -124,6 +124,14 @@ Optional Secret refs + config vars that apply to all modes.
 - name: BASE_PATH
   value: {{ .Values.config.basePath | quote }}
 {{- end }}
+{{- if .Values.config.includeBuiltins }}
+- name: SCHEMA_INCLUDE_BUILTINS
+  value: "true"
+{{- end }}
+{{- if .Values.config.includeKustomize }}
+- name: SCHEMA_INCLUDE_KUSTOMIZE
+  value: "true"
+{{- end }}
 {{- with .Values.config.filter }}
 {{- if .kind }}
 - name: SCHEMA_FILTER_KIND

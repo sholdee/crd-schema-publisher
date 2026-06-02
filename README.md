@@ -384,10 +384,10 @@ Commands:
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `run`, `extract`, `watch` | Support comma-separated, case-insensitive `--kind`, `--group`, and `--version` filters. Defaults can also come from `SCHEMA_FILTER_KIND`, `SCHEMA_FILTER_GROUP`, and `SCHEMA_FILTER_VERSION`.        |
 | `extract`                 | Supports `--context`, `--base-path`, and `--skip-render`.                                                                                                                                            |
-| `convert`                 | Supports comma-separated, case-insensitive `--kind`, `--group`, and `--version` filters.                                                                                                             |
+| `convert`                 | Supports comma-separated, case-insensitive `--kind`, `--group`, and `--version` filters for CRD YAML and OpenAPI inputs.                                                                             |
 | `convert`                 | Supports `--file`/`-f`, non-recursive `--dir`/`-d` YAML loading, optional `--render`, and `--base-path` for rendered links.                                                                          |
 | `convert`                 | `--openapi` converts a Kubernetes OpenAPI v2 (swagger) document of built-in types into self-contained per-kind schemas, combinable with `--file`/`--dir` to render CRDs and built-ins into one site. |
-| `convert`                 | `--kustomize` publishes a schema for kustomize's `Kustomization`, reflected from the pinned `sigs.k8s.io/kustomize/api` types. Combinable with the inputs above.                                     |
+| `convert`                 | `--kustomize` explicitly publishes kustomize's `Kustomization` schema, reflected from the pinned `sigs.k8s.io/kustomize/api` types. It is not filtered.                                               |
 
 ## 📋 Using Your Schemas
 
@@ -578,7 +578,11 @@ Combine `--openapi` with `--file` or `--dir` when you want one local site contai
 
 `--kustomize` publishes a schema for kustomize's `Kustomization` at `kustomize.config.k8s.io/kustomization_v1beta1.json`. It's a client-side type with no usable upstream schema, so it's reflected from the `sigs.k8s.io/kustomize/api` Go types pinned in this module — bumping that dependency updates the schema. Combine it with the other inputs in a single run:
 
+`--kind`, `--group`, and `--version` filters limit CRD and OpenAPI inputs; `--kustomize` is a single explicit opt-in and always emits Kustomization when set.
+
+```sh
 crd-schema-publisher convert -d ./crds --openapi swagger.json --kustomize -o ./schemas --render
+```
 
 ## 🔧 Development
 

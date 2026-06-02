@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A statically-compiled Go binary that extracts CRD JSON schemas from a Kubernetes cluster, converts Kubernetes built-in schemas from OpenAPI v2, and builds a browsable static site. It can publish directly to Cloudflare Pages or run in extract-only mode for sidecar consumers such as local web servers, git sync, or object-storage sync. Runs as a long-lived Deployment (watch mode) or CronJob on Kubernetes. Deployed in a nonroot distroless container.
+A statically-compiled Go binary that extracts CRD JSON schemas from a Kubernetes cluster, converts Kubernetes built-in schemas from OpenAPI v2, publishes kustomize's client-side Kustomization schema, and builds a browsable static site. It can publish directly to Cloudflare Pages or run in extract-only mode for sidecar consumers such as local web servers, git sync, or object-storage sync. Runs as a long-lived Deployment (watch mode) or CronJob on Kubernetes. Deployed in a nonroot distroless container.
 
 ## Repository Layout
 
@@ -59,7 +59,7 @@ KUBECTL_CONTEXT=my-context OUTPUT_DIR=./output go run ./cmd/ extract
 
 # Convert Kubernetes built-ins from a cluster OpenAPI document
 kubectl get --raw /openapi/v2 > swagger.json
-go run ./cmd/ convert --openapi swagger.json -o ./schemas --render
+go run ./cmd/ convert --openapi swagger.json --kustomize -o ./schemas --render
 
 # Preview index UI locally (no cluster needed)
 go run ./cmd/ preview
@@ -75,7 +75,7 @@ go run ./cmd/main.go --help
 
 - `run` (default) — extract + optional upload. Degrades gracefully: skips upload when Cloudflare credentials are missing, prints guidance when no kubeconfig is available. Accepts `--output-dir`/`-o`, `--kind`, `--group`, and `--version`; the output root must already exist.
 - `extract` — extract CRDs and build a new site generation, exposed at `OUTPUT_DIR/current`. Requires an explicit output directory via `--output-dir`/`-o` or `OUTPUT_DIR`; it does not fall back to `/output`. Supports `--kind`, `--group`, `--version` filters and CLI flags (`--output-dir`/`-o`, `--context`, `--base-path`, `--skip-render`) that override env vars.
-- `convert` — convert CRD YAML files and Kubernetes OpenAPI v2 built-ins to JSON Schema without a cluster connection. Requires `--output-dir`/`-o`. Reads CRDs from `--file`/`-f` (comma-separated, `-` for stdin) and/or `--dir`/`-d`; reads built-ins from `--openapi <swagger.json>`. Writes flat output (no generation lifecycle). Optional `--render` for HTML docs. Supports the same `--kind`, `--group`, `--version` filters.
+- `convert` — convert CRD YAML files and Kubernetes OpenAPI v2 built-ins to JSON Schema without a cluster connection, and optionally emit kustomize's Kustomization schema. Requires `--output-dir`/`-o`. Reads CRDs from `--file`/`-f` (comma-separated, `-` for stdin) and/or `--dir`/`-d`; reads built-ins from `--openapi <swagger.json>`; emits Kustomization with `--kustomize`. Writes flat output (no generation lifecycle). Optional `--render` for HTML docs. `--kind`, `--group`, and `--version` filter CRD YAML and OpenAPI inputs; `--kustomize` is explicit and unfiltered.
 - `upload` — upload the active site from `OUTPUT_DIR/current` to Cloudflare Pages. Accepts `--output-dir`/`-o`; the output root must already exist.
 - `watch` — long-lived process: informer watches CRDs, debounces events, and runs extract plus optional upload cycles. Leader election for multi-replica safety. Accepts `--output-dir`/`-o`, `--kind`, `--group`, and `--version`; the output root must already exist. Filters are applied to generated output, not to the informer watch scope.
 - `preview` — generate sample data by default, or with explicit `--output-dir`/`-o` copy the active site into an isolated temp generation and serve it on localhost. Ambient `OUTPUT_DIR` is ignored. No cluster or credentials needed. Handles signal cleanup of temp directories.
@@ -120,10 +120,11 @@ go run ./cmd/main.go --help
 | `--file`, `-f` | convert | — | CRD YAML file(s), comma-separated. `-` for stdin |
 | `--dir`, `-d` | convert | — | Directory of CRD YAML files (non-recursive) |
 | `--openapi` | convert | — | Kubernetes OpenAPI v2 (swagger) file for built-in resource schemas |
+| `--kustomize` | convert | `false` | Emit kustomize's Kustomization schema. Explicit opt-in; not filtered. |
 | `--render` | convert | `false` | Render HTML docs |
-| `--kind` | run, extract, convert, watch | `run`/`extract`/`watch`: `$SCHEMA_FILTER_KIND`; `convert`: — | Filter by kind (comma-separated, case-insensitive) |
-| `--group` | run, extract, convert, watch | `run`/`extract`/`watch`: `$SCHEMA_FILTER_GROUP`; `convert`: — | Filter by group (comma-separated, case-insensitive) |
-| `--version` | run, extract, convert, watch | `run`/`extract`/`watch`: `$SCHEMA_FILTER_VERSION`; `convert`: — | Filter by version (comma-separated, case-insensitive) |
+| `--kind` | run, extract, convert, watch | `run`/`extract`/`watch`: `$SCHEMA_FILTER_KIND`; `convert`: — | Filter by kind (comma-separated, case-insensitive). For `convert`, applies to CRD YAML and OpenAPI inputs. |
+| `--group` | run, extract, convert, watch | `run`/`extract`/`watch`: `$SCHEMA_FILTER_GROUP`; `convert`: — | Filter by group (comma-separated, case-insensitive). For `convert`, applies to CRD YAML and OpenAPI inputs. |
+| `--version` | run, extract, convert, watch | `run`/`extract`/`watch`: `$SCHEMA_FILTER_VERSION`; `convert`: — | Filter by version (comma-separated, case-insensitive). For `convert`, applies to CRD YAML and OpenAPI inputs. |
 
 ### Key Design Decisions
 
@@ -132,6 +133,7 @@ go run ./cmd/main.go --help
 - **BLAKE3 file hashing** exactly matches wrangler's `hashFile`: `hex(blake3(base64(content) + extension))[0:32]`. Do not change this algorithm without verifying against wrangler source.
 - **OpenAPI v3 to JSON Schema conversion** applies three transforms in order: additionalProperties, replaceIntOrString, allowNullOptionalFields. Shared JSON Schema semantics that are used by both converter and renderer live in `jsonschema/`; keep traversal keyword sets, non-null type resolution, required-property lookup, and oneOf branch display de-duplication there instead of duplicating them in call sites. Current behavior is intentionally tuned for kubeconform/IDE validation correctness: (1) `additionalProperties` uses schema-aware traversal, closing structural child object schemas while skipping same-instance validation overlays (`oneOf`/`anyOf`/`allOf`/`not`/dependencies/conditionals) and literal data-valued keywords such as `default` and `enum`; it also recurses into each property sub-schema individually so CRD fields named `properties` or other JSON Schema keywords do not corrupt the output; (2) nullable applies only to fields *not* in the required list, including optional pure `$ref` fields as `anyOf` ref-or-null wrappers; (3) `replaceIntOrString` preserves safe metadata but removes/replaces conflicting parent type and distributes type-specific assertions into the string or integer oneOf branch for Kubernetes int-or-string markers; (4) root object and array items are not made nullable. Golden E2E tests (`extractor/testdata/golden_certificate_v1.json`, `golden_edgecase_v1.json`) freeze the converter output and catch regressions.
 - **Kubernetes OpenAPI v2 built-ins** are converted only by `convert --openapi`. Definitions with authorable group/version/kind metadata and `apiVersion`/`kind` properties become per-kind schemas. The empty API group is normalized to `core`, referenced definitions are bundled into each schema, and CRD YAML inputs can be combined with `--openapi` into one flat output site.
+- **Kustomize Kustomization schema** is emitted only by `convert --kustomize` at `kustomize.config.k8s.io/kustomization_v1beta1.json`. It is reflected from the pinned `sigs.k8s.io/kustomize/api` Go type because Kustomization is client-side and not served by the Kubernetes API. Convert filters apply to CRD YAML and OpenAPI inputs; `--kustomize` is a single explicit opt-in and is not filtered.
 - **Schema renderer** generates interactive HTML documentation pages (collapsible `<details>`/`<summary>` property trees, type/required badges, YAML boilerplate). It resolves local `#/definitions/...` refs, array item refs, and nullable `anyOf`/`oneOf` wrappers with exactly one non-null branch so built-in fields such as `Pod.spec.containers` expand in HTML while the JSON stays validator-friendly. Uses `html/template` with recursive `{{define "properties"}}` for nested schemas. Schema-page path search behavior lives in the extracted `theme/schema_search.js` asset, which `RenderAll` emits into the output root as `schema-search.js` and the page bootstrap loads at runtime. Enabled by default; disable with `SKIP_RENDER=true`.
 - **Theme package** (`theme/`) holds shared CSS, HTML fragments, small JS helpers used by both index and renderer templates, and emitted static assets such as `schema-search.js`. CSS custom properties are the union of both pages' needs. The deepspace theme (starfield, flare, light/dark toggle) is defined once here.
 - **Output format** builds immutable site generations under `OUTPUT_DIR/.generations/<generation>/` and atomically switches `OUTPUT_DIR/current` to the active generation. Each generation contains both directory formats: `<group>/<kind>_<version>.json` (primary) and `master-standalone/<group>-<kind>-stable-<version>.json` (kubeval compatibility), plus rendered `.html` documentation pages, `index.html`, static assets, and an internal `_meta/kinds.json` manifest used to preserve exact Kind casing for re-render/preview paths. Direct-volume consumers should read from `OUTPUT_DIR/current`, not the flat root. First-party Cloudflare, git, S3, and Caddy examples exclude `_meta/` from public output.
@@ -151,11 +153,13 @@ go run ./cmd/main.go --help
 
 | Dependency | Purpose |
 | --------- | ------- |
+| `github.com/invopop/jsonschema` | Reflect kustomize Go types into JSON Schema |
 | `github.com/zeebo/blake3` | BLAKE3 hashing (pure Go) |
 | `gopkg.in/yaml.v3` | Streaming YAML document decoding for file/stdin conversion |
 | `k8s.io/apiextensions-apiserver` | CRD typed client and API types |
 | `k8s.io/apimachinery` | Shared Kubernetes API machinery used by clients and watchers |
 | `k8s.io/client-go` | Kubernetes API access, informer/watch plumbing, leader election |
+| `sigs.k8s.io/kustomize/api` | Source Go type for kustomize's Kustomization schema |
 | `sigs.k8s.io/yaml` | YAML-to-Kubernetes-struct decoding for CRD conversion |
 
 Everything else in `go.mod` is transitive. The project still leans heavily on the standard library for HTTP, JSON, HTML templates, MIME types, and the preview server.

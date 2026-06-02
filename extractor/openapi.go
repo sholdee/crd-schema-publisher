@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/sholdee/crd-schema-publisher/schemametadata"
 )
 
 // draft04 is the JSON Schema dialect Kubernetes OpenAPI v2 definitions use.
@@ -70,6 +72,7 @@ func writeOpenAPIDefinitions(defs map[string]map[string]interface{}, outputDir s
 		count    int
 		firstErr error
 		kinds    = make(map[string]string)
+		metadata = make(map[string]schemametadata.SchemaMetadataEntry)
 	)
 
 	for name, def := range defs {
@@ -108,7 +111,9 @@ func writeOpenAPIDefinitions(defs map[string]map[string]interface{}, outputDir s
 				}
 
 				mu.Lock()
-				kinds[filepath.ToSlash(filepath.Join(group, filename))] = originalKind
+				relPath := filepath.ToSlash(filepath.Join(group, filename))
+				kinds[relPath] = originalKind
+				metadata[relPath] = schemametadata.SchemaMetadataEntry{Kind: originalKind, Source: schemametadata.SchemaSourceBuiltin}
 				count++
 				mu.Unlock()
 			}(schema, strings.ToLower(gvk.Kind), group, gvk.Version, gvk.Kind)
@@ -121,6 +126,9 @@ func writeOpenAPIDefinitions(defs map[string]map[string]interface{}, outputDir s
 	}
 	if len(kinds) > 0 {
 		if err := writeKindsManifest(outputDir, kinds); err != nil {
+			return count, err
+		}
+		if err := writeSchemaMetadataManifest(outputDir, metadata); err != nil {
 			return count, err
 		}
 	}

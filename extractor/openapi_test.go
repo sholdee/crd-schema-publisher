@@ -5,6 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/sholdee/crd-schema-publisher/schemametadata"
+
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
 
 const sampleOpenAPI = `{
@@ -179,6 +183,11 @@ func assertOpenAPIKindsManifest(t *testing.T, out string) {
 	if kinds["apps/deployment_v1.json"] != "Deployment" {
 		t.Fatalf("expected kinds manifest entry for Deployment, got %v", kinds)
 	}
+	metadata := readSchemaMetadata(t, out)
+	entry := metadata["apps/deployment_v1.json"]
+	if entry.Kind != "Deployment" || entry.Source != schemametadata.SchemaSourceBuiltin {
+		t.Fatalf("expected built-in schema metadata for Deployment, got %#v", entry)
+	}
 }
 
 func assertAnyOfHasRefAndNull(t *testing.T, schema map[string]interface{}, ref string) {
@@ -228,5 +237,80 @@ func TestWriteKindsManifestMerges(t *testing.T) {
 	}
 	if kinds["apps/deployment_v1.json"] != "Deployment" || kinds["cert-manager.io/certificate_v1.json"] != "Certificate" {
 		t.Fatalf("expected both passes merged, got %v", kinds)
+	}
+}
+
+func TestWriteSchemaMetadataManifestMerges(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeSchemaMetadataManifest(dir, map[string]schemametadata.SchemaMetadataEntry{
+		"apps/deployment_v1.json": {Kind: "Deployment", Source: schemametadata.SchemaSourceBuiltin},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeSchemaMetadataManifest(dir, map[string]schemametadata.SchemaMetadataEntry{
+		"cert-manager.io/certificate_v1.json": {Kind: "Certificate", Source: schemametadata.SchemaSourceCRD},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	metadata := readSchemaMetadata(t, dir)
+	if metadata["apps/deployment_v1.json"].Source != schemametadata.SchemaSourceBuiltin {
+		t.Fatalf("expected built-in metadata to survive merge, got %v", metadata)
+	}
+	if metadata["cert-manager.io/certificate_v1.json"].Source != schemametadata.SchemaSourceCRD {
+		t.Fatalf("expected CRD metadata to be added, got %v", metadata)
+	}
+}
+
+func TestSchemaMetadataManifestMergesAcrossWriters(t *testing.T) {
+	dir := t.TempDir()
+
+	if count, err := WriteSchemas([]apiextensionsv1.CustomResourceDefinition{fakeCRD()}, dir); err != nil {
+		t.Fatalf("WriteSchemas: %v", err)
+	} else if count != 1 {
+		t.Fatalf("expected 1 CRD schema, got %d", count)
+	}
+	if count, err := WriteOpenAPISchemasFromBytes([]byte(sampleOpenAPI), dir, SchemaFilter{}); err != nil {
+		t.Fatalf("WriteOpenAPISchemasFromBytes: %v", err)
+	} else if count != 1 {
+		t.Fatalf("expected 1 built-in schema, got %d", count)
+	}
+	if count, err := WriteKustomizeSchemas(dir); err != nil {
+		t.Fatalf("WriteKustomizeSchemas: %v", err)
+	} else if count != 1 {
+		t.Fatalf("expected 1 Kustomize schema, got %d", count)
+	}
+
+	metadata := readSchemaMetadata(t, dir)
+	wantMetadata := map[string]schemametadata.SchemaMetadataEntry{
+		"example.io/test_v1.json":                            {Kind: "Test", Source: schemametadata.SchemaSourceCRD},
+		"apps/deployment_v1.json":                            {Kind: "Deployment", Source: schemametadata.SchemaSourceBuiltin},
+		"kustomize.config.k8s.io/kustomization_v1beta1.json": {Kind: "Kustomization", Source: schemametadata.SchemaSourceKustomize},
+	}
+	if len(metadata) != len(wantMetadata) {
+		t.Fatalf("expected metadata for primary schema files only, got %v", metadata)
+	}
+	for path, want := range wantMetadata {
+		if got := metadata[path]; got != want {
+			t.Fatalf("expected metadata[%q]=%#v, got %#v in %v", path, want, got, metadata)
+		}
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "_meta", "kinds.json"))
+	if err != nil {
+		t.Fatalf("reading kinds manifest: %v", err)
+	}
+	var kinds map[string]string
+	if err := json.Unmarshal(data, &kinds); err != nil {
+		t.Fatalf("expected kinds manifest to remain path-to-kind map: %v", err)
+	}
+	for path, want := range map[string]string{
+		"example.io/test_v1.json":                            "Test",
+		"apps/deployment_v1.json":                            "Deployment",
+		"kustomize.config.k8s.io/kustomization_v1beta1.json": "Kustomization",
+	} {
+		if kinds[path] != want {
+			t.Fatalf("expected kinds[%q]=%q, got %q in %v", path, want, kinds[path], kinds)
+		}
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/sholdee/crd-schema-publisher/converter"
+	"github.com/sholdee/crd-schema-publisher/schemametadata"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -24,8 +25,8 @@ type CRDLister interface {
 }
 
 const (
-	metadataDirName   = "_meta"
-	kindsManifestName = "kinds.json"
+	metadataDirName   = schemametadata.MetadataDirName
+	kindsManifestName = schemametadata.KindsManifestName
 )
 
 func BuildConfig(kubeContext string) (*rest.Config, error) {
@@ -71,6 +72,7 @@ func WriteSchemas(crds []apiextensionsv1.CustomResourceDefinition, outputDir str
 		count    int
 		firstErr error
 		kinds    = make(map[string]string)
+		metadata = make(map[string]schemametadata.SchemaMetadataEntry)
 	)
 
 	for _, crd := range crds {
@@ -104,7 +106,9 @@ func WriteSchemas(crds []apiextensionsv1.CustomResourceDefinition, outputDir str
 				}
 
 				mu.Lock()
-				kinds[filepath.ToSlash(filepath.Join(group, filename))] = originalKind
+				relPath := filepath.ToSlash(filepath.Join(group, filename))
+				kinds[relPath] = originalKind
+				metadata[relPath] = schemametadata.SchemaMetadataEntry{Kind: originalKind, Source: schemametadata.SchemaSourceCRD}
 				count++
 				mu.Unlock()
 			}(schemaProps, kind, group, versionName, crd.Spec.Names.Kind)
@@ -119,6 +123,9 @@ func WriteSchemas(crds []apiextensionsv1.CustomResourceDefinition, outputDir str
 		return count, nil
 	}
 	if err := writeKindsManifest(outputDir, kinds); err != nil {
+		return count, err
+	}
+	if err := writeSchemaMetadataManifest(outputDir, metadata); err != nil {
 		return count, err
 	}
 	return count, firstErr
@@ -168,8 +175,8 @@ func writeSchemaMap(schema map[string]interface{}, kind, group, versionName, out
 	return filename, nil
 }
 
-// writeKindsManifest merges kinds into any existing manifest, so CRD and OpenAPI
-// passes into the same directory share one index.
+// writeKindsManifest merges kinds into any existing manifest, so multiple
+// schema writer passes into the same directory share one index.
 func writeKindsManifest(outputDir string, kinds map[string]string) error {
 	metaDir := filepath.Join(outputDir, metadataDirName)
 	if err := os.MkdirAll(metaDir, 0o755); err != nil {
@@ -190,6 +197,31 @@ func writeKindsManifest(outputDir string, kinds map[string]string) error {
 	data, err := json.MarshalIndent(kinds, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshaling kinds manifest: %w", err)
+	}
+	return os.WriteFile(manifestPath, data, 0o644)
+}
+
+// writeSchemaMetadataManifest mirrors writeKindsManifest for source metadata.
+func writeSchemaMetadataManifest(outputDir string, entries map[string]schemametadata.SchemaMetadataEntry) error {
+	metaDir := filepath.Join(outputDir, metadataDirName)
+	if err := os.MkdirAll(metaDir, 0o755); err != nil {
+		return err
+	}
+
+	manifestPath := filepath.Join(metaDir, schemametadata.SchemaMetadataManifestName)
+	if existing, err := os.ReadFile(manifestPath); err == nil {
+		var prev map[string]schemametadata.SchemaMetadataEntry
+		if err := json.Unmarshal(existing, &prev); err == nil {
+			for path, entry := range entries {
+				prev[path] = entry
+			}
+			entries = prev
+		}
+	}
+
+	data, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling schema metadata manifest: %w", err)
 	}
 	return os.WriteFile(manifestPath, data, 0o644)
 }

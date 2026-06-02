@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,9 +10,16 @@ import (
 	"testing"
 
 	"github.com/sholdee/crd-schema-publisher/extractor"
+	"github.com/sholdee/crd-schema-publisher/watcher"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/client-go/rest"
 )
+
+type fakeCommandOpenAPISource struct{}
+
+func (*fakeCommandOpenAPISource) FetchOpenAPIV2(context.Context) ([]byte, error) {
+	return nil, nil
+}
 
 func TestRunAll_SkipsUploadOnNoopBuild(t *testing.T) {
 	clientOrig := buildClientFunc
@@ -236,6 +244,61 @@ func TestRunAll_FilterFlagsOverrideEnvVars(t *testing.T) {
 	}
 }
 
+func TestRunAll_IncludeFlagsFlowToBuildSite(t *testing.T) {
+	clientOrig := buildClientFunc
+	configOrig := buildConfigFunc
+	sourceOrig := newOpenAPISourceFunc
+	buildOrig := buildSiteFunc
+	publishOrig := publishOutputFunc
+	defer func() {
+		buildClientFunc = clientOrig
+		buildConfigFunc = configOrig
+		newOpenAPISourceFunc = sourceOrig
+		buildSiteFunc = buildOrig
+		publishOutputFunc = publishOrig
+	}()
+
+	source := &fakeCommandOpenAPISource{}
+	var capturedContext string
+	var captured extractor.SiteBuildOptions
+	buildClientFunc = func(string) (*apiextensionsclient.Clientset, error) {
+		return apiextensionsclient.NewForConfig(&rest.Config{Host: "https://example.invalid"})
+	}
+	buildConfigFunc = func(kubeContext string) (*rest.Config, error) {
+		capturedContext = kubeContext
+		return &rest.Config{Host: "https://example.invalid"}, nil
+	}
+	newOpenAPISourceFunc = func(*rest.Config) (extractor.OpenAPISource, error) {
+		return source, nil
+	}
+	buildSiteFunc = func(opts extractor.SiteBuildOptions) (extractor.SiteBuildResult, error) {
+		captured = opts
+		return extractor.SiteBuildResult{Status: extractor.BuildResultNoop}, nil
+	}
+	publishOutputFunc = func(string) error {
+		t.Fatal("publish should not be called for noop build")
+		return nil
+	}
+
+	dir := t.TempDir()
+	t.Setenv("KUBECTL_CONTEXT", "env-context")
+	if err := runAll([]string{"--output-dir", dir, "--include-builtins", "--include-kustomize"}); err != nil {
+		t.Fatalf("runAll error: %v", err)
+	}
+	if capturedContext != "env-context" {
+		t.Fatalf("expected OpenAPI source to use env context, got %q", capturedContext)
+	}
+	if !captured.IncludeBuiltins {
+		t.Fatal("expected IncludeBuiltins to flow to BuildSite")
+	}
+	if !captured.IncludeKustomize {
+		t.Fatal("expected IncludeKustomize to flow to BuildSite")
+	}
+	if captured.OpenAPISource != source {
+		t.Fatalf("expected OpenAPISource to flow to BuildSite")
+	}
+}
+
 func TestRunAll_RejectsUnexpectedPositionalArgs(t *testing.T) {
 	clientOrig := buildClientFunc
 	defer func() {
@@ -258,6 +321,48 @@ func TestRunAll_RejectsUnexpectedPositionalArgs(t *testing.T) {
 	}
 	if called {
 		t.Fatal("expected runAll to fail before building kubernetes client")
+	}
+}
+
+func TestRunWatch_IncludeFlagsFlowToWatcher(t *testing.T) {
+	configOrig := buildConfigFunc
+	sourceOrig := newOpenAPISourceFunc
+	runWatcherOrig := runWatcherFunc
+	defer func() {
+		buildConfigFunc = configOrig
+		newOpenAPISourceFunc = sourceOrig
+		runWatcherFunc = runWatcherOrig
+	}()
+
+	source := &fakeCommandOpenAPISource{}
+	var captured watcher.Config
+	buildConfigFunc = func(string) (*rest.Config, error) {
+		return &rest.Config{Host: "https://example.invalid"}, nil
+	}
+	newOpenAPISourceFunc = func(*rest.Config) (extractor.OpenAPISource, error) {
+		return source, nil
+	}
+	runWatcherFunc = func(_ context.Context, cfg watcher.Config) error {
+		captured = cfg
+		return nil
+	}
+
+	dir := t.TempDir()
+	t.Setenv("OUTPUT_DIR", dir)
+	t.Setenv("POD_NAME", "pod-1")
+	t.Setenv("POD_NAMESPACE", "default")
+
+	if err := runWatch([]string{"--include-builtins", "--include-kustomize"}); err != nil {
+		t.Fatalf("runWatch error: %v", err)
+	}
+	if !captured.IncludeBuiltins {
+		t.Fatal("expected IncludeBuiltins to flow to watcher config")
+	}
+	if !captured.IncludeKustomize {
+		t.Fatal("expected IncludeKustomize to flow to watcher config")
+	}
+	if captured.OpenAPISource != source {
+		t.Fatal("expected OpenAPISource to flow to watcher config")
 	}
 }
 

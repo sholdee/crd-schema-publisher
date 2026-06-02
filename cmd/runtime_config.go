@@ -10,18 +10,22 @@ import (
 type envGetter func(string) string
 
 type runtimeConfig struct {
-	OutputDir string
-	Filter    extractor.SchemaFilter
+	OutputDir        string
+	Filter           extractor.SchemaFilter
+	IncludeBuiltins  bool
+	IncludeKustomize bool
 }
 
 type runtimeCommandOptions = runtimeConfig
 
 type extractConfig struct {
-	OutputDir   string
-	BasePath    string
-	KubeContext string
-	Render      bool
-	Filter      extractor.SchemaFilter
+	OutputDir        string
+	BasePath         string
+	KubeContext      string
+	Render           bool
+	Filter           extractor.SchemaFilter
+	IncludeBuiltins  bool
+	IncludeKustomize bool
 }
 
 type uploadCommandConfig struct {
@@ -51,6 +55,8 @@ func parseRuntimeConfig(cmd string, args []string, fallbackOutputDir string, env
 	kind := fs.String("kind", envDefault(env, schemaFilterKindEnv, ""), "filter by kind (comma-separated, case-insensitive)")
 	group := fs.String("group", envDefault(env, schemaFilterGroupEnv, ""), "filter by group (comma-separated, case-insensitive)")
 	version := fs.String("version", envDefault(env, schemaFilterVersionEnv, ""), "filter by version (comma-separated, case-insensitive)")
+	includeBuiltins := fs.Bool("include-builtins", envDefault(env, schemaIncludeBuiltinsEnv, "") == "true", "include Kubernetes built-in schemas from the API server")
+	includeKustomize := fs.Bool("include-kustomize", envDefault(env, schemaIncludeKustomizeEnv, "") == "true", "include kustomize's Kustomization schema")
 	if err := fs.Parse(args); err != nil {
 		return runtimeConfig{}, err
 	}
@@ -58,8 +64,10 @@ func parseRuntimeConfig(cmd string, args []string, fallbackOutputDir string, env
 		return runtimeConfig{}, fmt.Errorf("unexpected arguments for %s: %s", cmd, strings.Join(extras, " "))
 	}
 	return runtimeConfig{
-		OutputDir: outputDir,
-		Filter:    extractor.ParseFilter(*kind, *group, *version),
+		OutputDir:        outputDir,
+		Filter:           extractor.ParseFilter(*kind, *group, *version),
+		IncludeBuiltins:  *includeBuiltins,
+		IncludeKustomize: *includeKustomize,
 	}, nil
 }
 
@@ -73,6 +81,8 @@ func parseExtractConfig(args []string, env envGetter) (extractConfig, error) {
 	kind := fs.String("kind", envDefault(env, schemaFilterKindEnv, ""), "filter by kind (comma-separated, case-insensitive)")
 	group := fs.String("group", envDefault(env, schemaFilterGroupEnv, ""), "filter by group (comma-separated, case-insensitive)")
 	version := fs.String("version", envDefault(env, schemaFilterVersionEnv, ""), "filter by version (comma-separated, case-insensitive)")
+	includeBuiltins := fs.Bool("include-builtins", envDefault(env, schemaIncludeBuiltinsEnv, "") == "true", "include Kubernetes built-in schemas from the API server")
+	includeKustomize := fs.Bool("include-kustomize", envDefault(env, schemaIncludeKustomizeEnv, "") == "true", "include kustomize's Kustomization schema")
 	if err := fs.Parse(args); err != nil {
 		return extractConfig{}, err
 	}
@@ -80,11 +90,13 @@ func parseExtractConfig(args []string, env envGetter) (extractConfig, error) {
 		return extractConfig{}, fmt.Errorf("unexpected arguments for extract: %s", strings.Join(extras, " "))
 	}
 	return extractConfig{
-		OutputDir:   outputDir,
-		BasePath:    *basePath,
-		KubeContext: *kubeContext,
-		Render:      !*skipRender,
-		Filter:      extractor.ParseFilter(*kind, *group, *version),
+		OutputDir:        outputDir,
+		BasePath:         *basePath,
+		KubeContext:      *kubeContext,
+		Render:           !*skipRender,
+		Filter:           extractor.ParseFilter(*kind, *group, *version),
+		IncludeBuiltins:  *includeBuiltins,
+		IncludeKustomize: *includeKustomize,
 	}, nil
 }
 

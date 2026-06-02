@@ -67,7 +67,9 @@ func runLeader(ctx context.Context, cfg Config) {
 	slog.Info("CRD informer synced, watching for changes")
 
 	debounceLoop(trigger, cfg.Debounce, func() error {
-		return publishCycle(cfg)
+		cycleCfg := cfg
+		cycleCfg.Context = ctx
+		return publishCycle(cycleCfg)
 	}, cfg.Metrics, ctx.Done())
 }
 

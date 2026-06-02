@@ -26,6 +26,8 @@ import (
 
 // --- helpers ---
 
+type contextKey string
+
 type fakeLister struct {
 	crds []apiextensionsv1.CustomResourceDefinition
 	err  error
@@ -36,6 +38,39 @@ func (f *fakeLister) List(_ context.Context, _ metav1.ListOptions) (*apiextensio
 		return nil, f.err
 	}
 	return &apiextensionsv1.CustomResourceDefinitionList{Items: f.crds}, nil
+}
+
+const watcherOpenAPI = `{
+  "definitions": {
+    "io.k8s.api.core.v1.Pod": {
+      "type": "object",
+      "x-kubernetes-group-version-kind": [{"group": "", "version": "v1", "kind": "Pod"}],
+      "properties": {
+        "apiVersion": {"type": "string"},
+        "kind": {"type": "string"}
+      }
+    }
+  }
+}`
+
+type recordingLister struct {
+	ctx  context.Context
+	crds []apiextensionsv1.CustomResourceDefinition
+}
+
+func (r *recordingLister) List(ctx context.Context, _ metav1.ListOptions) (*apiextensionsv1.CustomResourceDefinitionList, error) {
+	r.ctx = ctx
+	return &apiextensionsv1.CustomResourceDefinitionList{Items: r.crds}, nil
+}
+
+type recordingOpenAPISource struct {
+	ctx context.Context
+	raw []byte
+}
+
+func (r *recordingOpenAPISource) FetchOpenAPIV2(ctx context.Context) ([]byte, error) {
+	r.ctx = ctx
+	return r.raw, nil
 }
 
 func testCRD() apiextensionsv1.CustomResourceDefinition {
@@ -450,6 +485,39 @@ func TestPublishCycle_AppliesConfiguredFilter(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "current", "example.io", "test_v1.json")); !os.IsNotExist(err) {
 		t.Fatalf("expected stale schema to be absent after filtered publish cycle, got err=%v", err)
+	}
+}
+
+func TestPublishCycle_IncludesOptionalSchemasAndContext(t *testing.T) {
+	t.Setenv("SKIP_RENDER", "true")
+	dir := t.TempDir()
+	ctx := context.WithValue(context.Background(), contextKey("publish"), "leader")
+	lister := &recordingLister{}
+	source := &recordingOpenAPISource{raw: []byte(watcherOpenAPI)}
+
+	cfg := Config{
+		Context:          ctx,
+		OutputDir:        dir,
+		CRDLister:        lister,
+		IncludeBuiltins:  true,
+		IncludeKustomize: true,
+		OpenAPISource:    source,
+	}
+
+	if err := publishCycle(cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if lister.ctx != ctx {
+		t.Fatal("expected publish context to flow to CRD listing")
+	}
+	if source.ctx != ctx {
+		t.Fatal("expected publish context to flow to OpenAPI fetch")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "current", "core", "pod_v1.json")); err != nil {
+		t.Fatalf("expected Pod schema: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "current", "kustomize.config.k8s.io", "kustomization_v1beta1.json")); err != nil {
+		t.Fatalf("expected Kustomization schema: %v", err)
 	}
 }
 

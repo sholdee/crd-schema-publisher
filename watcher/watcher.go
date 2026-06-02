@@ -26,22 +26,26 @@ import (
 
 // Config holds the configuration for the CRD watcher.
 type Config struct {
-	Client        *apiextensionsclient.Clientset
-	KubeConfig    *rest.Config
-	OutputDir     string
-	BasePath      string
-	Publisher     *publisher.Publisher // nil = extract-only
-	Debounce      time.Duration
-	Namespace     string
-	LeaseName     string
-	PodName       string
-	HealthPort    string
-	SitePort      string // empty = disabled
-	SiteAccessLog bool
-	Metrics       *metrics.Metrics    // nil = no metrics recording
-	CRDLister     extractor.CRDLister // nil = derive from Client
-	Filter        extractor.SchemaFilter
-	Profiler      diagnostics.Snapshotter
+	Context          context.Context
+	Client           *apiextensionsclient.Clientset
+	KubeConfig       *rest.Config
+	OutputDir        string
+	BasePath         string
+	Publisher        *publisher.Publisher // nil = extract-only
+	Debounce         time.Duration
+	Namespace        string
+	LeaseName        string
+	PodName          string
+	HealthPort       string
+	SitePort         string // empty = disabled
+	SiteAccessLog    bool
+	Metrics          *metrics.Metrics    // nil = no metrics recording
+	CRDLister        extractor.CRDLister // nil = derive from Client
+	Filter           extractor.SchemaFilter
+	IncludeBuiltins  bool
+	IncludeKustomize bool
+	OpenAPISource    extractor.OpenAPISource
+	Profiler         diagnostics.Snapshotter
 }
 
 // Run starts the watcher with leader election and health server.

@@ -39,6 +39,40 @@ func TestRuntimeConfig_RunFilterFlagsOverrideEnv(t *testing.T) {
 	}
 }
 
+func TestRuntimeConfig_RunIncludeFlagsOverrideEnv(t *testing.T) {
+	env := mapEnv(map[string]string{
+		schemaIncludeBuiltinsEnv:  "true",
+		schemaIncludeKustomizeEnv: "true",
+	})
+	cfg, err := parseRuntimeConfig("run", []string{"--include-builtins=false", "--include-kustomize=false"}, "/output", env)
+	if err != nil {
+		t.Fatalf("parseRuntimeConfig: %v", err)
+	}
+	if cfg.IncludeBuiltins {
+		t.Fatal("expected --include-builtins=false to override env")
+	}
+	if cfg.IncludeKustomize {
+		t.Fatal("expected --include-kustomize=false to override env")
+	}
+}
+
+func TestRuntimeConfig_RunIncludeEnvDefaults(t *testing.T) {
+	env := mapEnv(map[string]string{
+		schemaIncludeBuiltinsEnv:  "true",
+		schemaIncludeKustomizeEnv: "true",
+	})
+	cfg, err := parseRuntimeConfig("run", nil, "/output", env)
+	if err != nil {
+		t.Fatalf("parseRuntimeConfig: %v", err)
+	}
+	if !cfg.IncludeBuiltins {
+		t.Fatal("expected SCHEMA_INCLUDE_BUILTINS=true to enable built-ins")
+	}
+	if !cfg.IncludeKustomize {
+		t.Fatal("expected SCHEMA_INCLUDE_KUSTOMIZE=true to enable kustomize")
+	}
+}
+
 func TestExtractConfig_UsesEnvDefaultsAndFlagOverrides(t *testing.T) {
 	env := mapEnv(map[string]string{
 		"OUTPUT_DIR":           "/env-output",
@@ -64,6 +98,42 @@ func TestExtractConfig_UsesEnvDefaultsAndFlagOverrides(t *testing.T) {
 	}
 	if !cfg.Filter.Matches("FlagKind", "env.example.io", "v1alpha1") {
 		t.Fatalf("expected mixed flag/env filter values: %#v", cfg.Filter)
+	}
+}
+
+func TestExtractConfig_IncludeFlagsOverrideEnv(t *testing.T) {
+	env := mapEnv(map[string]string{
+		"OUTPUT_DIR":              "/env-output",
+		schemaIncludeBuiltinsEnv:  "true",
+		schemaIncludeKustomizeEnv: "true",
+	})
+	cfg, err := parseExtractConfig([]string{"--include-builtins=false", "--include-kustomize=false"}, env)
+	if err != nil {
+		t.Fatalf("parseExtractConfig: %v", err)
+	}
+	if cfg.IncludeBuiltins {
+		t.Fatal("expected --include-builtins=false to override env")
+	}
+	if cfg.IncludeKustomize {
+		t.Fatal("expected --include-kustomize=false to override env")
+	}
+}
+
+func TestExtractConfig_IncludeEnvDefaults(t *testing.T) {
+	env := mapEnv(map[string]string{
+		"OUTPUT_DIR":              "/env-output",
+		schemaIncludeBuiltinsEnv:  "true",
+		schemaIncludeKustomizeEnv: "true",
+	})
+	cfg, err := parseExtractConfig(nil, env)
+	if err != nil {
+		t.Fatalf("parseExtractConfig: %v", err)
+	}
+	if !cfg.IncludeBuiltins {
+		t.Fatal("expected SCHEMA_INCLUDE_BUILTINS=true to enable built-ins")
+	}
+	if !cfg.IncludeKustomize {
+		t.Fatal("expected SCHEMA_INCLUDE_KUSTOMIZE=true to enable kustomize")
 	}
 }
 

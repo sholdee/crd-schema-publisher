@@ -71,6 +71,29 @@
     toggleAll.textContent = 'Expand all';
   }
 
+  function applyGroupSearch(g, q, sourceMatch) {
+    var rows = g.querySelectorAll('.schema-row');
+    var groupName = g.dataset.group.toLowerCase();
+    var groupMatch = groupName.indexOf(q) !== -1;
+    var schemaMatch = false;
+    var shownRows = 0;
+    rows.forEach(function(row){
+      var rowMatch = row.dataset.schema.toLowerCase().indexOf(q) !== -1;
+      var showRow = sourceMatch || groupMatch || rowMatch;
+      row.style.display = showRow ? '' : 'none';
+      if (rowMatch) schemaMatch = true;
+      if (showRow) shownRows++;
+    });
+    if (sourceMatch || groupMatch || schemaMatch) {
+      g.style.display = '';
+      g.setAttribute('open','');
+      return shownRows;
+    }
+    g.style.display = 'none';
+    g.removeAttribute('open');
+    return 0;
+  }
+
   input.addEventListener('input', function(){
     var q = this.value.toLowerCase().trim();
     updateSearchClear();
@@ -82,43 +105,37 @@
 
     var visibleGroupsByName = {};
     var visibleSchemas = 0;
-    sourceSections.forEach(function(source){
-      var sourceKey = (source.dataset.source || '').toLowerCase();
-      var sourceLabel = (source.dataset.sourceLabel || '').toLowerCase();
-      var sourceMatch = sourceKey.indexOf(q) !== -1 || sourceLabel.indexOf(q) !== -1;
-      var sourceVisible = false;
-      source.querySelectorAll('.group').forEach(function(g){
-        var rows = g.querySelectorAll('.schema-row');
-        var groupName = g.dataset.group.toLowerCase();
-        var groupMatch = groupName.indexOf(q) !== -1;
-        var schemaMatch = false;
-        var shownRows = 0;
-        rows.forEach(function(row){
-          var rowMatch = row.dataset.schema.toLowerCase().indexOf(q) !== -1;
-          var showRow = sourceMatch || groupMatch || rowMatch;
-          row.style.display = showRow ? '' : 'none';
-          if (rowMatch) schemaMatch = true;
-          if (showRow) shownRows++;
+    if (sourceSections.length) {
+      sourceSections.forEach(function(source){
+        var sourceKey = (source.dataset.source || '').toLowerCase();
+        var sourceLabel = (source.dataset.sourceLabel || '').toLowerCase();
+        var sourceMatch = sourceKey.indexOf(q) !== -1 || sourceLabel.indexOf(q) !== -1;
+        var sourceVisible = false;
+        source.querySelectorAll('.group').forEach(function(g){
+          var shownRows = applyGroupSearch(g, q, sourceMatch);
+          if (shownRows) {
+            sourceVisible = true;
+            visibleGroupsByName[g.dataset.group] = true;
+            visibleSchemas += shownRows;
+          }
         });
-        if (sourceMatch || groupMatch || schemaMatch) {
-          g.style.display = '';
-          g.setAttribute('open','');
-          sourceVisible = true;
-          visibleGroupsByName[g.dataset.group] = true;
-          visibleSchemas += shownRows;
+        if (sourceVisible) {
+          source.style.display = '';
+          source.setAttribute('open','');
         } else {
-          g.style.display = 'none';
-          g.removeAttribute('open');
+          source.style.display = 'none';
+          source.removeAttribute('open');
         }
       });
-      if (sourceVisible) {
-        source.style.display = '';
-        source.setAttribute('open','');
-      } else {
-        source.style.display = 'none';
-        source.removeAttribute('open');
-      }
-    });
+    } else {
+      groups.forEach(function(g){
+        var shownRows = applyGroupSearch(g, q, false);
+        if (shownRows) {
+          visibleGroupsByName[g.dataset.group] = true;
+          visibleSchemas += shownRows;
+        }
+      });
+    }
     var visible = Object.keys(visibleGroupsByName).length;
     noResults.style.display = visible ? 'none' : 'block';
     statGroups.textContent = visible + ' / ' + totalGroups;

@@ -103,9 +103,7 @@ func TestGenerate_CreatesIndexHTML(t *testing.T) {
 		{"monitoring.coreos.com", "group name monitoring.coreos.com"},
 		{"certificate_v1.json", "schema link"},
 		{`href="/cert-manager.io/certificate_v1.json"`, "schema link href format"},
-		{`class="source-section" data-source="crd" data-source-label="Custom Resources" data-default-open="true" open`, "default-open CRD source section"},
-		{"Custom Resources", "CRD source label"},
-		{"source-badge", "source section schema count badge"},
+		{`class="group" data-group="cert-manager.io"`, "flat CRD-only API group"},
 		{">2</strong> API groups", "group count stat"},
 		{">3</strong> schemas", "total schema count stat"},
 		{"JSON schemas extracted from live CustomResourceDefinitions", "precise index subtitle"},
@@ -153,6 +151,9 @@ func TestGenerate_CreatesIndexHTML(t *testing.T) {
 	if strings.Contains(html, "copy-hint") {
 		t.Error("index should use real copy buttons instead of hover-only copy hint spans")
 	}
+	if strings.Contains(html, `class="source-section"`) || strings.Contains(html, "Custom Resources") {
+		t.Error("CRD-only index should not render source section chrome")
+	}
 }
 
 func TestGenerate_IndexPageContract(t *testing.T) {
@@ -164,9 +165,7 @@ func TestGenerate_IndexPageContract(t *testing.T) {
 	page := readFile(t, filepath.Join(tmpDir, "index.html"))
 	contract := normalizeHTMLForContract(page)
 	for _, needle := range []string{
-		`<details class="source-section" data-source="crd" data-source-label="Custom Resources" data-default-open="true" open>`,
-		`<summary><span class="source-label">Custom Resources</span> <span class="badge source-badge">1</span></summary>`,
-		`<details class="group" data-source="crd" data-group="example.io">`,
+		`<details class="group" data-group="example.io">`,
 		`href="/docs/example.io/test_v1.html"`,
 		`readHashSearchQuery`,
 		`writeHashSearchQuery`,
@@ -177,6 +176,9 @@ func TestGenerate_IndexPageContract(t *testing.T) {
 		if !strings.Contains(contract, needle) {
 			t.Fatalf("index page contract missing %q", needle)
 		}
+	}
+	if strings.Contains(contract, `class="source-section"`) {
+		t.Fatal("single-source index should not render source section wrapper")
 	}
 }
 
@@ -247,8 +249,11 @@ func TestGenerate_MissingMetadataFallsBackToCustomResources(t *testing.T) {
 	}
 
 	html := readFile(t, filepath.Join(tmpDir, "index.html"))
-	if !strings.Contains(html, `data-source="crd"`) || !strings.Contains(html, "Custom Resources") {
-		t.Fatal("schema without metadata should render under Custom Resources")
+	if strings.Contains(html, `class="source-section"`) || strings.Contains(html, "Custom Resources") {
+		t.Fatal("single-source CRD fallback should not render source section chrome")
+	}
+	if !strings.Contains(html, `class="group" data-group="example.io"`) {
+		t.Fatal("schema without metadata should render as a flat API group")
 	}
 	if strings.Contains(html, `data-source="builtin"`) || strings.Contains(html, `data-source="kustomize"`) {
 		t.Fatal("missing metadata should not create optional source sections")
@@ -295,8 +300,11 @@ func TestGenerate_StaleMetadataForMissingFilesIgnored(t *testing.T) {
 	if strings.Contains(html, `data-source="builtin"`) || strings.Contains(html, "Kubernetes Built-ins") {
 		t.Fatal("stale metadata should not create a source section")
 	}
-	if !strings.Contains(html, `data-source="crd"`) {
-		t.Fatal("discovered schema should still render as CRD fallback")
+	if strings.Contains(html, `class="source-section"`) {
+		t.Fatal("single-source stale metadata fallback should not render source section chrome")
+	}
+	if !strings.Contains(html, `class="group" data-group="example.io"`) {
+		t.Fatal("discovered schema should still render as a flat CRD fallback")
 	}
 }
 
@@ -316,7 +324,10 @@ func TestGenerate_MalformedMetadataTreatedAsAbsent(t *testing.T) {
 	}
 
 	html := readFile(t, filepath.Join(tmpDir, "index.html"))
-	if !strings.Contains(html, `data-source="crd"`) {
+	if strings.Contains(html, `class="source-section"`) {
+		t.Fatal("single-source malformed metadata fallback should not render source section chrome")
+	}
+	if !strings.Contains(html, `class="group" data-group="core"`) {
 		t.Fatal("malformed optional metadata should be ignored")
 	}
 }
@@ -333,12 +344,15 @@ func TestGenerate_UnknownSourceRendersUnknownSection(t *testing.T) {
 	}
 
 	html := readFile(t, filepath.Join(tmpDir, "index.html"))
-	if !strings.Contains(html, `data-source="unknown"`) || !strings.Contains(html, "Unknown") {
-		t.Fatal("unknown source values should render under Unknown")
+	if strings.Contains(html, `class="source-section"`) || strings.Contains(html, "Unknown") {
+		t.Fatal("single unknown source should not render source section chrome")
+	}
+	if !strings.Contains(html, `class="group" data-group="external.example.io"`) {
+		t.Fatal("unknown source values should still render as flat API groups when they are the only source")
 	}
 }
 
-func TestGenerate_KustomizeOnlyOpensKustomize(t *testing.T) {
+func TestGenerate_KustomizeOnlyRendersFlatGroups(t *testing.T) {
 	tmpDir := t.TempDir()
 	writeIndexSchema(t, tmpDir, "kustomize.config.k8s.io", "kustomization_v1beta1.json")
 	writeIndexMetadata(t, tmpDir, map[string]string{
@@ -350,8 +364,11 @@ func TestGenerate_KustomizeOnlyOpensKustomize(t *testing.T) {
 	}
 
 	html := readFile(t, filepath.Join(tmpDir, "index.html"))
-	if !strings.Contains(html, `data-source="kustomize" data-source-label="Kustomize" data-default-open="true" open`) {
-		t.Fatal("single kustomize source should be open by default")
+	if strings.Contains(html, `class="source-section"`) || strings.Contains(html, "Kustomize") {
+		t.Fatal("single kustomize source should not render source section chrome")
+	}
+	if !strings.Contains(html, `class="group" data-group="kustomize.config.k8s.io"`) {
+		t.Fatal("single kustomize source should render flat API groups")
 	}
 }
 

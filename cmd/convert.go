@@ -183,18 +183,12 @@ func loadCRDs(fileList, dir string) ([]apiextensionsv1.CustomResourceDefinition,
 	return crds, nil
 }
 
-func loadFilteredCRDs(fileList, dir string, filter extractor.SchemaFilter) ([]apiextensionsv1.CustomResourceDefinition, error) {
-	if fileList == "" && dir == "" {
-		return nil, nil
-	}
-	loaded, err := loadCRDs(fileList, dir)
-	if err != nil {
-		return nil, err
-	}
-	return extractor.FilterCRDs(loaded, filter), nil
-}
-
-func writeConvertInputs(crds []apiextensionsv1.CustomResourceDefinition, openapiPath, outputDir string, filter extractor.SchemaFilter) (int, error) {
+func writeConvertInputs(
+	crds []apiextensionsv1.CustomResourceDefinition,
+	openapiPath, outputDir string,
+	filter extractor.SchemaFilter,
+	openAPIExclusionCRDs []apiextensionsv1.CustomResourceDefinition,
+) (int, error) {
 	var count int
 	if len(crds) > 0 {
 		n, err := extractor.WriteSchemas(crds, outputDir)
@@ -204,7 +198,7 @@ func writeConvertInputs(crds []apiextensionsv1.CustomResourceDefinition, openapi
 		count += n
 	}
 	if openapiPath != "" {
-		n, err := extractor.WriteOpenAPISchemas(openapiPath, outputDir, filter)
+		n, err := extractor.WriteOpenAPISchemasExcludingCRDs(openapiPath, outputDir, filter, openAPIExclusionCRDs)
 		if err != nil {
 			return count, fmt.Errorf("writing openapi schemas: %w", err)
 		}
@@ -274,10 +268,11 @@ func runConvert(args []string) error {
 	}
 
 	filter := extractor.ParseFilter(*kind, *group, *version)
-	crds, err := loadFilteredCRDs(fileFlag, dirFlag, filter)
+	loadedCRDs, err := loadCRDs(fileFlag, dirFlag)
 	if err != nil {
 		return err
 	}
+	crds := extractor.FilterCRDs(loadedCRDs, filter)
 
 	if err := cleanConvertArtifacts(outputDir); err != nil {
 		return fmt.Errorf("preparing output directory: %w", err)
@@ -290,7 +285,7 @@ func runConvert(args []string) error {
 
 	preExisting := snapshotFiles(outputDir)
 
-	count, err := writeConvertInputs(crds, *openapiFlag, outputDir, filter)
+	count, err := writeConvertInputs(crds, *openapiFlag, outputDir, filter, loadedCRDs)
 	if err != nil {
 		return err
 	}

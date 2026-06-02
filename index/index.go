@@ -34,11 +34,13 @@ type sourceSectionData struct {
 }
 
 type indexData struct {
-	Sources    []sourceSectionData
-	GroupCount int
-	TotalCount int
-	UpdatedAt  string
-	BasePath   string
+	Sources         []sourceSectionData
+	Groups          []groupData
+	GroupedBySource bool
+	GroupCount      int
+	TotalCount      int
+	UpdatedAt       string
+	BasePath        string
 }
 
 const sourceUnknown = "unknown"
@@ -237,6 +239,7 @@ metadata:
 <div class="visually-hidden" id="search-status" role="status" aria-live="polite" aria-atomic="true"></div>
 <div class="toolbar"><button id="toggle-all">Expand all</button></div>
 <div id="groups">
+{{if .GroupedBySource}}
 {{range .Sources}}
 {{$source := .Source}}
 <details class="source-section" data-source="{{.Source}}" data-source-label="{{.Label}}" data-default-open="{{.OpenByDefault}}"{{if .OpenByDefault}} open{{end}}>
@@ -252,6 +255,16 @@ metadata:
 {{end}}
 </div>
 </details>
+{{end}}
+{{else}}
+{{range .Groups}}
+<details class="group" data-group="{{.Name}}">
+<summary><span class="group-name">{{.Name}}</span> <span class="badge">{{len .Schemas}}</span></summary>
+<div class="schemas">
+{{range .Schemas}}<div class="schema-row" data-schema="{{.Name}}"><a href="{{$.BasePath}}/{{.HTMLPath}}" data-url="{{$.BasePath}}/{{.Path}}">{{.Name}}</a><button type="button" class="schema-copy" data-url="{{$.BasePath}}/{{.Path}}" aria-label="Copy schema URL for {{.Name}}" title="Copy schema URL">copy URL</button></div>
+{{end}}</div>
+</details>
+{{end}}
 {{end}}
 </div>
 <p class="no-results" id="no-results">No matching sources, groups, or schemas.</p>
@@ -291,15 +304,24 @@ func Generate(outputDir, basePath string) error {
 	defer func() { _ = f.Close() }()
 
 	if err := tmpl.Execute(f, indexData{
-		Sources:    sources,
-		GroupCount: groupCount,
-		TotalCount: totalCount,
-		UpdatedAt:  time.Now().UTC().Format("2006-01-02 15:04 UTC"),
-		BasePath:   basePath,
+		Sources:         sources,
+		Groups:          flatGroupsForSingleSource(sources),
+		GroupedBySource: len(sources) > 1,
+		GroupCount:      groupCount,
+		TotalCount:      totalCount,
+		UpdatedAt:       time.Now().UTC().Format("2006-01-02 15:04 UTC"),
+		BasePath:        basePath,
 	}); err != nil {
 		return err
 	}
 	return f.Close()
+}
+
+func flatGroupsForSingleSource(sources []sourceSectionData) []groupData {
+	if len(sources) != 1 {
+		return nil
+	}
+	return sources[0].Groups
 }
 
 func collectSourceSections(outputDir string) ([]sourceSectionData, int, int, error) {

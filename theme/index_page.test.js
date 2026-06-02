@@ -116,37 +116,38 @@ function mixedFixtures() {
   ];
 }
 
-function buildFixtureDom(fixtures) {
-  const sources = [];
-  const groups = [];
-  const rows = [];
+function buildFixtureDom(fixtures, groupedBySource = fixtures.length > 1) {
+	const sources = [];
+	const groups = [];
+	const rows = [];
   const links = [];
   const copyButtons = [];
   const sourceByKey = new Map();
   const groupByKey = new Map();
   const linkByKey = new Map();
 
-  for (const sourceDef of fixtures) {
-    const source = makeElement(`source-${sourceDef.source}`, {
-      source: sourceDef.source,
-      sourceLabel: sourceDef.label,
-      defaultOpen: sourceDef.defaultOpen ? 'true' : 'false',
-    });
-    if (sourceDef.defaultOpen) source.setAttribute('open', '');
-    source.__groups = [];
-    sources.push(source);
-    sourceByKey.set(sourceDef.source, source);
+	for (const sourceDef of fixtures) {
+		let source = null;
+		if (groupedBySource) {
+			source = makeElement(`source-${sourceDef.source}`, {
+				source: sourceDef.source,
+				sourceLabel: sourceDef.label,
+				defaultOpen: sourceDef.defaultOpen ? 'true' : 'false',
+			});
+			if (sourceDef.defaultOpen) source.setAttribute('open', '');
+			source.__groups = [];
+			sources.push(source);
+			sourceByKey.set(sourceDef.source, source);
+		}
 
-    for (const groupDef of sourceDef.groups) {
-      const group = makeElement(`${sourceDef.source}-${groupDef.name}`, {
-        source: sourceDef.source,
-        group: groupDef.name,
-      });
-      group.__rows = [];
-      group.__links = [];
-      source.__groups.push(group);
-      groups.push(group);
-      groupByKey.set(`${sourceDef.source}:${groupDef.name}`, group);
+		for (const groupDef of sourceDef.groups) {
+			const dataset = groupedBySource ? { source: sourceDef.source, group: groupDef.name } : { group: groupDef.name };
+			const group = makeElement(`${sourceDef.source}-${groupDef.name}`, dataset);
+			group.__rows = [];
+			group.__links = [];
+			if (source) source.__groups.push(group);
+			groups.push(group);
+			groupByKey.set(`${sourceDef.source}:${groupDef.name}`, group);
 
       for (const schema of groupDef.schemas) {
         const url = `/docs/${groupDef.name}/${schema}`;

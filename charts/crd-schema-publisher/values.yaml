@@ -46,6 +46,10 @@ config:
   uploadConcurrency: ""
   # -- URL path prefix for subpath deployments (e.g., /iac for GitHub Pages at user.github.io/iac/)
   basePath: ""
+  # -- Include Kubernetes built-in schemas from the API server OpenAPI v2 document
+  includeBuiltins: false
+  # -- Include kustomize's client-side Kustomization schema
+  includeKustomize: false
   # -- Optional schema filters. Values are comma-separated and case-insensitive.
   filter:
     # -- Filter by CRD kind, e.g. Certificate,Issuer

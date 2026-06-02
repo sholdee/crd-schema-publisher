@@ -98,7 +98,7 @@ func isDefaultRunFlag(arg string) bool {
 	if arg == "-o" || strings.HasPrefix(arg, "-o=") {
 		return true
 	}
-	for _, name := range []string{"output-dir", "kind", "group", "version"} {
+	for _, name := range []string{"output-dir", "kind", "group", "version", "include-builtins", "include-kustomize"} {
 		if arg == "--"+name || strings.HasPrefix(arg, "--"+name+"=") {
 			return true
 		}

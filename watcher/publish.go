@@ -25,12 +25,16 @@ func publishCycle(cfg Config) (retErr error) {
 	}
 
 	result, err := extractor.BuildSite(extractor.SiteBuildOptions{
-		Lister:    lister,
-		OutputDir: cfg.OutputDir,
-		BasePath:  cfg.BasePath,
-		Render:    os.Getenv("SKIP_RENDER") != "true",
-		Filter:    cfg.Filter,
-		Profiler:  cfg.Profiler,
+		Context:          cfg.Context,
+		Lister:           lister,
+		OutputDir:        cfg.OutputDir,
+		BasePath:         cfg.BasePath,
+		Render:           os.Getenv("SKIP_RENDER") != "true",
+		Filter:           cfg.Filter,
+		IncludeBuiltins:  cfg.IncludeBuiltins,
+		IncludeKustomize: cfg.IncludeKustomize,
+		OpenAPISource:    cfg.OpenAPISource,
+		Profiler:         cfg.Profiler,
 	})
 	if err != nil {
 		return err

@@ -15,12 +15,24 @@ import (
 	"github.com/sholdee/crd-schema-publisher/publisher"
 	"github.com/sholdee/crd-schema-publisher/watcher"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+	"k8s.io/client-go/rest"
 )
 
 const (
 	schemaFilterKindEnv    = "SCHEMA_FILTER_KIND"
 	schemaFilterGroupEnv   = "SCHEMA_FILTER_GROUP"
 	schemaFilterVersionEnv = "SCHEMA_FILTER_VERSION"
+
+	schemaIncludeBuiltinsEnv  = "SCHEMA_INCLUDE_BUILTINS"
+	schemaIncludeKustomizeEnv = "SCHEMA_INCLUDE_KUSTOMIZE"
+)
+
+var (
+	buildConfigFunc      = extractor.BuildConfig
+	newOpenAPISourceFunc = func(cfg *rest.Config) (extractor.OpenAPISource, error) {
+		return extractor.NewAPIServerOpenAPISource(cfg)
+	}
+	runWatcherFunc = watcher.Run
 )
 
 func init() {
@@ -49,14 +61,21 @@ func runExtract(args []string) error {
 	if err != nil {
 		return fmt.Errorf("building client: %w", err)
 	}
+	openAPI, err := runtimeOpenAPISource(cfg.KubeContext, cfg.IncludeBuiltins)
+	if err != nil {
+		return err
+	}
 
 	result, err := buildSiteFunc(extractor.SiteBuildOptions{
-		Lister:    client.ApiextensionsV1().CustomResourceDefinitions(),
-		OutputDir: cfg.OutputDir,
-		BasePath:  normalizeBasePath(cfg.BasePath),
-		Render:    cfg.Render,
-		Filter:    cfg.Filter,
-		Profiler:  diagnostics.NewFromEnv(),
+		Lister:           client.ApiextensionsV1().CustomResourceDefinitions(),
+		OutputDir:        cfg.OutputDir,
+		BasePath:         normalizeBasePath(cfg.BasePath),
+		Render:           cfg.Render,
+		Filter:           cfg.Filter,
+		IncludeBuiltins:  cfg.IncludeBuiltins,
+		IncludeKustomize: cfg.IncludeKustomize,
+		OpenAPISource:    openAPI.Source,
+		Profiler:         diagnostics.NewFromEnv(),
 	})
 	if err != nil {
 		return err
@@ -89,7 +108,33 @@ func parseSiteServingConfig(healthPort string) (bool, string, bool, error) {
 	return true, sitePort, os.Getenv("SERVE_ACCESS_LOG") == "true", nil
 }
 
-func runBuild(outputDir string, filter extractor.SchemaFilter) (extractor.SiteBuildResult, error) {
+type runtimeOpenAPIConfig struct {
+	Source extractor.OpenAPISource
+}
+
+func runtimeOpenAPISource(kubeContext string, includeBuiltins bool) (runtimeOpenAPIConfig, error) {
+	if !includeBuiltins {
+		return runtimeOpenAPIConfig{}, nil
+	}
+	cfg, err := buildConfigFunc(kubeContext)
+	if err != nil {
+		return runtimeOpenAPIConfig{}, fmt.Errorf("building kubeconfig for OpenAPI: %w", err)
+	}
+	return runtimeOpenAPISourceFromConfig(cfg, includeBuiltins)
+}
+
+func runtimeOpenAPISourceFromConfig(cfg *rest.Config, includeBuiltins bool) (runtimeOpenAPIConfig, error) {
+	if !includeBuiltins {
+		return runtimeOpenAPIConfig{}, nil
+	}
+	source, err := newOpenAPISourceFunc(cfg)
+	if err != nil {
+		return runtimeOpenAPIConfig{}, fmt.Errorf("building OpenAPI source: %w", err)
+	}
+	return runtimeOpenAPIConfig{Source: source}, nil
+}
+
+func runBuild(opts runtimeConfig) (extractor.SiteBuildResult, error) {
 	basePath := normalizeBasePath(os.Getenv("BASE_PATH"))
 	kubeContext := os.Getenv("KUBECTL_CONTEXT")
 
@@ -98,14 +143,21 @@ func runBuild(outputDir string, filter extractor.SchemaFilter) (extractor.SiteBu
 	if err != nil {
 		return extractor.SiteBuildResult{}, fmt.Errorf("building client: %w", err)
 	}
+	openAPI, err := runtimeOpenAPISource(kubeContext, opts.IncludeBuiltins)
+	if err != nil {
+		return extractor.SiteBuildResult{}, err
+	}
 
 	result, err := buildSiteFunc(extractor.SiteBuildOptions{
-		Lister:    client.ApiextensionsV1().CustomResourceDefinitions(),
-		OutputDir: outputDir,
-		BasePath:  basePath,
-		Render:    os.Getenv("SKIP_RENDER") != "true",
-		Filter:    filter,
-		Profiler:  diagnostics.NewFromEnv(),
+		Lister:           client.ApiextensionsV1().CustomResourceDefinitions(),
+		OutputDir:        opts.OutputDir,
+		BasePath:         basePath,
+		Render:           os.Getenv("SKIP_RENDER") != "true",
+		Filter:           opts.Filter,
+		IncludeBuiltins:  opts.IncludeBuiltins,
+		IncludeKustomize: opts.IncludeKustomize,
+		OpenAPISource:    openAPI.Source,
+		Profiler:         diagnostics.NewFromEnv(),
 	})
 	if err != nil {
 		return extractor.SiteBuildResult{}, err
@@ -115,7 +167,7 @@ func runBuild(outputDir string, filter extractor.SchemaFilter) (extractor.SiteBu
 		return result, nil
 	}
 
-	slog.Info("extract complete", "count", result.SchemaCount, "dir", outputDir)
+	slog.Info("extract complete", "count", result.SchemaCount, "dir", opts.OutputDir)
 	return result, nil
 }
 
@@ -193,7 +245,7 @@ func runWatch(args []string) error {
 		slog.Info("site serving enabled", "site_port", sitePort, "access_log", serveAccessLog)
 	}
 
-	cfg, err := extractor.BuildConfig(kubeContext)
+	cfg, err := buildConfigFunc(kubeContext)
 	if err != nil {
 		return fmt.Errorf("building kubeconfig: %w", err)
 	}
@@ -201,6 +253,10 @@ func runWatch(args []string) error {
 	client, err := apiextensionsclient.NewForConfig(cfg)
 	if err != nil {
 		return fmt.Errorf("building apiextensions client: %w", err)
+	}
+	openAPI, err := runtimeOpenAPISourceFromConfig(cfg, opts.IncludeBuiltins)
+	if err != nil {
+		return err
 	}
 
 	profiler := diagnostics.NewFromEnv()
@@ -225,21 +281,24 @@ func runWatch(args []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
-	return watcher.Run(ctx, watcher.Config{
-		Client:        client,
-		KubeConfig:    cfg,
-		OutputDir:     opts.OutputDir,
-		BasePath:      basePath,
-		Publisher:     pub,
-		Debounce:      time.Duration(debounceSeconds) * time.Second,
-		Namespace:     podNamespace,
-		LeaseName:     leaseName,
-		PodName:       podName,
-		HealthPort:    healthPort,
-		SitePort:      sitePort,
-		SiteAccessLog: serveAccessLog,
-		Filter:        opts.Filter,
-		Profiler:      profiler,
+	return runWatcherFunc(ctx, watcher.Config{
+		Client:           client,
+		KubeConfig:       cfg,
+		OutputDir:        opts.OutputDir,
+		BasePath:         basePath,
+		Publisher:        pub,
+		Debounce:         time.Duration(debounceSeconds) * time.Second,
+		Namespace:        podNamespace,
+		LeaseName:        leaseName,
+		PodName:          podName,
+		HealthPort:       healthPort,
+		SitePort:         sitePort,
+		SiteAccessLog:    serveAccessLog,
+		Filter:           opts.Filter,
+		IncludeBuiltins:  opts.IncludeBuiltins,
+		IncludeKustomize: opts.IncludeKustomize,
+		OpenAPISource:    openAPI.Source,
+		Profiler:         profiler,
 	})
 }
 
@@ -252,7 +311,7 @@ func runAll(args []string) error {
 		return err
 	}
 
-	result, err := runBuild(opts.OutputDir, opts.Filter)
+	result, err := runBuild(opts)
 	if err != nil {
 		return fmt.Errorf("%w\n\n"+
 			"The \"run\" command extracts schemas from a Kubernetes cluster and uploads when Cloudflare credentials are configured.\n\n"+

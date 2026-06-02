@@ -207,6 +207,16 @@ func TestParseSubcommand_LeadingVersionFilterFlagDefaultsToRun(t *testing.T) {
 	}
 }
 
+func TestParseSubcommand_LeadingIncludeFlagDefaultsToRun(t *testing.T) {
+	cmd, args := parseSubcommand([]string{"crd-schema-publisher", "--include-builtins"})
+	if cmd != "run" {
+		t.Errorf("expected default 'run' for leading include flag, got %q", cmd)
+	}
+	if len(args) != 1 || args[0] != "--include-builtins" {
+		t.Errorf("expected ['--include-builtins'], got %v", args)
+	}
+}
+
 func TestParseSubcommand_NonRunFlagDoesNotDefaultToRun(t *testing.T) {
 	cmd, args := parseSubcommand([]string{"crd-schema-publisher", "--base-path", "/docs"})
 	if cmd != "--base-path" {
@@ -373,6 +383,60 @@ func TestRunExtract_FallsBackToEnvVars(t *testing.T) {
 	}
 	if got := strings.Join(capturedOpts.Filter.Versions, ","); got != "v1" {
 		t.Errorf("expected env version filter, got %q", got)
+	}
+}
+
+func TestRunExtract_IncludeEnvFlowsToBuildSite(t *testing.T) {
+	clientOrig := buildClientFunc
+	configOrig := buildConfigFunc
+	sourceOrig := newOpenAPISourceFunc
+	buildOrig := buildSiteFunc
+	defer func() {
+		buildClientFunc = clientOrig
+		buildConfigFunc = configOrig
+		newOpenAPISourceFunc = sourceOrig
+		buildSiteFunc = buildOrig
+	}()
+
+	source := &fakeCommandOpenAPISource{}
+	var capturedContext string
+	var capturedOpts extractor.SiteBuildOptions
+	buildClientFunc = func(kubeContext string) (*apiextensionsclient.Clientset, error) {
+		return apiextensionsclient.NewForConfig(&rest.Config{Host: "https://example.invalid"})
+	}
+	buildConfigFunc = func(kubeContext string) (*rest.Config, error) {
+		capturedContext = kubeContext
+		return &rest.Config{Host: "https://example.invalid"}, nil
+	}
+	newOpenAPISourceFunc = func(*rest.Config) (extractor.OpenAPISource, error) {
+		return source, nil
+	}
+	buildSiteFunc = func(opts extractor.SiteBuildOptions) (extractor.SiteBuildResult, error) {
+		capturedOpts = opts
+		return extractor.SiteBuildResult{Status: extractor.BuildResultNoop}, nil
+	}
+
+	tmpDir := t.TempDir()
+	t.Setenv("OUTPUT_DIR", tmpDir)
+	t.Setenv("KUBECTL_CONTEXT", "env-context")
+	t.Setenv("SCHEMA_INCLUDE_BUILTINS", "true")
+	t.Setenv("SCHEMA_INCLUDE_KUSTOMIZE", "true")
+
+	err := runExtract(nil)
+	if err != nil {
+		t.Fatalf("runExtract error: %v", err)
+	}
+	if capturedContext != "env-context" {
+		t.Fatalf("expected OpenAPI source to use env context, got %q", capturedContext)
+	}
+	if !capturedOpts.IncludeBuiltins {
+		t.Fatal("expected IncludeBuiltins to flow to BuildSite")
+	}
+	if !capturedOpts.IncludeKustomize {
+		t.Fatal("expected IncludeKustomize to flow to BuildSite")
+	}
+	if capturedOpts.OpenAPISource != source {
+		t.Fatalf("expected OpenAPISource to flow to BuildSite")
 	}
 }
 

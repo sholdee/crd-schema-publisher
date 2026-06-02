@@ -22,9 +22,12 @@ import (
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/cache"
 )
 
 // --- helpers ---
+
+type contextKey string
 
 type fakeLister struct {
 	crds []apiextensionsv1.CustomResourceDefinition
@@ -36,6 +39,39 @@ func (f *fakeLister) List(_ context.Context, _ metav1.ListOptions) (*apiextensio
 		return nil, f.err
 	}
 	return &apiextensionsv1.CustomResourceDefinitionList{Items: f.crds}, nil
+}
+
+const watcherOpenAPI = `{
+  "definitions": {
+    "io.k8s.api.core.v1.Pod": {
+      "type": "object",
+      "x-kubernetes-group-version-kind": [{"group": "", "version": "v1", "kind": "Pod"}],
+      "properties": {
+        "apiVersion": {"type": "string"},
+        "kind": {"type": "string"}
+      }
+    }
+  }
+}`
+
+type recordingLister struct {
+	ctx  context.Context
+	crds []apiextensionsv1.CustomResourceDefinition
+}
+
+func (r *recordingLister) List(ctx context.Context, _ metav1.ListOptions) (*apiextensionsv1.CustomResourceDefinitionList, error) {
+	r.ctx = ctx
+	return &apiextensionsv1.CustomResourceDefinitionList{Items: r.crds}, nil
+}
+
+type recordingOpenAPISource struct {
+	ctx context.Context
+	raw []byte
+}
+
+func (r *recordingOpenAPISource) FetchOpenAPIV2(ctx context.Context) ([]byte, error) {
+	r.ctx = ctx
+	return r.raw, nil
 }
 
 func testCRD() apiextensionsv1.CustomResourceDefinition {
@@ -210,6 +246,61 @@ func startDebounceWithClock(trigger <-chan struct{}, duration time.Duration, pub
 		debounceLoopWithClock(trigger, duration, publish, m, done, clock)
 	}()
 	return loopDone
+}
+
+type syncedController struct{}
+
+func (syncedController) Run(stopCh <-chan struct{}) {
+	<-stopCh
+}
+
+func (syncedController) RunWithContext(ctx context.Context) {
+	<-ctx.Done()
+}
+
+func (syncedController) HasSynced() bool {
+	return true
+}
+
+func (syncedController) HasSyncedChecker() cache.DoneChecker {
+	return nil
+}
+
+func (syncedController) LastSyncResourceVersion() string {
+	return ""
+}
+
+// --- lifecycle tests ---
+
+func TestRunLeader_PublishesOptionalSchemasWithZeroCRDs(t *testing.T) {
+	t.Setenv("SKIP_RENDER", "true")
+	dir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg := Config{
+		OutputDir:        dir,
+		CRDLister:        &fakeLister{},
+		Debounce:         time.Hour,
+		Metrics:          metrics.New(),
+		IncludeBuiltins:  true,
+		IncludeKustomize: true,
+		OpenAPISource:    &recordingOpenAPISource{raw: []byte(watcherOpenAPI)},
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runLeaderWithController(ctx, cfg, make(chan struct{}, 1), syncedController{})
+	}()
+
+	waitUntil(t, time.Second, func() bool {
+		_, podErr := os.Stat(filepath.Join(dir, "current", "core", "pod_v1.json"))
+		_, kustomizeErr := os.Stat(filepath.Join(dir, "current", "kustomize.config.k8s.io", "kustomization_v1beta1.json"))
+		return podErr == nil && kustomizeErr == nil
+	})
+	cancel()
+	waitForClosed(t, done)
 }
 
 // --- debounce tests ---
@@ -450,6 +541,39 @@ func TestPublishCycle_AppliesConfiguredFilter(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "current", "example.io", "test_v1.json")); !os.IsNotExist(err) {
 		t.Fatalf("expected stale schema to be absent after filtered publish cycle, got err=%v", err)
+	}
+}
+
+func TestPublishCycle_IncludesOptionalSchemasAndContext(t *testing.T) {
+	t.Setenv("SKIP_RENDER", "true")
+	dir := t.TempDir()
+	ctx := context.WithValue(context.Background(), contextKey("publish"), "leader")
+	lister := &recordingLister{}
+	source := &recordingOpenAPISource{raw: []byte(watcherOpenAPI)}
+
+	cfg := Config{
+		Context:          ctx,
+		OutputDir:        dir,
+		CRDLister:        lister,
+		IncludeBuiltins:  true,
+		IncludeKustomize: true,
+		OpenAPISource:    source,
+	}
+
+	if err := publishCycle(cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if lister.ctx != ctx {
+		t.Fatal("expected publish context to flow to CRD listing")
+	}
+	if source.ctx != ctx {
+		t.Fatal("expected publish context to flow to OpenAPI fetch")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "current", "core", "pod_v1.json")); err != nil {
+		t.Fatalf("expected Pod schema: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "current", "kustomize.config.k8s.io", "kustomization_v1beta1.json")); err != nil {
+		t.Fatalf("expected Kustomization schema: %v", err)
 	}
 }
 

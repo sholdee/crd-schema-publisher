@@ -118,6 +118,14 @@
           "type": "string",
           "description": "URL path prefix for subpath deployments (e.g., /iac)"
         },
+        "includeBuiltins": {
+          "type": "boolean",
+          "description": "Include Kubernetes built-in schemas from the API server OpenAPI v2 document"
+        },
+        "includeKustomize": {
+          "type": "boolean",
+          "description": "Include kustomize's client-side Kustomization schema"
+        },
         "filter": {
           "type": "object",
           "additionalProperties": false,

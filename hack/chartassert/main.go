@@ -66,6 +66,34 @@ func main() {
 			assertions: []assertion{
 				{name: "renders Deployment", check: assertKindCount("Deployment", 1)},
 				{name: "omits Cloudflare env vars", check: assertOutputOmits("CLOUDFLARE_", "CF_PAGES_PROJECT")},
+				{name: "omits built-in schema env", check: assertOutputOmits("SCHEMA_INCLUDE_BUILTINS", "SCHEMA_INCLUDE_KUSTOMIZE")},
+				{name: "omits OpenAPI RBAC", check: assertClusterRoleOmitsNonResourceURL("/openapi/v2")},
+			},
+		},
+		{
+			name: "controller runtime schema opt-ins",
+			args: []string{"--set", "config.includeBuiltins=true", "--set", "config.includeKustomize=true"},
+			assertions: []assertion{
+				{name: "SCHEMA_INCLUDE_BUILTINS=true", check: assertDeploymentEnv("SCHEMA_INCLUDE_BUILTINS", "true")},
+				{name: "SCHEMA_INCLUDE_KUSTOMIZE=true", check: assertDeploymentEnv("SCHEMA_INCLUDE_KUSTOMIZE", "true")},
+				{name: "OpenAPI RBAC", check: assertClusterRoleContainsNonResourceURL("/openapi/v2")},
+			},
+		},
+		{
+			name: "cronjob runtime schema opt-ins",
+			args: []string{"--set", "mode=cronjob", "--set", "config.includeBuiltins=true", "--set", "config.includeKustomize=true"},
+			assertions: []assertion{
+				{name: "SCHEMA_INCLUDE_BUILTINS=true", check: assertCronJobEnv("SCHEMA_INCLUDE_BUILTINS", "true")},
+				{name: "SCHEMA_INCLUDE_KUSTOMIZE=true", check: assertCronJobEnv("SCHEMA_INCLUDE_KUSTOMIZE", "true")},
+				{name: "OpenAPI RBAC", check: assertClusterRoleContainsNonResourceURL("/openapi/v2")},
+			},
+		},
+		{
+			name: "kustomize opt-in has no OpenAPI RBAC",
+			args: []string{"--set", "config.includeKustomize=true"},
+			assertions: []assertion{
+				{name: "SCHEMA_INCLUDE_KUSTOMIZE=true", check: assertDeploymentEnv("SCHEMA_INCLUDE_KUSTOMIZE", "true")},
+				{name: "omits OpenAPI RBAC", check: assertClusterRoleOmitsNonResourceURL("/openapi/v2")},
 			},
 		},
 		{
@@ -450,6 +478,53 @@ func assertDeploymentEnv(envName, expected string) func(renderResult) error {
 	}
 }
 
+func assertCronJobEnv(envName, expected string) func(renderResult) error {
+	return func(result renderResult) error {
+		cronJob, err := findKind("CronJob", result.docs)
+		if err != nil {
+			return err
+		}
+		container, err := findCronJobContainer(cronJob, "crd-schema-publisher")
+		if err != nil {
+			return err
+		}
+		env, ok := path(container, "env")
+		if !ok {
+			return fmt.Errorf("cronjob container env not found")
+		}
+		item, err := findNamedMap(env, envName)
+		if err != nil {
+			return err
+		}
+		got, ok := item["value"]
+		if !ok {
+			return fmt.Errorf("env var %s has no value", envName)
+		}
+		if fmt.Sprint(got) != expected {
+			return fmt.Errorf("env var %s: expected %q, got %#v", envName, expected, got)
+		}
+		return nil
+	}
+}
+
+func assertClusterRoleContainsNonResourceURL(expected string) func(renderResult) error {
+	return func(result renderResult) error {
+		if !clusterRoleHasNonResourceURL(result.docs, expected) {
+			return fmt.Errorf("expected ClusterRole to include nonResourceURL %q", expected)
+		}
+		return nil
+	}
+}
+
+func assertClusterRoleOmitsNonResourceURL(expected string) func(renderResult) error {
+	return func(result renderResult) error {
+		if clusterRoleHasNonResourceURL(result.docs, expected) {
+			return fmt.Errorf("expected ClusterRole to omit nonResourceURL %q", expected)
+		}
+		return nil
+	}
+}
+
 func assertDeploymentPort(portName string, expected int) func(renderResult) error {
 	return func(result renderResult) error {
 		deployment, err := findKind("Deployment", result.docs)
@@ -589,6 +664,45 @@ func findContainer(doc manifest, containerName string) (map[string]any, error) {
 		return nil, fmt.Errorf("containers not found")
 	}
 	return findNamedMap(containers, containerName)
+}
+
+func findCronJobContainer(doc manifest, containerName string) (map[string]any, error) {
+	containers, ok := path(doc, "spec", "jobTemplate", "spec", "template", "spec", "containers")
+	if !ok {
+		return nil, fmt.Errorf("cronjob containers not found")
+	}
+	return findNamedMap(containers, containerName)
+}
+
+func clusterRoleHasNonResourceURL(docs []manifest, expected string) bool {
+	role, err := findKind("ClusterRole", docs)
+	if err != nil {
+		return false
+	}
+	rules, ok := path(role, "rules")
+	if !ok {
+		return false
+	}
+	items, ok := rules.([]any)
+	if !ok {
+		return false
+	}
+	for _, item := range items {
+		rule, ok := stringMap(item)
+		if !ok {
+			continue
+		}
+		urls, ok := rule["nonResourceURLs"].([]any)
+		if !ok {
+			continue
+		}
+		for _, url := range urls {
+			if fmt.Sprint(url) == expected {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func findNamedMap(v any, expectedName string) (map[string]any, error) {

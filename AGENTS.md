@@ -2,15 +2,15 @@
 
 ## What This Is
 
-A statically-compiled Go binary that extracts CRD JSON schemas from a Kubernetes cluster and builds a browsable static site. It can publish directly to Cloudflare Pages or run in extract-only mode for sidecar consumers such as local web servers, git sync, or object-storage sync. Runs as a long-lived Deployment (watch mode) or CronJob on Kubernetes. Deployed in a nonroot distroless container.
+A statically-compiled Go binary that extracts CRD JSON schemas from a Kubernetes cluster, converts Kubernetes built-in schemas from OpenAPI v2, and builds a browsable static site. It can publish directly to Cloudflare Pages or run in extract-only mode for sidecar consumers such as local web servers, git sync, or object-storage sync. Runs as a long-lived Deployment (watch mode) or CronJob on Kubernetes. Deployed in a nonroot distroless container.
 
 ## Repository Layout
 
 ```text
 charts/         Helm chart (OCI-distributed via GHCR, cosign-signed)
 cmd/            Entrypoint and subcommand dispatch (run/extract/convert/upload/watch/preview)
-converter/      OpenAPI v3 -> JSON Schema transforms (ported from openapi2jsonschema.py)
-extractor/      client-go CRD listing, schema extraction, file writing, config builder, file/YAML parsing
+converter/      CRD OpenAPI v3 -> JSON Schema transforms
+extractor/      client-go CRD listing, OpenAPI v2 built-in extraction, schema writing, config builder, file/YAML parsing
 index/          HTML index generation (deepspace theme, client-side search, starfield/flare effects)
 jsonschema/     Shared JSON Schema traversal, type, required-property, and composition helpers
 publisher/      Cloudflare Pages publish orchestration, request adapter, upload planning, BLAKE3 hashing
@@ -57,6 +57,10 @@ sha256sum crd-schema-publisher-* > checksums-sha256.txt
 # Local extract (requires kubeconfig)
 KUBECTL_CONTEXT=my-context OUTPUT_DIR=./output go run ./cmd/ extract
 
+# Convert Kubernetes built-ins from a cluster OpenAPI document
+kubectl get --raw /openapi/v2 > swagger.json
+go run ./cmd/ convert --openapi swagger.json -o ./schemas --render
+
 # Preview index UI locally (no cluster needed)
 go run ./cmd/ preview
 
@@ -71,7 +75,7 @@ go run ./cmd/main.go --help
 
 - `run` (default) — extract + optional upload. Degrades gracefully: skips upload when Cloudflare credentials are missing, prints guidance when no kubeconfig is available. Accepts `--output-dir`/`-o`, `--kind`, `--group`, and `--version`; the output root must already exist.
 - `extract` — extract CRDs and build a new site generation, exposed at `OUTPUT_DIR/current`. Requires an explicit output directory via `--output-dir`/`-o` or `OUTPUT_DIR`; it does not fall back to `/output`. Supports `--kind`, `--group`, `--version` filters and CLI flags (`--output-dir`/`-o`, `--context`, `--base-path`, `--skip-render`) that override env vars.
-- `convert` — convert CRD YAML files to JSON Schema without a cluster connection. Requires `--output-dir`/`-o`. Reads from `--file`/`-f` (comma-separated, `-` for stdin) and/or `--dir`/`-d`. Writes flat output (no generation lifecycle). Optional `--render` for HTML docs. Supports the same `--kind`, `--group`, `--version` filters.
+- `convert` — convert CRD YAML files and Kubernetes OpenAPI v2 built-ins to JSON Schema without a cluster connection. Requires `--output-dir`/`-o`. Reads CRDs from `--file`/`-f` (comma-separated, `-` for stdin) and/or `--dir`/`-d`; reads built-ins from `--openapi <swagger.json>`. Writes flat output (no generation lifecycle). Optional `--render` for HTML docs. Supports the same `--kind`, `--group`, `--version` filters.
 - `upload` — upload the active site from `OUTPUT_DIR/current` to Cloudflare Pages. Accepts `--output-dir`/`-o`; the output root must already exist.
 - `watch` — long-lived process: informer watches CRDs, debounces events, and runs extract plus optional upload cycles. Leader election for multi-replica safety. Accepts `--output-dir`/`-o`, `--kind`, `--group`, and `--version`; the output root must already exist. Filters are applied to generated output, not to the informer watch scope.
 - `preview` — generate sample data by default, or with explicit `--output-dir`/`-o` copy the active site into an isolated temp generation and serve it on localhost. Ambient `OUTPUT_DIR` is ignored. No cluster or credentials needed. Handles signal cleanup of temp directories.
@@ -90,6 +94,9 @@ go run ./cmd/main.go --help
 | `POD_NAMESPACE` | Yes (watch) | — | Namespace for leader lease (set via downward API) |
 | `LEASE_NAME` | No | `crd-schema-publisher` | Name of the Lease resource (watch mode) |
 | `HEALTH_PORT` | No | `8080` | Port for liveness/readiness probes (watch mode) |
+| `SERVE_SITE` | No | — | Set to `true` to serve `OUTPUT_DIR/current` from watch mode |
+| `SITE_PORT` | No | `8081` | Non-privileged static site server port when `SERVE_SITE=true` |
+| `SERVE_ACCESS_LOG` | No | — | Set to `true` to log requests served by the built-in static site server |
 | `SKIP_RENDER` | No | — | Set to `true` to skip HTML schema page rendering |
 | `PROFILE_DIR` | No | — | Directory for opt-in heap profiles and phase memory logs |
 | `UPLOAD_BUCKET_SIZE_BYTES` | No | `41943040` | CF upload bucket size in bytes |
@@ -112,6 +119,7 @@ go run ./cmd/main.go --help
 | `--skip-render` | extract | `$SKIP_RENDER` | Skip HTML rendering |
 | `--file`, `-f` | convert | — | CRD YAML file(s), comma-separated. `-` for stdin |
 | `--dir`, `-d` | convert | — | Directory of CRD YAML files (non-recursive) |
+| `--openapi` | convert | — | Kubernetes OpenAPI v2 (swagger) file for built-in resource schemas |
 | `--render` | convert | `false` | Render HTML docs |
 | `--kind` | run, extract, convert, watch | `run`/`extract`/`watch`: `$SCHEMA_FILTER_KIND`; `convert`: — | Filter by kind (comma-separated, case-insensitive) |
 | `--group` | run, extract, convert, watch | `run`/`extract`/`watch`: `$SCHEMA_FILTER_GROUP`; `convert`: — | Filter by group (comma-separated, case-insensitive) |
@@ -122,10 +130,11 @@ go run ./cmd/main.go --help
 - **No CGO.** Binary is statically linked. BLAKE3 uses `github.com/zeebo/blake3` (pure Go).
 - **Cloudflare Pages direct upload API** is undocumented. Implementation reverse-engineered from wrangler source (`cloudflare/workers-sdk`). The upload flow uses JWT auth for asset operations and API token auth for deployment creation. `publisher/publisher.go` owns the publish orchestration, `publisher/cloudflare_client.go` owns Cloudflare request execution and retries, and `publisher/upload_plan.go` owns active-site file collection, manifest construction, bucket planning, and upload body construction.
 - **BLAKE3 file hashing** exactly matches wrangler's `hashFile`: `hex(blake3(base64(content) + extension))[0:32]`. Do not change this algorithm without verifying against wrangler source.
-- **OpenAPI v3 to JSON Schema conversion** is an improved port of `openapi2jsonschema.py` from datreeio/CRDs-catalog (via yannh/kubeconform). Three transforms applied in order: additionalProperties, replaceIntOrString, allowNullOptionalFields. Shared JSON Schema semantics that are used by both converter and renderer live in `jsonschema/`; keep traversal keyword sets, non-null type resolution, required-property lookup, and oneOf branch display de-duplication there instead of duplicating them in call sites. Known divergences from the Python original, all intentional improvements for kubeconform/IDE validation correctness: (1) `additionalProperties` uses schema-aware traversal, closing structural child object schemas while skipping same-instance validation overlays (`oneOf`/`anyOf`/`allOf`/`not`/dependencies/conditionals) and literal data-valued keywords such as `default` and `enum`; it also recurses into each property sub-schema individually — Python recurses into the `properties` map itself, so CRD fields named `properties` (or other JSON Schema keywords) get a spurious `additionalProperties: false` injected into the map, corrupting the schema; (2) nullable applies only to fields *not* in the required list — Python disables nullable for *all* siblings when any sibling is required; (3) `replaceIntOrString` preserves safe metadata but removes/replaces conflicting parent type and distributes type-specific assertions into the string or integer oneOf branch for Kubernetes int-or-string markers — Python discards the entire dict; (4) root object and array items are not made nullable — Python makes them nullable unnecessarily. Golden E2E tests (`extractor/testdata/golden_certificate_v1.json`, `golden_edgecase_v1.json`) freeze the converter output and catch regressions.
-- **Schema renderer** generates interactive HTML documentation pages (collapsible `<details>`/`<summary>` property trees, type/required badges, YAML boilerplate). Uses `html/template` with recursive `{{define "properties"}}` for nested schemas. Schema-page path search behavior lives in the extracted `theme/schema_search.js` asset, which `RenderAll` emits into the output root as `schema-search.js` and the page bootstrap loads at runtime. Enabled by default; disable with `SKIP_RENDER=true`.
+- **OpenAPI v3 to JSON Schema conversion** applies three transforms in order: additionalProperties, replaceIntOrString, allowNullOptionalFields. Shared JSON Schema semantics that are used by both converter and renderer live in `jsonschema/`; keep traversal keyword sets, non-null type resolution, required-property lookup, and oneOf branch display de-duplication there instead of duplicating them in call sites. Current behavior is intentionally tuned for kubeconform/IDE validation correctness: (1) `additionalProperties` uses schema-aware traversal, closing structural child object schemas while skipping same-instance validation overlays (`oneOf`/`anyOf`/`allOf`/`not`/dependencies/conditionals) and literal data-valued keywords such as `default` and `enum`; it also recurses into each property sub-schema individually so CRD fields named `properties` or other JSON Schema keywords do not corrupt the output; (2) nullable applies only to fields *not* in the required list, including optional pure `$ref` fields as `anyOf` ref-or-null wrappers; (3) `replaceIntOrString` preserves safe metadata but removes/replaces conflicting parent type and distributes type-specific assertions into the string or integer oneOf branch for Kubernetes int-or-string markers; (4) root object and array items are not made nullable. Golden E2E tests (`extractor/testdata/golden_certificate_v1.json`, `golden_edgecase_v1.json`) freeze the converter output and catch regressions.
+- **Kubernetes OpenAPI v2 built-ins** are converted only by `convert --openapi`. Definitions with authorable group/version/kind metadata and `apiVersion`/`kind` properties become per-kind schemas. The empty API group is normalized to `core`, referenced definitions are bundled into each schema, and CRD YAML inputs can be combined with `--openapi` into one flat output site.
+- **Schema renderer** generates interactive HTML documentation pages (collapsible `<details>`/`<summary>` property trees, type/required badges, YAML boilerplate). It resolves local `#/definitions/...` refs, array item refs, and nullable `anyOf`/`oneOf` wrappers with exactly one non-null branch so built-in fields such as `Pod.spec.containers` expand in HTML while the JSON stays validator-friendly. Uses `html/template` with recursive `{{define "properties"}}` for nested schemas. Schema-page path search behavior lives in the extracted `theme/schema_search.js` asset, which `RenderAll` emits into the output root as `schema-search.js` and the page bootstrap loads at runtime. Enabled by default; disable with `SKIP_RENDER=true`.
 - **Theme package** (`theme/`) holds shared CSS, HTML fragments, small JS helpers used by both index and renderer templates, and emitted static assets such as `schema-search.js`. CSS custom properties are the union of both pages' needs. The deepspace theme (starfield, flare, light/dark toggle) is defined once here.
-- **Output format** builds immutable site generations under `OUTPUT_DIR/.generations/<generation>/` and atomically switches `OUTPUT_DIR/current` to the active generation. Each generation contains both directory formats: `<group>/<kind>_<version>.json` (primary) and `master-standalone/<group>-<kind>-stable-<version>.json` (kubeval compatibility), plus rendered `.html` documentation pages, `index.html`, static assets, and an internal `_meta/kinds.json` manifest used to preserve exact CRD Kind casing for re-render/preview paths. Direct-volume consumers should read from `OUTPUT_DIR/current`, not the flat root. First-party Cloudflare, git, S3, and Caddy examples exclude `_meta/` from public output.
+- **Output format** builds immutable site generations under `OUTPUT_DIR/.generations/<generation>/` and atomically switches `OUTPUT_DIR/current` to the active generation. Each generation contains both directory formats: `<group>/<kind>_<version>.json` (primary) and `master-standalone/<group>-<kind>-stable-<version>.json` (kubeval compatibility), plus rendered `.html` documentation pages, `index.html`, static assets, and an internal `_meta/kinds.json` manifest used to preserve exact Kind casing for re-render/preview paths. Direct-volume consumers should read from `OUTPUT_DIR/current`, not the flat root. First-party Cloudflare, git, S3, and Caddy examples exclude `_meta/` from public output.
 - **Convert output cleanup** uses `_meta/convert-manifest.json` to remove only files generated by prior `convert` runs, then prunes empty generated directories. Files that existed before `convert` ran are preserved, even under generated directories. If the manifest exists but is corrupt, `convert` aborts instead of risking mixed stale-and-fresh output.
 - **Concurrency**: extractor uses 10 goroutines (buffered channel semaphore), publisher uses 3 concurrent upload workers, renderer uses 10 goroutines. These match the original tools' behavior.
 - **Watch mode uses first-trigger-immediate debounce.** The informer's initial List fires AddFunc for all existing CRDs, which signals the debounce loop. The first trigger fires immediately (zero delay), subsequent triggers are debounced. This produces exactly one publish cycle on startup — no explicit initial publish in runLeader.
@@ -240,6 +249,7 @@ Kubernetes manifests live in the `home-ops` repo under `apps/kubernetes-schemas/
 - Adding CGO dependencies — breaks static compilation and distroless compatibility
 - Modifying the CF Pages upload flow without checking current wrangler source — the API is undocumented and may change
 - Forgetting to update both output directory formats (primary + master-standalone) when changing schema file naming
+- Changing OpenAPI built-in or nullable-ref handling without validating both sides: kubeconform against the served JSON schemas and rendered HTML expansion for a built-in like `core/pod_v1.html`
 - When modifying shared CSS, hash-state helpers, or emitted frontend assets, update the `theme/` package source of truth — do not duplicate changes across `index/index.go` and `renderer/renderer.go`
 - If you change `theme/schema_search.js`, keep `theme/schema_search.test.js` in sync and run `node --test theme/schema_search.test.js`
 - The index template uses a deepspace-inspired theme (starfield via coprime-tiled radial gradients, light flare via stripe/rainbow interference). Both effects are pure CSS, dark-mode only, hidden in light mode via `.light body::before, .light .flare { display: none }` (`.light` class is on `<html>`, set in a `<head>` script to prevent FOUC)

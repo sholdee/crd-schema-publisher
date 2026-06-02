@@ -37,6 +37,34 @@ func assertOneOfHasType(t *testing.T, schema map[string]interface{}, expected st
 	t.Fatalf("expected oneOf to contain %q branch, got %v", expected, oneOf)
 }
 
+func assertAnyOfHasRefAndNull(t *testing.T, schema map[string]interface{}, ref string) {
+	t.Helper()
+	if _, hasRef := schema["$ref"]; hasRef {
+		t.Fatalf("nullable ref wrapper must not keep sibling $ref, got %v", schema)
+	}
+	anyOf, ok := schema["anyOf"].([]interface{})
+	if !ok {
+		t.Fatalf("expected anyOf array, got %T", schema["anyOf"])
+	}
+	hasRef := false
+	hasNull := false
+	for _, item := range anyOf {
+		branch, ok := item.(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected anyOf branch to be map, got %T", item)
+		}
+		if branch["$ref"] == ref {
+			hasRef = true
+		}
+		if branch["type"] == "null" {
+			hasNull = true
+		}
+	}
+	if !hasRef || !hasNull {
+		t.Fatalf("expected anyOf to contain %q and null, got %v", ref, anyOf)
+	}
+}
+
 func assertAllOfOneOfAllowsNullBypass(t *testing.T, schema map[string]interface{}) {
 	t.Helper()
 	allOf, ok := schema["allOf"].([]interface{})
@@ -1190,6 +1218,94 @@ func TestAllowNullOptionalFields_SkipsRequiredFields(t *testing.T) {
 	name := propField(t, result, "name")
 	if name["type"] != "string" {
 		t.Fatal("required field type should remain a string, not array")
+	}
+}
+
+func TestAllowNullOptionalFieldsWrapsOptionalRefsWithNull(t *testing.T) {
+	schema := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"creationTimestamp": map[string]interface{}{
+				"$ref":        "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.Time",
+				"description": "Populated by the system. Null for lists.",
+			},
+		},
+		"definitions": map[string]interface{}{
+			"io.k8s.apimachinery.pkg.apis.meta.v1.Time": map[string]interface{}{
+				"type":   "string",
+				"format": "date-time",
+			},
+		},
+	}
+
+	result := AllowNullOptionalFields(schema, "", nil)
+	creationTimestamp := propField(t, result, "creationTimestamp")
+	assertAnyOfHasRefAndNull(t, creationTimestamp, "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.Time")
+	if creationTimestamp["description"] != "Populated by the system. Null for lists." {
+		t.Fatalf("expected description to be preserved, got %v", creationTimestamp["description"])
+	}
+	defs, ok := result["definitions"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected definitions to be map, got %T", result["definitions"])
+	}
+	timeDef, ok := defs["io.k8s.apimachinery.pkg.apis.meta.v1.Time"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected Time definition to be map, got %T", defs["io.k8s.apimachinery.pkg.apis.meta.v1.Time"])
+	}
+	if !reflect.DeepEqual(timeDef["type"], "string") {
+		t.Fatalf("referenced definition itself should remain string, got %v", timeDef["type"])
+	}
+}
+
+func TestAllowNullOptionalFieldsLeavesRequiredRefsDirect(t *testing.T) {
+	schema := map[string]interface{}{
+		"type":     "object",
+		"required": []interface{}{"uid"},
+		"properties": map[string]interface{}{
+			"uid": map[string]interface{}{
+				"$ref": "#/definitions/io.k8s.apimachinery.pkg.types.UID",
+			},
+		},
+		"definitions": map[string]interface{}{
+			"io.k8s.apimachinery.pkg.types.UID": map[string]interface{}{
+				"type": "string",
+			},
+		},
+	}
+
+	result := AllowNullOptionalFields(schema, "", nil)
+	uid := propField(t, result, "uid")
+	if uid["$ref"] != "#/definitions/io.k8s.apimachinery.pkg.types.UID" {
+		t.Fatalf("required ref should remain direct, got %v", uid)
+	}
+	if _, hasAnyOf := uid["anyOf"]; hasAnyOf {
+		t.Fatalf("required ref must not receive nullable anyOf, got %v", uid)
+	}
+}
+
+func TestAllowNullOptionalFieldsLeavesRefsWithValidationSiblingsDirect(t *testing.T) {
+	schema := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"name": map[string]interface{}{
+				"$ref":      "#/definitions/Name",
+				"minLength": float64(1),
+			},
+		},
+		"definitions": map[string]interface{}{
+			"Name": map[string]interface{}{
+				"type": "string",
+			},
+		},
+	}
+
+	result := AllowNullOptionalFields(schema, "", nil)
+	name := propField(t, result, "name")
+	if name["$ref"] != "#/definitions/Name" {
+		t.Fatalf("ref with validation sibling should stay direct, got %v", name)
+	}
+	if _, hasAnyOf := name["anyOf"]; hasAnyOf {
+		t.Fatalf("ref with validation sibling must not be wrapped, got %v", name)
 	}
 }
 

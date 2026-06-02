@@ -132,6 +132,12 @@ func writeSchemaFiles(props *apiextensionsv1.JSONSchemaProps, kind, group, versi
 		return "", fmt.Errorf("unmarshaling schema for %s/%s: %w", group, kind, err)
 	}
 
+	return writeSchemaMap(schema, kind, group, versionName, outputDir)
+}
+
+// writeSchemaMap runs the converter over an already-decoded schema and writes
+// the grouped and master-standalone files. Shared by CRD and OpenAPI inputs.
+func writeSchemaMap(schema map[string]interface{}, kind, group, versionName, outputDir string) (string, error) {
 	schema = converter.Convert(schema)
 
 	jsonBytes, err := json.MarshalIndent(schema, "", "  ")
@@ -159,15 +165,28 @@ func writeSchemaFiles(props *apiextensionsv1.JSONSchemaProps, kind, group, versi
 	return filename, nil
 }
 
+// writeKindsManifest merges kinds into any existing manifest, so CRD and OpenAPI
+// passes into the same directory share one index.
 func writeKindsManifest(outputDir string, kinds map[string]string) error {
 	metaDir := filepath.Join(outputDir, metadataDirName)
 	if err := os.MkdirAll(metaDir, 0o755); err != nil {
 		return err
 	}
 
+	manifestPath := filepath.Join(metaDir, kindsManifestName)
+	if existing, err := os.ReadFile(manifestPath); err == nil {
+		var prev map[string]string
+		if err := json.Unmarshal(existing, &prev); err == nil {
+			for path, kind := range kinds {
+				prev[path] = kind
+			}
+			kinds = prev
+		}
+	}
+
 	data, err := json.MarshalIndent(kinds, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshaling kinds manifest: %w", err)
 	}
-	return os.WriteFile(filepath.Join(metaDir, kindsManifestName), data, 0o644)
+	return os.WriteFile(manifestPath, data, 0o644)
 }

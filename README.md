@@ -16,7 +16,7 @@
   <a href="https://artifacthub.io/packages/helm/crd-schema-publisher/crd-schema-publisher"><img src="https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/crd-schema-publisher" alt="Artifact Hub"></a>
 </p>
 
-Extracts CRD OpenAPI schemas from your Kubernetes API server or YAML files, converts them to JSON Schema, and publishes a searchable documentation site with interactive schema pages.
+Extracts CRD schemas from Kubernetes or YAML, converts Kubernetes built-in resource schemas from `/openapi/v2`, and publishes a searchable documentation site with interactive schema pages.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/sholdee/crd-schema-publisher/main/docs/screenshots/overview.gif" alt="Installing crd-schema-publisher, extracting CRD schemas, and browsing the generated schema site" width="720">
@@ -30,7 +30,7 @@ Run it as:
 
 - a Kubernetes-native controller for real-time CRD watching
 - a CronJob for scheduled extraction
-- a local CLI for extracting from a live cluster or converting YAML files
+- a local CLI for extracting from a live cluster, converting CRD YAML, or rendering built-in schemas from Kubernetes OpenAPI
 
 Exports schemas for IDE validation with yaml-language-server and CI linting with kubeconform. Cloudflare Pages and local serving are built in; S3, git repos, and custom web servers are supported via sidecar.
 
@@ -40,13 +40,13 @@ Exports schemas for IDE validation with yaml-language-server and CI linting with
 
 Most CRD schema solutions rely on static catalogs — community-maintained repositories that scrape schemas from popular Helm charts. Schemas go stale, internal CRDs are missing, and your validation pipeline depends on third-party infrastructure.
 
-- **Always accurate** — schemas reflect exactly what's installed in your cluster, including custom and internal CRDs, updated automatically when CRDs change
+- **Always accurate** — CRD schemas reflect what's installed in your cluster, including custom and internal CRDs, and built-in schemas can be pulled from the same cluster's OpenAPI document
 - **Self-hosted** — run in extract-only mode and serve schemas however you like, or publish directly to Cloudflare Pages
 - **Single static binary** — no runtime dependencies, no interpreters, no package managers. One binary in a distroless nonroot container with no shell
 - **Controller-grade runtime** — watch mode uses informers, leader election, debounced refresh cycles, and health probes. It's a proper workload, not a script on a timer
 - **No glue pipelines** — replaces multi-tool chains (CI runners, shell scripts, kubectl, CLI wrappers) with a single in-cluster binary. No external CI dependency, no cluster-admin runner pods, no scheduled workflow orchestration
 
-The JSON Schema conversion improves upon the widely-used [openapi2jsonschema.py](https://github.com/yannh/kubeconform/blob/master/scripts/openapi2jsonschema.py) — see [How It Works](#%EF%B8%8F-how-it-works) for details.
+The JSON Schema conversion is built for kubeconform and yaml-language-server compatibility — see [How It Works](#%EF%B8%8F-how-it-works) for details.
 
 ## ⚡ Quickstart
 
@@ -71,7 +71,7 @@ Install the standalone CLI:
 curl -fsSL https://crdsp.shold.io | bash
 ```
 
-Extract schemas from a kubeconfig context or convert CRD YAML files without a cluster connection:
+Extract schemas from a kubeconfig context, convert CRD YAML, or render Kubernetes built-ins from the cluster OpenAPI document:
 
 ```bash
 # Extract from the current kubeconfig context
@@ -82,13 +82,17 @@ crd-schema-publisher extract --context my-cluster -o ./schemas
 
 # Convert CRD YAML without a cluster
 crd-schema-publisher convert -f crd.yaml -o ./schemas
+
+# Convert Kubernetes built-in resources from the current cluster
+kubectl get --raw /openapi/v2 > swagger.json
+crd-schema-publisher convert --openapi swagger.json -o ./schemas --render
 ```
 
 For source builds, use `go run ./cmd/` in place of `crd-schema-publisher`. See [Standalone Binary](#standalone-binary) for installer options and manual downloads, and [Configuration and CLI Reference](#configuration-and-cli-reference) for flags and command behavior.
 
 ### Use Published Schemas
 
-Once published, your schemas are available at `https://<your-pages-domain>/<apigroup>/<kind>_<version>.json`.
+Once published, schemas are available at `https://<your-pages-domain>/<apigroup>/<kind>_<version>.json`, for example `cert-manager.io/certificate_v1.json` or `core/pod_v1.json`.
 
 ```yaml
 # yaml-language-server: $schema=https://kube-schemas.example.com/cert-manager.io/certificate_v1.json
@@ -363,7 +367,7 @@ crd-schema-publisher [command]
 Commands:
   run       Extract schemas and upload to Cloudflare Pages when credentials are configured (default)
   extract   Extract schemas from a Kubernetes cluster
-  convert   Convert CRD YAML files to JSON Schema
+  convert   Convert CRD YAML files and Kubernetes OpenAPI built-ins to JSON Schema
   upload    Upload the active site from OUTPUT_DIR/current to Cloudflare Pages
   watch     Watch for CRD changes and upload when credentials are configured
   preview   Serve a local preview of the documentation site
@@ -382,10 +386,11 @@ Commands:
 | `extract` | Supports `--context`, `--base-path`, and `--skip-render`. |
 | `convert` | Supports comma-separated, case-insensitive `--kind`, `--group`, and `--version` filters. |
 | `convert` | Supports `--file`/`-f`, non-recursive `--dir`/`-d` YAML loading, optional `--render`, and `--base-path` for rendered links. |
+| `convert` | `--openapi` converts a Kubernetes OpenAPI v2 (swagger) document of built-in types into self-contained per-kind schemas, combinable with `--file`/`--dir` to render CRDs and built-ins into one site. |
 
 ## 📋 Using Your Schemas
 
-Once published, your schemas are available at `https://<your-pages-domain>/<apigroup>/<kind>_<version>.json`. The published site also includes a browsable index with search and interactive HTML documentation for each schema.
+Once published, your schemas are available at `https://<your-pages-domain>/<apigroup>/<kind>_<version>.json`. Core built-ins use the `core` group path, such as `core/pod_v1.json`. The published site also includes a browsable index with search and interactive HTML documentation for each schema.
 
 ### IDE Validation (yaml-language-server)
 
@@ -412,18 +417,20 @@ Or configure schemas globally in VS Code:
 
 ### CI Validation (kubeconform)
 
-Point kubeconform at your schema registry for CRD validation in CI:
+If your registry includes built-ins from `--openapi`, point kubeconform at both the `core` path and the grouped path:
 
 ```bash
 kubeconform \
-  -schema-location default \
+  -strict \
+  -ignore-missing-schemas \
+  -schema-location 'https://kube-schemas.example.com/core/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
   -schema-location 'https://kube-schemas.example.com/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
   manifests/*.yaml
 ```
 
 This project validates its own Helm chart manifests against its published schema registry in CI — see the `helm-lint` job in [`.github/workflows/ci.yaml`](.github/workflows/ci.yaml) for a working example.
 
-This validates built-in Kubernetes resources against the default schemas and CRDs against your published schemas.
+This validates Kubernetes built-ins and CRDs against the same published schema snapshot. If you publish only CRDs, keep `-schema-location default` before your custom registry path so kubeconform still validates built-ins.
 
 > **Note:** Schema files are written as lowercase (e.g., `certificate_v1.json`) while `{{.ResourceKind}}` expands to the original case (e.g., `Certificate`). This works on Cloudflare Pages because it serves paths case-insensitively — the same convention used by [datreeio/CRDs-catalog](https://github.com/datreeio/CRDs-catalog). If serving schemas from a case-sensitive host, use lowercase kind names in your template paths.
 
@@ -544,19 +551,28 @@ For cluster-backed commands (`run`, `extract`, and `watch`), the pipeline is:
 
 1. Connects to the Kubernetes API (in-cluster or via kubeconfig)
 2. Lists all CRDs and extracts `.spec.versions[].schema.openAPIV3Schema`
-3. Applies three JSON Schema transforms (improved from [openapi2jsonschema.py](https://github.com/yannh/kubeconform/blob/master/scripts/openapi2jsonschema.py)):
+3. Applies three JSON Schema transforms:
    - Adds `additionalProperties: false` to structural child objects with `properties` — recurses into schema-valued locations only, preserving validation overlays and literal `default`/`enum` data while fixing a bug in the original where CRD fields named `properties` or other JSON Schema keywords corrupt the output
    - Replaces Kubernetes int-or-string markers with a non-conflicting `oneOf` union, preserving safe metadata and moving type-specific assertions into the matching string or integer branch
-   - Allows null for optional fields (per-field precision, not per-parent)
+   - Allows null for optional fields (per-field precision, including optional `$ref` fields as ref-or-null `anyOf` wrappers)
 
-   These improve on the Python original's handling of nullable fields, int-or-string types, root objects, and keyword-colliding property names. A frozen golden test locks converter output to prevent regressions.
+   These transforms handle nullable fields, int-or-string types, root objects, and keyword-colliding property names. A frozen golden test locks converter output to prevent regressions.
 4. Writes schemas to both primary and kubeval-compatible directory formats inside a new generation snapshot
-5. Renders an interactive HTML documentation page for each schema with collapsible property trees, path-aware search, and autocomplete powered by a shared emitted `schema-search.js` asset
+5. Renders an interactive HTML documentation page for each schema with collapsible property trees, local `$ref` expansion, path-aware search, and autocomplete powered by a shared emitted `schema-search.js` asset
 6. Generates an HTML index grouped by API group with client-side search, schema statistics, and yaml-language-server usage examples
 7. Atomically switches `OUTPUT_DIR/current` to the completed generation so sidecars read a stable snapshot
 8. Uploads the active generation to Cloudflare Pages via the direct upload API (BLAKE3 content hashing, batched uploads with retry)
 
 The `convert` command skips Kubernetes access and reads CRD YAML from `--file`/`-f`, stdin (`-f -`), and/or a non-recursive `--dir`/`-d`. It applies the same schema transforms and writes flat output directly to `--output-dir`/`-o`; with `--render`, it also renders HTML pages and an index.
+
+`--openapi <swagger.json>` converts Kubernetes' built-in (non-CRD) types from an OpenAPI v2 document (for example `kubectl get --raw /openapi/v2`). Each authorable type that declares a group/version/kind becomes a self-contained `<group>/<kind>_<version>.json`; the empty API group is written under `core/`. Referenced definitions are bundled into each schema so validation and rendered child fields work without external references.
+
+```sh
+kubectl get --raw /openapi/v2 > swagger.json
+crd-schema-publisher convert --openapi swagger.json -o ./schemas --render
+```
+
+Combine `--openapi` with `--file` or `--dir` when you want one local site containing both built-ins and CRDs.
 
 ## 🔧 Development
 
@@ -578,6 +594,10 @@ KUBECTL_CONTEXT=my-cluster \
 
 # Convert CRD YAML files to JSON Schema (no cluster needed)
 go run ./cmd/ convert -f crd.yaml -o ./schemas
+
+# Convert Kubernetes built-ins from a cluster OpenAPI document
+kubectl get --raw /openapi/v2 > swagger.json
+go run ./cmd/ convert --openapi swagger.json -o ./schemas --render
 
 # Convert all CRDs in a directory
 go run ./cmd/ convert -d ./crds/ -o ./schemas

@@ -183,12 +183,54 @@ func loadCRDs(fileList, dir string) ([]apiextensionsv1.CustomResourceDefinition,
 	return crds, nil
 }
 
+func loadFilteredCRDs(fileList, dir string, filter extractor.SchemaFilter) ([]apiextensionsv1.CustomResourceDefinition, error) {
+	if fileList == "" && dir == "" {
+		return nil, nil
+	}
+	loaded, err := loadCRDs(fileList, dir)
+	if err != nil {
+		return nil, err
+	}
+	return extractor.FilterCRDs(loaded, filter), nil
+}
+
+func writeConvertInputs(crds []apiextensionsv1.CustomResourceDefinition, openapiPath, outputDir string, filter extractor.SchemaFilter) (int, error) {
+	var count int
+	if len(crds) > 0 {
+		n, err := extractor.WriteSchemas(crds, outputDir)
+		if err != nil {
+			return count, fmt.Errorf("writing schemas: %w", err)
+		}
+		count += n
+	}
+	if openapiPath != "" {
+		n, err := extractor.WriteOpenAPISchemas(openapiPath, outputDir, filter)
+		if err != nil {
+			return count, fmt.Errorf("writing openapi schemas: %w", err)
+		}
+		count += n
+	}
+	return count, nil
+}
+
+func renderConvertOutput(outputDir, basePath string) error {
+	normalizedBasePath := normalizeBasePath(basePath)
+	if err := renderer.RenderAll(outputDir, normalizedBasePath); err != nil {
+		return fmt.Errorf("rendering schemas: %w", err)
+	}
+	if err := index.Generate(outputDir, normalizedBasePath); err != nil {
+		return fmt.Errorf("generating index: %w", err)
+	}
+	return nil
+}
+
 func runConvert(args []string) error {
 	fs := newCommandFlagSet("convert")
 	var fileFlag string
 	stringFlagWithAlias(fs, &fileFlag, "file", "f", "", "CRD YAML file(s), comma-separated (use - for stdin)")
 	var dirFlag string
 	stringFlagWithAlias(fs, &dirFlag, "dir", "d", "", "directory containing CRD YAML files")
+	openapiFlag := fs.String("openapi", "", "Kubernetes OpenAPI v2 (swagger) file; converts built-in types (combinable with --file/--dir)")
 	var outputDir string
 	stringFlagWithAlias(fs, &outputDir, "output-dir", "o", "", "output directory for JSON schemas (required)")
 	basePath := fs.String("base-path", os.Getenv("BASE_PATH"), "URL path prefix for subpath deployments")
@@ -207,40 +249,35 @@ func runConvert(args []string) error {
 	if err := extractor.ValidateOutputDir(outputDir); err != nil {
 		return err
 	}
-	if fileFlag == "" && dirFlag == "" {
-		return fmt.Errorf("at least one of --file or --dir is required")
+	if fileFlag == "" && dirFlag == "" && *openapiFlag == "" {
+		return fmt.Errorf("one of --file, --dir, or --openapi is required")
 	}
 
-	crds, err := loadCRDs(fileFlag, dirFlag)
+	filter := extractor.ParseFilter(*kind, *group, *version)
+	crds, err := loadFilteredCRDs(fileFlag, dirFlag, filter)
 	if err != nil {
 		return err
 	}
-
-	crds = extractor.FilterCRDs(crds, extractor.ParseFilter(*kind, *group, *version))
 
 	if err := cleanConvertArtifacts(outputDir); err != nil {
 		return fmt.Errorf("preparing output directory: %w", err)
 	}
 
-	if len(crds) == 0 {
+	if len(crds) == 0 && *openapiFlag == "" {
 		slog.Info("no CRDs matched filters")
 		return nil
 	}
 
 	preExisting := snapshotFiles(outputDir)
 
-	count, err := extractor.WriteSchemas(crds, outputDir)
+	count, err := writeConvertInputs(crds, *openapiFlag, outputDir, filter)
 	if err != nil {
-		return fmt.Errorf("writing schemas: %w", err)
+		return err
 	}
 
-	normalizedBasePath := normalizeBasePath(*basePath)
 	if *render {
-		if err := renderer.RenderAll(outputDir, normalizedBasePath); err != nil {
-			return fmt.Errorf("rendering schemas: %w", err)
-		}
-		if err := index.Generate(outputDir, normalizedBasePath); err != nil {
-			return fmt.Errorf("generating index: %w", err)
+		if err := renderConvertOutput(outputDir, *basePath); err != nil {
+			return err
 		}
 	}
 

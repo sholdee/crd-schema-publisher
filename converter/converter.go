@@ -3,6 +3,7 @@ package converter
 import (
 	"os"
 	"reflect"
+	"strings"
 
 	"github.com/sholdee/crd-schema-publisher/jsonschema"
 )
@@ -351,6 +352,9 @@ func isOptionalProperty(propertyName string, requiredSet map[string]struct{}) bo
 }
 
 func allowNullForOptionalField(data map[string]interface{}) {
+	if wrapRefWithNullAnyOf(data) {
+		return
+	}
 	_, hasOneOf := data["oneOf"]
 	if hasOneOf && appendNullOneOf(data) {
 		addNullToType(data)
@@ -358,6 +362,40 @@ func allowNullForOptionalField(data map[string]interface{}) {
 	} else if !hasOneOf {
 		addNullToType(data)
 	}
+}
+
+func wrapRefWithNullAnyOf(data map[string]interface{}) bool {
+	ref, ok := data["$ref"].(string)
+	if !ok || ref == "" {
+		return false
+	}
+	if !hasOnlyRefAndAnnotationSiblings(data) {
+		return false
+	}
+	delete(data, "$ref")
+	data["anyOf"] = []interface{}{
+		map[string]interface{}{"$ref": ref},
+		map[string]interface{}{"type": "null"},
+	}
+	return true
+}
+
+func hasOnlyRefAndAnnotationSiblings(data map[string]interface{}) bool {
+	for key := range data {
+		if key == "$ref" || isRefAnnotationKeyword(key) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func isRefAnnotationKeyword(key string) bool {
+	switch key {
+	case "description", "title", "default", "examples", "externalDocs":
+		return true
+	}
+	return strings.HasPrefix(key, "x-")
 }
 
 func childRequiredSet(data map[string]interface{}) map[string]struct{} {

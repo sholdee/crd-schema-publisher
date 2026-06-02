@@ -25,10 +25,12 @@ const (
 // SchemaNode represents a JSON Schema node for rendering.
 type SchemaNode struct {
 	Type                 interface{}            `json:"type,omitempty"`
+	Ref                  string                 `json:"$ref,omitempty"`
 	Description          string                 `json:"description,omitempty"`
 	Properties           map[string]*SchemaNode `json:"properties,omitempty"`
 	Items                *SchemaNode            `json:"items,omitempty"`
 	Required             []string               `json:"required,omitempty"`
+	Definitions          map[string]*SchemaNode `json:"definitions,omitempty"`
 	Enum                 []interface{}          `json:"enum,omitempty"`
 	OneOf                []*SchemaNode          `json:"oneOf,omitempty"`
 	AnyOf                []*SchemaNode          `json:"anyOf,omitempty"`
@@ -128,6 +130,224 @@ type RenderConstraint struct {
 	Text    string
 	Preview string
 	Long    bool
+}
+
+type schemaResolver struct {
+	definitions map[string]*SchemaNode
+}
+
+func newSchemaResolver(root *SchemaNode) schemaResolver {
+	if root == nil {
+		return schemaResolver{}
+	}
+	return schemaResolver{definitions: root.Definitions}
+}
+
+func (r schemaResolver) resolve(node *SchemaNode, seen map[string]struct{}) (*SchemaNode, map[string]struct{}) {
+	if node == nil {
+		return nil, seen
+	}
+
+	resolved, nextSeen := r.resolveLocalRef(node, seen)
+	resolved, nextSeen = r.resolveNullableComposition(resolved, nextSeen)
+	return r.resolveArrayItems(resolved, nextSeen)
+}
+
+func (r schemaResolver) resolveLocalRef(node *SchemaNode, seen map[string]struct{}) (*SchemaNode, map[string]struct{}) {
+	refName, ok := localDefinitionRef(node.Ref)
+	if !ok {
+		return node, seen
+	}
+
+	target := r.definitions[refName]
+	if target == nil {
+		return node, seen
+	}
+
+	if _, repeated := seen[refName]; repeated {
+		return mergeSchemaNode(leafSchemaNode(target), node), seen
+	}
+
+	nextSeen := copySeenWith(seen, refName)
+	resolved, targetSeen := r.resolve(target, nextSeen)
+	return mergeSchemaNode(resolved, node), targetSeen
+}
+
+func (r schemaResolver) resolveArrayItems(node *SchemaNode, seen map[string]struct{}) (*SchemaNode, map[string]struct{}) {
+	if node == nil || node.Items == nil {
+		return node, seen
+	}
+
+	items, itemSeen := r.resolve(node.Items, seen)
+	if items == node.Items {
+		return node, itemSeen
+	}
+
+	cloned := cloneSchemaNode(node)
+	cloned.Items = items
+	return cloned, itemSeen
+}
+
+func (r schemaResolver) resolveNullableComposition(node *SchemaNode, seen map[string]struct{}) (*SchemaNode, map[string]struct{}) {
+	if node == nil {
+		return node, seen
+	}
+	if branch := singleNonNullCompositionBranch(node.AnyOf); branch != nil {
+		resolved, branchSeen := r.resolve(branch, seen)
+		return mergeSchemaNode(resolved, node), branchSeen
+	}
+	if branch := singleNonNullCompositionBranch(node.OneOf); branch != nil {
+		resolved, branchSeen := r.resolve(branch, seen)
+		return mergeSchemaNode(resolved, node), branchSeen
+	}
+	return node, seen
+}
+
+func singleNonNullCompositionBranch(branches []*SchemaNode) *SchemaNode {
+	if len(branches) == 0 {
+		return nil
+	}
+
+	var nonNull *SchemaNode
+	hasNull := false
+	for _, branch := range branches {
+		if branch == nil {
+			continue
+		}
+		if branch.resolveType() == "null" {
+			hasNull = true
+			continue
+		}
+		if nonNull != nil {
+			return nil
+		}
+		nonNull = branch
+	}
+	if !hasNull {
+		return nil
+	}
+	return nonNull
+}
+
+func localDefinitionRef(ref string) (string, bool) {
+	name, found := strings.CutPrefix(ref, "#/definitions/")
+	if !found || name == "" {
+		return "", false
+	}
+	name = strings.ReplaceAll(name, "~1", "/")
+	name = strings.ReplaceAll(name, "~0", "~")
+	return name, true
+}
+
+func copySeen(seen map[string]struct{}) map[string]struct{} {
+	copied := make(map[string]struct{}, len(seen))
+	for name := range seen {
+		copied[name] = struct{}{}
+	}
+	return copied
+}
+
+func copySeenWith(seen map[string]struct{}, name string) map[string]struct{} {
+	copied := copySeen(seen)
+	copied[name] = struct{}{}
+	return copied
+}
+
+func cloneSchemaNode(node *SchemaNode) *SchemaNode {
+	if node == nil {
+		return nil
+	}
+	cloned := *node
+	return &cloned
+}
+
+func leafSchemaNode(node *SchemaNode) *SchemaNode {
+	leaf := cloneSchemaNode(node)
+	leaf.Properties = nil
+	leaf.Items = nil
+	return leaf
+}
+
+func mergeSchemaNode(base, overlay *SchemaNode) *SchemaNode {
+	merged := cloneSchemaNode(base)
+	if merged == nil {
+		merged = &SchemaNode{}
+	}
+
+	mergeSchemaShape(merged, overlay)
+	mergeSchemaComposition(merged, overlay)
+	mergeSchemaValidation(merged, overlay)
+	merged.Ref = ""
+	return merged
+}
+
+func mergeSchemaShape(merged, overlay *SchemaNode) {
+	if overlay.Type != nil {
+		merged.Type = overlay.Type
+	}
+	if overlay.Description != "" {
+		merged.Description = overlay.Description
+	}
+	if len(overlay.Properties) > 0 {
+		merged.Properties = overlay.Properties
+	}
+	if overlay.Items != nil {
+		merged.Items = overlay.Items
+	}
+	if len(overlay.Required) > 0 {
+		merged.Required = overlay.Required
+	}
+	if len(overlay.Definitions) > 0 {
+		merged.Definitions = overlay.Definitions
+	}
+}
+
+func mergeSchemaComposition(merged, overlay *SchemaNode) {
+	if len(overlay.Enum) > 0 {
+		merged.Enum = overlay.Enum
+	}
+	if len(overlay.OneOf) > 0 {
+		merged.OneOf = overlay.OneOf
+	}
+	if len(overlay.AnyOf) > 0 {
+		merged.AnyOf = overlay.AnyOf
+	}
+	if len(overlay.AllOf) > 0 {
+		merged.AllOf = overlay.AllOf
+	}
+	if overlay.Format != "" {
+		merged.Format = overlay.Format
+	}
+	if overlay.Pattern != "" {
+		merged.Pattern = overlay.Pattern
+	}
+}
+
+func mergeSchemaValidation(merged, overlay *SchemaNode) {
+	if overlay.Minimum != nil {
+		merged.Minimum = overlay.Minimum
+	}
+	if overlay.Maximum != nil {
+		merged.Maximum = overlay.Maximum
+	}
+	if overlay.MinLength != nil {
+		merged.MinLength = overlay.MinLength
+	}
+	if overlay.MaxLength != nil {
+		merged.MaxLength = overlay.MaxLength
+	}
+	if overlay.MinItems != nil {
+		merged.MinItems = overlay.MinItems
+	}
+	if overlay.MaxItems != nil {
+		merged.MaxItems = overlay.MaxItems
+	}
+	if overlay.Default != nil {
+		merged.Default = overlay.Default
+	}
+	if overlay.AdditionalProperties != nil {
+		merged.AdditionalProperties = overlay.AdditionalProperties
+	}
 }
 
 // Expandable returns true when the property renders as an expandable details row.
@@ -270,6 +490,7 @@ type schemaPageData struct {
 	Kind           string
 	Group          string
 	Version        string
+	APIVersion     string
 	JSONPath       string
 	BasePath       string
 	Schema         *SchemaNode
@@ -313,6 +534,7 @@ func renderSchemaFileWithKinds(tmpl *template.Template, jsonPath, group, filenam
 		Kind:           kind,
 		Group:          group,
 		Version:        version,
+		APIVersion:     renderAPIVersion(group, version),
 		JSONPath:       basePath + "/" + group + "/" + filename,
 		BasePath:       basePath,
 		Schema:         &schema,
@@ -334,12 +556,29 @@ func renderSchemaFileWithKinds(tmpl *template.Template, jsonPath, group, filenam
 }
 
 func buildRenderProperties(node *SchemaNode, parentPath, parentRowPath, arraySuffix string) []RenderProperty {
+	return buildRenderPropertiesWithResolver(newSchemaResolver(node), node, parentPath, parentRowPath, arraySuffix, map[string]struct{}{})
+}
+
+func buildRenderPropertiesWithResolver(
+	resolver schemaResolver,
+	node *SchemaNode,
+	parentPath,
+	parentRowPath,
+	arraySuffix string,
+	seen map[string]struct{},
+) []RenderProperty {
+	node, parentSeen := resolver.resolve(node, seen)
+	if node == nil {
+		return nil
+	}
+
 	entries := node.SortedProperties()
 	props := make([]RenderProperty, 0, len(entries))
 	for _, entry := range entries {
 		path := joinPropertyPath(parentPath, entry.Name, arraySuffix)
+		childNode, childSeen := resolver.resolve(entry.Node, copySeen(parentSeen))
 		childArraySuffix := ""
-		if entry.Node.resolveType() == "array" {
+		if childNode.resolveType() == "array" {
 			childArraySuffix = "[]"
 		}
 
@@ -348,16 +587,16 @@ func buildRenderProperties(node *SchemaNode, parentPath, parentRowPath, arraySuf
 			Path:       path,
 			PathKey:    buildPathSearchKey(path),
 			ParentPath: parentRowPath,
-			SearchText: buildSearchText(entry.Node),
+			SearchText: buildSearchText(childNode),
 			Required:   node.IsRequired(entry.Name),
-			Node:       entry.Node,
+			Node:       childNode,
 		}
-		if entry.Node.HasChildren() {
-			childNode := entry.Node
-			if entry.Node.Items != nil && len(entry.Node.Items.Properties) > 0 {
-				childNode = entry.Node.Items
+		if childNode.HasChildren() {
+			nestedNode := childNode
+			if childNode.Items != nil && len(childNode.Items.Properties) > 0 {
+				nestedNode = childNode.Items
 			}
-			prop.Children = buildRenderProperties(childNode, path+childArraySuffix, path, "")
+			prop.Children = buildRenderPropertiesWithResolver(resolver, nestedNode, path+childArraySuffix, path, "", childSeen)
 		}
 		props = append(props, prop)
 	}
@@ -489,6 +728,16 @@ func lookupManifestKind(kinds map[string]string, group, filename string) string 
 		return ""
 	}
 	return strings.TrimSpace(kinds[filepath.ToSlash(filepath.Join(group, filename))])
+}
+
+func renderAPIVersion(group, version string) string {
+	if group == "" || group == "core" {
+		return version
+	}
+	if version == "" {
+		return group
+	}
+	return group + "/" + version
 }
 
 type renderJob struct {
@@ -746,7 +995,7 @@ var schemaTemplate = `<!DOCTYPE html>
   <h1 class="schema-title">{{.Kind}}</h1>
   <p class="schema-title-group">{{.Group}} / {{.Version}}</p>
 </header>
-<div class="yaml-block">apiVersion: {{.Group}}/{{.Version}}
+<div class="yaml-block">apiVersion: {{.APIVersion}}
 kind: {{.Kind}}
 metadata:
   name: example</div>

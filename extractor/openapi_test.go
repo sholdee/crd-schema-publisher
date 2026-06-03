@@ -277,8 +277,8 @@ func TestSchemaMetadataManifestMergesAcrossWriters(t *testing.T) {
 	}
 	if count, err := WriteKustomizeSchemas(dir); err != nil {
 		t.Fatalf("WriteKustomizeSchemas: %v", err)
-	} else if count != 1 {
-		t.Fatalf("expected 1 Kustomize schema, got %d", count)
+	} else if count != 2 {
+		t.Fatalf("expected 2 Kustomize schemas, got %d", count)
 	}
 
 	metadata := readSchemaMetadata(t, dir)
@@ -286,6 +286,7 @@ func TestSchemaMetadataManifestMergesAcrossWriters(t *testing.T) {
 		"example.io/test_v1.json":                            {Kind: "Test", Source: schemametadata.SchemaSourceCRD},
 		"apps/deployment_v1.json":                            {Kind: "Deployment", Source: schemametadata.SchemaSourceBuiltin},
 		"kustomize.config.k8s.io/kustomization_v1beta1.json": {Kind: "Kustomization", Source: schemametadata.SchemaSourceKustomize},
+		"kustomize.config.k8s.io/component_v1alpha1.json":    {Kind: "Component", Source: schemametadata.SchemaSourceKustomize},
 	}
 	if len(metadata) != len(wantMetadata) {
 		t.Fatalf("expected metadata for primary schema files only, got %v", metadata)
@@ -308,6 +309,7 @@ func TestSchemaMetadataManifestMergesAcrossWriters(t *testing.T) {
 		"example.io/test_v1.json":                            "Test",
 		"apps/deployment_v1.json":                            "Deployment",
 		"kustomize.config.k8s.io/kustomization_v1beta1.json": "Kustomization",
+		"kustomize.config.k8s.io/component_v1alpha1.json":    "Component",
 	} {
 		if kinds[path] != want {
 			t.Fatalf("expected kinds[%q]=%q, got %q in %v", path, want, kinds[path], kinds)

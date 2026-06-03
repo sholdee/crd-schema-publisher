@@ -222,7 +222,7 @@ Controller mode still watches all CRDs, then applies the filter to each generate
 
 #### Runtime built-ins and Kustomize
 
-Runtime modes publish CRDs only by default. Enable built-ins and Kustomize explicitly when you want one site for CRDs, Kubernetes built-in types, and kustomize's client-side `Kustomization` schema.
+Runtime modes publish CRDs only by default. Enable built-ins and Kustomize explicitly when you want one site for CRDs, Kubernetes built-in types, and kustomize's client-side `Kustomization` and `Component` schemas.
 
 ```bash
 helm upgrade --install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-schema-publisher \
@@ -367,14 +367,14 @@ Deployment/runtime configuration is primarily via environment variables. For loc
 | `UPLOAD_CONCURRENCY`       | No          | `3`                    | Concurrent Cloudflare upload buckets. Lower values reduce peak upload memory at the cost of slower cache-miss uploads |
 | `BASE_PATH`                | No          | —                      | URL path prefix for subpath deployments (e.g., `/iac` for GitHub Pages at `user.github.io/iac/`)                      |
 | `SCHEMA_INCLUDE_BUILTINS`  | No          | —                      | Set to `true` to include Kubernetes built-ins from API server OpenAPI v2 (`run`, `extract`, `watch`)                  |
-| `SCHEMA_INCLUDE_KUSTOMIZE` | No          | —                      | Set to `true` to include kustomize's client-side `Kustomization` schema (`run`, `extract`, `watch`)                   |
+| `SCHEMA_INCLUDE_KUSTOMIZE` | No          | —                      | Set to `true` to include kustomize's client-side config schemas (`run`, `extract`, `watch`)                           |
 | `SCHEMA_FILTER_KIND`       | No          | —                      | Restrict generated schemas to matching CRD kinds, comma-separated and case-insensitive (`run`, `extract`, `watch`)    |
 | `SCHEMA_FILTER_GROUP`      | No          | —                      | Restrict generated schemas to matching API groups, comma-separated and case-insensitive (`run`, `extract`, `watch`)   |
 | `SCHEMA_FILTER_VERSION`    | No          | —                      | Restrict generated schemas to matching API versions, comma-separated and case-insensitive (`run`, `extract`, `watch`) |
 
 Schema filters limit generated output only. In watch mode, the controller still watches all cluster CRDs and applies the filters during each publish cycle. If active filters match no CRDs or built-ins and Kustomize is not enabled, runtime builds publish an empty catalog instead of leaving stale schemas in place.
 
-Runtime modes stay CRD-only unless opt-ins are enabled. `--include-builtins` reads `/openapi/v2` from the API server and publishes built-ins into the same generation. `--include-kustomize` adds kustomize's client-side `Kustomization` schema. Filters apply to CRDs and built-ins; Kustomize is explicit and unfiltered.
+Runtime modes stay CRD-only unless opt-ins are enabled. `--include-builtins` reads `/openapi/v2` from the API server and publishes built-ins into the same generation. `--include-kustomize` adds kustomize's client-side config schemas. Filters apply to CRDs and built-ins; Kustomize is explicit and unfiltered.
 
 ### Command Behavior
 
@@ -401,12 +401,12 @@ Commands:
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `run`, `extract`, `watch` | Support comma-separated, case-insensitive `--kind`, `--group`, and `--version` filters. Defaults can also come from `SCHEMA_FILTER_KIND`, `SCHEMA_FILTER_GROUP`, and `SCHEMA_FILTER_VERSION`.        |
 | `run`, `extract`, `watch` | Support `--include-builtins`/`SCHEMA_INCLUDE_BUILTINS` to include built-ins from the API server OpenAPI v2 document.                                                                                 |
-| `run`, `extract`, `watch` | Support `--include-kustomize`/`SCHEMA_INCLUDE_KUSTOMIZE` to include kustomize's client-side `Kustomization` schema.                                                                                  |
+| `run`, `extract`, `watch` | Support `--include-kustomize`/`SCHEMA_INCLUDE_KUSTOMIZE` to include kustomize's client-side config schemas.                                                                                          |
 | `extract`                 | Supports `--context`, `--base-path`, and `--skip-render`.                                                                                                                                            |
 | `convert`                 | Supports comma-separated, case-insensitive `--kind`, `--group`, and `--version` filters for CRD YAML and OpenAPI inputs.                                                                             |
 | `convert`                 | Supports `--file`/`-f`, non-recursive `--dir`/`-d` YAML loading, optional `--render`, and `--base-path` for rendered links.                                                                          |
 | `convert`                 | `--openapi` converts a Kubernetes OpenAPI v2 (swagger) document of built-in types into self-contained per-kind schemas, combinable with `--file`/`--dir` to render CRDs and built-ins into one site. |
-| `convert`                 | `--kustomize` explicitly publishes kustomize's `Kustomization` schema, reflected from the pinned `sigs.k8s.io/kustomize/api` types. It is not filtered.                                              |
+| `convert`                 | `--kustomize` explicitly publishes kustomize's `Kustomization` and `Component` schemas, reflected from the pinned `sigs.k8s.io/kustomize/api` types. It is not filtered.                             |
 
 ## 📋 Using Your Schemas
 
@@ -587,7 +587,7 @@ For cluster-backed commands (`run`, `extract`, and `watch`), the pipeline is:
 
 The `convert` command skips Kubernetes access and reads CRD YAML from `--file`/`-f`, stdin (`-f -`), and/or a non-recursive `--dir`/`-d`. It applies the same schema transforms and writes flat output directly to `--output-dir`/`-o`; with `--render`, it also renders HTML pages and an index.
 
-Runtime modes can include optional schemas in generated snapshots. `--include-builtins` fetches `/openapi/v2` from the API server and writes authorable built-in types into the same generation as CRDs. When OpenAPI also contains CRD-backed definitions, CRD schemas take precedence and those OpenAPI duplicates are skipped. `--include-kustomize` writes kustomize's client-side `Kustomization` schema. When more than one schema source is present, the index separates CRDs, built-ins, and Kustomize schemas; CRD-only output keeps the original API-group-only index. In the Helm chart, `config.includeBuiltins=true` adds `/openapi/v2` RBAC when `rbac.create=true`; `config.includeKustomize=true` does not require additional Kubernetes permissions.
+Runtime modes can include optional schemas in generated snapshots. `--include-builtins` fetches `/openapi/v2` from the API server and writes authorable built-in types into the same generation as CRDs. When OpenAPI also contains CRD-backed definitions, CRD schemas take precedence and those OpenAPI duplicates are skipped. `--include-kustomize` writes kustomize's client-side config schemas. When more than one schema source is present, the index separates CRDs, built-ins, and Kustomize schemas; CRD-only output keeps the original API-group-only index. In the Helm chart, `config.includeBuiltins=true` adds `/openapi/v2` RBAC when `rbac.create=true`; `config.includeKustomize=true` does not require additional Kubernetes permissions.
 
 `--openapi <swagger.json>` converts Kubernetes' built-in (non-CRD) types from an OpenAPI v2 document (for example `kubectl get --raw /openapi/v2`). Each authorable type that declares a group/version/kind becomes a self-contained `<group>/<kind>_<version>.json`; the empty API group is written under `core/`. Referenced definitions are bundled into each schema so validation and rendered child fields work without external references. When combined with CRD inputs, matching OpenAPI CRD definitions and their List types are skipped.
 
@@ -598,9 +598,9 @@ crd-schema-publisher convert --openapi swagger.json -o ./schemas --render
 
 Combine `--openapi` with `--file` or `--dir` when you want one local site containing both built-ins and CRDs.
 
-`--kustomize` publishes a schema for kustomize's `Kustomization` at `kustomize.config.k8s.io/kustomization_v1beta1.json`. It's a client-side type with no usable upstream schema, so it's reflected from the `sigs.k8s.io/kustomize/api` Go types pinned in this module — bumping that dependency updates the schema. Combine it with the other inputs in a single run:
+`--kustomize` publishes schemas for kustomize's `Kustomization` and `Component` at `kustomize.config.k8s.io/kustomization_v1beta1.json` and `kustomize.config.k8s.io/component_v1alpha1.json`. These are client-side types with no usable upstream schemas, so they are reflected from the `sigs.k8s.io/kustomize/api` Go types pinned in this module. Bumping that dependency updates the schemas. Combine them with the other inputs in a single run:
 
-`--kind`, `--group`, and `--version` filters limit CRD and OpenAPI inputs; `--kustomize` is a single explicit opt-in and always emits Kustomization when set.
+`--kind`, `--group`, and `--version` filters limit CRD and OpenAPI inputs; `--kustomize` is a single explicit opt-in and always emits the Kustomize config schemas when set.
 
 ```sh
 crd-schema-publisher convert -d ./crds --openapi swagger.json --kustomize -o ./schemas --render

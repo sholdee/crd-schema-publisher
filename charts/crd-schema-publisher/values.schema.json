@@ -124,7 +124,7 @@
         },
         "includeKustomize": {
           "type": "boolean",
-          "description": "Include kustomize's client-side Kustomization schema"
+          "description": "Include kustomize's client-side config schemas"
         },
         "filter": {
           "type": "object",

@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A statically-compiled Go binary that extracts CRD JSON schemas from a Kubernetes cluster, converts Kubernetes built-in schemas from OpenAPI v2, publishes kustomize's client-side Kustomization schema, and builds a browsable static site. It can publish directly to Cloudflare Pages or run in extract-only mode for sidecar consumers such as local web servers, git sync, or object-storage sync. Runs as a long-lived Deployment (watch mode) or CronJob on Kubernetes. Deployed in a nonroot distroless container.
+A statically-compiled Go binary that extracts CRD JSON schemas from a Kubernetes cluster, converts Kubernetes built-in schemas from OpenAPI v2, publishes kustomize's client-side config schemas, and builds a browsable static site. It can publish directly to Cloudflare Pages or run in extract-only mode for sidecar consumers such as local web servers, git sync, or object-storage sync. Runs as a long-lived Deployment (watch mode) or CronJob on Kubernetes. Deployed in a nonroot distroless container.
 
 ## Repository Layout
 
@@ -57,11 +57,11 @@ sha256sum crd-schema-publisher-* > checksums-sha256.txt
 # Local extract (requires kubeconfig)
 KUBECTL_CONTEXT=my-context OUTPUT_DIR=./output go run ./cmd/ extract
 
-# Convert Kubernetes built-ins and kustomize schema offline
+# Convert Kubernetes built-ins and kustomize schemas offline
 kubectl get --raw /openapi/v2 > swagger.json
 go run ./cmd/ convert --openapi swagger.json --kustomize -o ./schemas --render
 
-# Extract CRDs plus optional API-server built-ins and kustomize schema
+# Extract CRDs plus optional API-server built-ins and kustomize schemas
 OUTPUT_DIR=./output go run ./cmd/ extract --include-builtins --include-kustomize
 
 # Preview index UI locally (no cluster needed)
@@ -78,7 +78,7 @@ go run ./cmd/main.go --help
 
 - `run` (default) — extract + optional upload. Degrades gracefully: skips upload when Cloudflare credentials are missing, prints guidance when no kubeconfig is available. Accepts `--output-dir`/`-o`, `--kind`, `--group`, `--version`, `--include-builtins`, and `--include-kustomize`; the output root must already exist.
 - `extract` — extract CRDs and build a new site generation, exposed at `OUTPUT_DIR/current`. Requires an explicit output directory via `--output-dir`/`-o` or `OUTPUT_DIR`; it does not fall back to `/output`. Supports `--kind`, `--group`, `--version`, `--include-builtins`, and `--include-kustomize` plus CLI flags (`--output-dir`/`-o`, `--context`, `--base-path`, `--skip-render`) that override env vars.
-- `convert` — convert CRD YAML files and Kubernetes OpenAPI v2 built-ins to JSON Schema without a cluster connection, and optionally emit kustomize's Kustomization schema. Requires `--output-dir`/`-o`. Reads CRDs from `--file`/`-f` (comma-separated, `-` for stdin) and/or `--dir`/`-d`; reads built-ins from `--openapi <swagger.json>`; emits Kustomization with `--kustomize`. Writes flat output (no generation lifecycle). Optional `--render` for HTML docs. `--kind`, `--group`, and `--version` filter CRD YAML and OpenAPI inputs; `--kustomize` is explicit and unfiltered.
+- `convert` — convert CRD YAML files and Kubernetes OpenAPI v2 built-ins to JSON Schema without a cluster connection, and optionally emit kustomize's config schemas. Requires `--output-dir`/`-o`. Reads CRDs from `--file`/`-f` (comma-separated, `-` for stdin) and/or `--dir`/`-d`; reads built-ins from `--openapi <swagger.json>`; emits Kustomization and Component with `--kustomize`. Writes flat output (no generation lifecycle). Optional `--render` for HTML docs. `--kind`, `--group`, and `--version` filter CRD YAML and OpenAPI inputs; `--kustomize` is explicit and unfiltered.
 - `upload` — upload the active site from `OUTPUT_DIR/current` to Cloudflare Pages. Accepts `--output-dir`/`-o`; the output root must already exist.
 - `watch` — long-lived process: informer watches CRDs, debounces events, and runs extract plus optional upload cycles. Leader election for multi-replica safety. Accepts `--output-dir`/`-o`, `--kind`, `--group`, `--version`, `--include-builtins`, and `--include-kustomize`; the output root must already exist. Filters are applied to generated output, not to the informer watch scope.
 - `preview` — generate sample data by default, or with explicit `--output-dir`/`-o` copy the active site into an isolated temp generation and serve it on localhost. Ambient `OUTPUT_DIR` is ignored. No cluster or credentials needed. Handles signal cleanup of temp directories.
@@ -106,7 +106,7 @@ go run ./cmd/main.go --help
 | `UPLOAD_CONCURRENCY` | No | `3` | Concurrent CF upload buckets |
 | `BASE_PATH` | No | — | URL path prefix for subpath deployments (e.g., `/iac` for GitHub Pages) |
 | `SCHEMA_INCLUDE_BUILTINS` | No | — | Set to `true` to include Kubernetes built-ins from API server OpenAPI v2 (`run`, `extract`, `watch`) |
-| `SCHEMA_INCLUDE_KUSTOMIZE` | No | — | Set to `true` to include kustomize's client-side Kustomization schema (`run`, `extract`, `watch`) |
+| `SCHEMA_INCLUDE_KUSTOMIZE` | No | — | Set to `true` to include kustomize's client-side config schemas (`run`, `extract`, `watch`) |
 | `SCHEMA_FILTER_KIND` | No | — | Restrict generated schemas to matching CRD kinds, comma-separated and case-insensitive (`run`, `extract`, `watch`) |
 | `SCHEMA_FILTER_GROUP` | No | — | Restrict generated schemas to matching API groups, comma-separated and case-insensitive (`run`, `extract`, `watch`) |
 | `SCHEMA_FILTER_VERSION` | No | — | Restrict generated schemas to matching API versions, comma-separated and case-insensitive (`run`, `extract`, `watch`) |
@@ -125,9 +125,9 @@ go run ./cmd/main.go --help
 | `--file`, `-f` | convert | — | CRD YAML file(s), comma-separated. `-` for stdin |
 | `--dir`, `-d` | convert | — | Directory of CRD YAML files (non-recursive) |
 | `--openapi` | convert | — | Kubernetes OpenAPI v2 (swagger) file for built-in resource schemas |
-| `--kustomize` | convert | `false` | Emit kustomize's Kustomization schema. Explicit opt-in; not filtered. |
+| `--kustomize` | convert | `false` | Emit kustomize's Kustomization and Component schemas. Explicit opt-in; not filtered. |
 | `--include-builtins` | run, extract, watch | `$SCHEMA_INCLUDE_BUILTINS` | Include Kubernetes built-ins from API server OpenAPI v2 |
-| `--include-kustomize` | run, extract, watch | `$SCHEMA_INCLUDE_KUSTOMIZE` | Include kustomize's client-side Kustomization schema. Explicit opt-in; not filtered. |
+| `--include-kustomize` | run, extract, watch | `$SCHEMA_INCLUDE_KUSTOMIZE` | Include kustomize's client-side config schemas. Explicit opt-in; not filtered. |
 | `--render` | convert | `false` | Render HTML docs |
 | `--kind` | run, extract, convert, watch | `run`/`extract`/`watch`: `$SCHEMA_FILTER_KIND`; `convert`: — | Filter by kind (comma-separated, case-insensitive). For `convert`, applies to CRD YAML and OpenAPI inputs. |
 | `--group` | run, extract, convert, watch | `run`/`extract`/`watch`: `$SCHEMA_FILTER_GROUP`; `convert`: — | Filter by group (comma-separated, case-insensitive). For `convert`, applies to CRD YAML and OpenAPI inputs. |
@@ -140,7 +140,7 @@ go run ./cmd/main.go --help
 - **BLAKE3 file hashing** exactly matches wrangler's `hashFile`: `hex(blake3(base64(content) + extension))[0:32]`. Do not change this algorithm without verifying against wrangler source.
 - **OpenAPI v3 to JSON Schema conversion** applies three transforms in order: additionalProperties, replaceIntOrString, allowNullOptionalFields. Shared JSON Schema semantics that are used by both converter and renderer live in `jsonschema/`; keep traversal keyword sets, non-null type resolution, required-property lookup, and oneOf branch display de-duplication there instead of duplicating them in call sites. Current behavior is intentionally tuned for kubeconform/IDE validation correctness: (1) `additionalProperties` uses schema-aware traversal, closing structural child object schemas while skipping same-instance validation overlays (`oneOf`/`anyOf`/`allOf`/`not`/dependencies/conditionals) and literal data-valued keywords such as `default` and `enum`; it also recurses into each property sub-schema individually so CRD fields named `properties` or other JSON Schema keywords do not corrupt the output; (2) nullable applies only to fields *not* in the required list, including optional pure `$ref` fields as `anyOf` ref-or-null wrappers; (3) `replaceIntOrString` preserves safe metadata but removes/replaces conflicting parent type and distributes type-specific assertions into the string or integer oneOf branch for Kubernetes int-or-string markers; (4) root object and array items are not made nullable. Golden E2E tests (`extractor/testdata/golden_certificate_v1.json`, `golden_edgecase_v1.json`) freeze the converter output and catch regressions.
 - **Kubernetes OpenAPI v2 built-ins** are opt-in. Runtime modes use `--include-builtins`/`SCHEMA_INCLUDE_BUILTINS` to fetch `/openapi/v2` from the API server; `convert --openapi` remains the offline file path. Definitions with authorable group/version/kind metadata and `apiVersion`/`kind` properties become per-kind schemas. The empty API group is normalized to `core`, referenced definitions are bundled into each schema, and CRD YAML inputs can be combined with OpenAPI inputs into one site. When OpenAPI also contains known CRD-backed definitions, CRD schemas and source metadata win; matching OpenAPI definitions and their conventional List types are skipped.
-- **Kustomize Kustomization schema** is opt-in at `kustomize.config.k8s.io/kustomization_v1beta1.json`. Runtime modes use `--include-kustomize`/`SCHEMA_INCLUDE_KUSTOMIZE`; `convert` uses `--kustomize`. It is reflected from the pinned `sigs.k8s.io/kustomize/api` Go type because Kustomization is client-side and not served by the Kubernetes API. Filters apply to CRD and OpenAPI inputs; Kustomize is explicit and unfiltered.
+- **Kustomize config schemas** are opt-in at `kustomize.config.k8s.io/kustomization_v1beta1.json` and `kustomize.config.k8s.io/component_v1alpha1.json`. Runtime modes use `--include-kustomize`/`SCHEMA_INCLUDE_KUSTOMIZE`; `convert` uses `--kustomize`. They are reflected from the pinned `sigs.k8s.io/kustomize/api` Go types because these config kinds are client-side and not served by the Kubernetes API. Filters apply to CRD and OpenAPI inputs; Kustomize is explicit and unfiltered.
 - **Schema renderer** generates interactive HTML documentation pages (collapsible `<details>`/`<summary>` property trees, type/required badges, YAML boilerplate). It resolves local `#/definitions/...` refs, array item refs, and nullable `anyOf`/`oneOf` wrappers with exactly one non-null branch so built-in fields such as `Pod.spec.containers` expand in HTML while the JSON stays validator-friendly. Uses `html/template` with recursive `{{define "properties"}}` for nested schemas. Schema-page path search behavior lives in the extracted `theme/schema_search.js` asset, which `RenderAll` emits into the output root as `schema-search.js` and the page bootstrap loads at runtime. Enabled by default; disable with `SKIP_RENDER=true`.
 - **Index grouping** remains API-group-only when generated output has one schema source, preserving the original CRD-only page shape. When more than one source is present, the index adds top-level source sections ordered Custom Resources, Kubernetes Built-ins, Kustomize, Unknown.
 - **Theme package** (`theme/`) holds shared CSS, HTML fragments, small JS helpers used by both index and renderer templates, and emitted static assets such as `schema-search.js`. CSS custom properties are the union of both pages' needs. The deepspace theme (starfield, flare, light/dark toggle) is defined once here.
@@ -167,7 +167,7 @@ go run ./cmd/main.go --help
 | `k8s.io/apiextensions-apiserver` | CRD typed client and API types |
 | `k8s.io/apimachinery` | Shared Kubernetes API machinery used by clients and watchers |
 | `k8s.io/client-go` | Kubernetes API access, informer/watch plumbing, leader election |
-| `sigs.k8s.io/kustomize/api` | Source Go type for kustomize's Kustomization schema |
+| `sigs.k8s.io/kustomize/api` | Source Go type for kustomize config schemas |
 | `sigs.k8s.io/yaml` | YAML-to-Kubernetes-struct decoding for CRD conversion |
 
 Everything else in `go.mod` is transitive. The project still leans heavily on the standard library for HTTP, JSON, HTML templates, MIME types, and the preview server.
@@ -207,7 +207,7 @@ Pushes to main run `test` and `helm-lint` only (no Docker build, no release). PR
 | `test` | After `release-meta` passes | Calls `test.yml` — re-runs all linting and Go tests as a safety net before building |
 | `helm-lint` | After `release-meta` passes | Calls `helm-lint.yml` — re-runs all Helm validation before packaging |
 | `build` | After `test` and `release-meta` pass | Multi-arch Docker build (amd64 + arm64), pushes `vYYYY.MDD.HMMSS` + `latest` to GHCR. Verifies distroless base image digest with cosign before building. This creates the unsigned candidate image used by release-smoke. |
-| `release-smoke` | After `build` and `helm-lint` pass | Starts a temporary kind cluster, applies a unique marker CRD, installs the chart in controller/watch mode using the candidate image digest and dedicated Cloudflare CI credentials, then fetches the published Pages deployment to verify the marker CRD, built-in Pod schema, Kustomization schema, and core site assets. Blocks all promotional artifacts if it fails. |
+| `release-smoke` | After `build` and `helm-lint` pass | Starts a temporary kind cluster, applies a unique marker CRD, installs the chart in controller/watch mode using the candidate image digest and dedicated Cloudflare CI credentials, then fetches the published Pages deployment to verify the marker CRD, built-in Pod schema, Kustomize config schemas, and core site assets. Blocks all promotional artifacts if it fails. |
 | `sign` | After `build` and `release-smoke` pass | Cosign keyless signing via GitHub OIDC |
 | `helm-package` | After `helm-lint`, `release-smoke`, and `sign` pass | Package chart with CalVer SemVer matching the image tag. Push OCI to GHCR, cosign sign. Image and chart always share the same version — no desync possible. |
 | `binaries` | After `test` and `release-meta` pass | Cross-compiles static binaries for linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, generates `checksums-sha256.txt`, signs the checksum manifest with cosign keyless blob signing, uploads `dist/` as short-lived artifacts for the `release` job, and publishes GitHub/Sigstore build provenance for the binaries via the attestations service. |

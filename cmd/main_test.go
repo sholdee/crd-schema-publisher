@@ -1474,6 +1474,12 @@ func TestRunConvert_KustomizeExplicitOptInIgnoresFilters(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(outputDir, "master-standalone", "kustomize.config.k8s.io-kustomization-stable-v1beta1.json")); err != nil {
 		t.Fatal("expected standalone Kustomization schema")
 	}
+	if _, err := os.Stat(filepath.Join(outputDir, "kustomize.config.k8s.io", "component_v1alpha1.json")); err != nil {
+		t.Fatal("expected Component schema because --kustomize is an explicit opt-in")
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "master-standalone", "kustomize.config.k8s.io-component-stable-v1alpha1.json")); err != nil {
+		t.Fatal("expected standalone Component schema")
+	}
 }
 
 func TestRunConvert_ValidatesOutputDir(t *testing.T) {

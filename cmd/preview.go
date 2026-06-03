@@ -293,6 +293,7 @@ func scaffoldSampleData(dir string) error {
 		},
 		"kustomize.config.k8s.io": {
 			{file: "kustomization_v1beta1.json", kind: "Kustomization", source: schemametadata.SchemaSourceKustomize},
+			{file: "component_v1alpha1.json", kind: "Component", source: schemametadata.SchemaSourceKustomize},
 		},
 	}
 	kinds := make(map[string]string)

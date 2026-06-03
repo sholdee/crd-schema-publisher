@@ -56,7 +56,7 @@ func parseRuntimeConfig(cmd string, args []string, fallbackOutputDir string, env
 	group := fs.String("group", envDefault(env, schemaFilterGroupEnv, ""), "filter by group (comma-separated, case-insensitive)")
 	version := fs.String("version", envDefault(env, schemaFilterVersionEnv, ""), "filter by version (comma-separated, case-insensitive)")
 	includeBuiltins := fs.Bool("include-builtins", envDefault(env, schemaIncludeBuiltinsEnv, "") == "true", "include Kubernetes built-in schemas from the API server")
-	includeKustomize := fs.Bool("include-kustomize", envDefault(env, schemaIncludeKustomizeEnv, "") == "true", "include kustomize's Kustomization schema")
+	includeKustomize := fs.Bool("include-kustomize", envDefault(env, schemaIncludeKustomizeEnv, "") == "true", "include kustomize config schemas")
 	if err := fs.Parse(args); err != nil {
 		return runtimeConfig{}, err
 	}
@@ -82,7 +82,7 @@ func parseExtractConfig(args []string, env envGetter) (extractConfig, error) {
 	group := fs.String("group", envDefault(env, schemaFilterGroupEnv, ""), "filter by group (comma-separated, case-insensitive)")
 	version := fs.String("version", envDefault(env, schemaFilterVersionEnv, ""), "filter by version (comma-separated, case-insensitive)")
 	includeBuiltins := fs.Bool("include-builtins", envDefault(env, schemaIncludeBuiltinsEnv, "") == "true", "include Kubernetes built-in schemas from the API server")
-	includeKustomize := fs.Bool("include-kustomize", envDefault(env, schemaIncludeKustomizeEnv, "") == "true", "include kustomize's Kustomization schema")
+	includeKustomize := fs.Bool("include-kustomize", envDefault(env, schemaIncludeKustomizeEnv, "") == "true", "include kustomize config schemas")
 	if err := fs.Parse(args); err != nil {
 		return extractConfig{}, err
 	}

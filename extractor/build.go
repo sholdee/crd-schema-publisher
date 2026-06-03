@@ -157,7 +157,7 @@ func writeOptionalSchemas(ctx context.Context, opts SiteBuildOptions, generation
 	if opts.IncludeKustomize {
 		n, err := WriteKustomizeSchemas(generationDir)
 		if err != nil {
-			return 0, fmt.Errorf("writing kustomize schema: %w", err)
+			return 0, fmt.Errorf("writing kustomize schemas: %w", err)
 		}
 		count += n
 		snapshot(opts.Profiler, "build.after-write-kustomize", "schema_count", count, "generation", generationName)

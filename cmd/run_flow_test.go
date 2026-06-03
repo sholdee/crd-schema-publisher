@@ -708,6 +708,7 @@ func assertSamplePreviewSchemaMetadata(t *testing.T, serveDir string) {
 		"monitoring.coreos.com/servicemonitor_v1.json": schemametadata.SchemaSourceCRD,
 		"core/pod_v1.json": schemametadata.SchemaSourceBuiltin,
 		"kustomize.config.k8s.io/kustomization_v1beta1.json": schemametadata.SchemaSourceKustomize,
+		"kustomize.config.k8s.io/component_v1alpha1.json":    schemametadata.SchemaSourceKustomize,
 	} {
 		if got := metadata[path].Source; got != wantSource {
 			t.Fatalf("expected sample metadata %s source %q, got %q", path, wantSource, got)

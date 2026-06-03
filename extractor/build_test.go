@@ -330,11 +330,14 @@ func TestBuildSite_IncludeKustomizeWithZeroCRDsBuildsGeneration(t *testing.T) {
 	if result.Status != BuildResultBuilt {
 		t.Fatalf("expected BuildResultBuilt, got %q", result.Status)
 	}
-	if result.CRDCount != 0 || result.SchemaCount != 1 {
-		t.Fatalf("expected CRDCount=0 SchemaCount=1, got CRDCount=%d SchemaCount=%d", result.CRDCount, result.SchemaCount)
+	if result.CRDCount != 0 || result.SchemaCount != 2 {
+		t.Fatalf("expected CRDCount=0 SchemaCount=2, got CRDCount=%d SchemaCount=%d", result.CRDCount, result.SchemaCount)
 	}
 	if _, err := os.Stat(filepath.Join(outputDir, "current", "kustomize.config.k8s.io", "kustomization_v1beta1.json")); err != nil {
 		t.Fatalf("expected Kustomization schema: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "current", "kustomize.config.k8s.io", "component_v1alpha1.json")); err != nil {
+		t.Fatalf("expected Component schema: %v", err)
 	}
 }
 
@@ -351,8 +354,8 @@ func TestBuildSite_MergesCRDsBuiltinsAndKustomizeKindsManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildSite error: %v", err)
 	}
-	if result.CRDCount != 1 || result.SchemaCount != 4 {
-		t.Fatalf("expected CRDCount=1 SchemaCount=4, got CRDCount=%d SchemaCount=%d", result.CRDCount, result.SchemaCount)
+	if result.CRDCount != 1 || result.SchemaCount != 5 {
+		t.Fatalf("expected CRDCount=1 SchemaCount=5, got CRDCount=%d SchemaCount=%d", result.CRDCount, result.SchemaCount)
 	}
 
 	data, err := os.ReadFile(filepath.Join(outputDir, "current", "_meta", "kinds.json"))
@@ -367,6 +370,7 @@ func TestBuildSite_MergesCRDsBuiltinsAndKustomizeKindsManifest(t *testing.T) {
 		"example.io/test_v1.json":                            "Test",
 		"core/pod_v1.json":                                   "Pod",
 		"kustomize.config.k8s.io/kustomization_v1beta1.json": "Kustomization",
+		"kustomize.config.k8s.io/component_v1alpha1.json":    "Component",
 		"apps/deployment_v1.json":                            "Deployment",
 	} {
 		if kinds[path] != kind {

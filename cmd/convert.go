@@ -232,7 +232,7 @@ func shouldSkipConvertAfterFiltering(crds []apiextensionsv1.CustomResourceDefini
 func writeKustomizeInput(outputDir string) (int, error) {
 	n, err := extractor.WriteKustomizeSchemas(outputDir)
 	if err != nil {
-		return 0, fmt.Errorf("writing kustomize schema: %w", err)
+		return 0, fmt.Errorf("writing kustomize schemas: %w", err)
 	}
 	return n, nil
 }
@@ -244,7 +244,7 @@ func runConvert(args []string) error {
 	var dirFlag string
 	stringFlagWithAlias(fs, &dirFlag, "dir", "d", "", "directory containing CRD YAML files")
 	openapiFlag := fs.String("openapi", "", "Kubernetes OpenAPI v2 (swagger) file; converts built-in types (combinable with --file/--dir)")
-	kustomizeFlag := fs.Bool("kustomize", false, "also publish the kustomize Kustomization schema (combinable with --file/--dir/--openapi)")
+	kustomizeFlag := fs.Bool("kustomize", false, "also publish kustomize config schemas (combinable with --file/--dir/--openapi)")
 	var outputDir string
 	stringFlagWithAlias(fs, &outputDir, "output-dir", "o", "", "output directory for JSON schemas (required)")
 	basePath := fs.String("base-path", os.Getenv("BASE_PATH"), "URL path prefix for subpath deployments")

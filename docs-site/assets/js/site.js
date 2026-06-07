@@ -11,6 +11,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   initGitHubCard();
   initShellCommandHighlighting();
+  initAccessibleTables();
 
   let copyButtonIndex = 0;
   document.querySelectorAll(".doc-content pre").forEach((block) => {
@@ -46,6 +47,29 @@ document.addEventListener("DOMContentLoaded", () => {
     heading.append(" ", link);
   });
 });
+
+function initAccessibleTables() {
+  document.querySelectorAll(".doc-content table").forEach((table, index) => {
+    if (!table.hasAttribute("tabindex")) {
+      table.tabIndex = 0;
+    }
+    if (!table.hasAttribute("aria-label")) {
+      const label = nearestTableHeading(table) || `Data table ${index + 1}`;
+      table.setAttribute("aria-label", label);
+    }
+  });
+}
+
+function nearestTableHeading(table) {
+  let current = table.previousElementSibling;
+  while (current) {
+    if (/^H[2-6]$/.test(current.tagName)) {
+      return `${current.textContent.trim()} table`;
+    }
+    current = current.previousElementSibling;
+  }
+  return "";
+}
 
 const GITHUB_CARD_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 

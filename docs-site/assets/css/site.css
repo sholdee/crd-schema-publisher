@@ -511,6 +511,16 @@ a:hover {
   height: auto;
 }
 
+.doc-content a {
+  text-decoration: underline;
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.16em;
+}
+
+.doc-content a:hover {
+  text-decoration-thickness: 0.12em;
+}
+
 .doc-content code {
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -637,9 +647,10 @@ a:hover {
   color: var(--accent);
 }
 
-.heading-permalink {
+.doc-content .heading-permalink {
   opacity: 0;
   font-size: 0.85em;
+  text-decoration: none;
 }
 
 h2:hover .heading-permalink,

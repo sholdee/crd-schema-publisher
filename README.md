@@ -30,7 +30,7 @@ Extracts CRD schemas from Kubernetes or YAML, converts Kubernetes built-in resou
 
 ## Why
 
-Static CRD catalogs go stale, miss internal CRDs, and depend on external infrastructure. `crd-schema-publisher` publishes schemas from your cluster and can serve or sync them wherever you host static files.
+Static CRD catalogs go stale, miss internal CRDs, and depend on external infrastructure. `crd-schema-publisher` publishes schemas from your own cluster and can serve or sync them wherever you host static files.
 
 - Always accurate for installed CRDs, internal CRDs, and optional Kubernetes built-ins.
 - Self-hosted output for Cloudflare Pages, local serving, S3-compatible storage, git, or any static web server.
@@ -54,6 +54,12 @@ Install the standalone CLI:
 curl -fsSL https://crdsp.shold.io | bash
 ```
 
+Or install with mise through the aqua backend:
+
+```bash
+mise use aqua:sholdee/crd-schema-publisher@latest
+```
+
 Extract schemas from a kubeconfig context:
 
 ```bash
@@ -66,11 +72,10 @@ Convert CRD YAML without a cluster:
 crd-schema-publisher convert -f crd.yaml -o ./schemas
 ```
 
-Render Kubernetes built-ins from OpenAPI:
+Extract CRDs and Kubernetes built-ins directly from a cluster:
 
 ```bash
-kubectl get --raw /openapi/v2 > swagger.json
-crd-schema-publisher convert --openapi swagger.json -o ./schemas --render
+crd-schema-publisher extract -o ./schemas --include-builtins
 ```
 
 ## Use Published Schemas

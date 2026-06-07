@@ -27,7 +27,7 @@ Install the standalone CLI:
 curl -fsSL https://crdsp.shold.io | bash
 ```
 
-Extract schemas from a kubeconfig context, convert CRD YAML, or render Kubernetes built-ins from the cluster OpenAPI document:
+Extract schemas from a kubeconfig context, include Kubernetes built-ins from the API server, or convert CRD YAML:
 
 ```bash
 # Extract from the current kubeconfig context
@@ -36,12 +36,11 @@ crd-schema-publisher extract -o ./schemas
 # Extract from a specific context
 crd-schema-publisher extract --context my-cluster -o ./schemas
 
+# Extract CRDs and Kubernetes built-ins from the current cluster
+crd-schema-publisher extract -o ./schemas --include-builtins
+
 # Convert CRD YAML without a cluster
 crd-schema-publisher convert -f crd.yaml -o ./schemas
-
-# Convert Kubernetes built-in resources from the current cluster
-kubectl get --raw /openapi/v2 > swagger.json
-crd-schema-publisher convert --openapi swagger.json -o ./schemas --render
 ```
 
 For source builds, use `go run ./cmd/` in place of `crd-schema-publisher`. See [Installation](../installation/) for installer options and manual downloads, and [Commands](../reference/commands/) for flags and command behavior.

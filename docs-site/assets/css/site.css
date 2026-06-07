@@ -354,6 +354,12 @@ a:hover {
   letter-spacing: 0;
 }
 
+.home-content h1 {
+  margin-bottom: 0.75rem;
+  font-size: 2.15rem;
+  line-height: 1.15;
+}
+
 .doc-content h2,
 .doc-content h3,
 .doc-content h4 {
@@ -395,6 +401,12 @@ a:hover {
 
 .doc-content li + li {
   margin-top: 0.3rem;
+}
+
+.doc-content img {
+  display: block;
+  max-width: 100%;
+  height: auto;
 }
 
 .doc-content code {
@@ -476,6 +488,22 @@ h3:hover .heading-permalink,
 .doc-content td {
   color: var(--fg-muted);
   font-size: 0.9rem;
+}
+
+.media-frame {
+  box-sizing: border-box;
+  overflow: hidden;
+  width: 100%;
+  max-width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: 0;
+  background: var(--code-bg);
+  box-shadow: 0 18px 60px var(--shadow);
+  margin: 1.25rem 0;
+}
+
+.media-frame img {
+  width: 100%;
 }
 
 .page-list {

@@ -71,6 +71,16 @@ helm upgrade --install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-sch
 
 ## Optional Features
 
-The chart also supports persistent output volume (`persistence`), built-in static serving (`serve`), Gateway API HTTPRoute (`serve.httpRoute`), extra volumes, volume mounts and containers (`extraVolumes`, `extraVolumeMounts`, `extraContainers`), PodMonitor, PrometheusRule, Grafana dashboard, NetworkPolicy, CiliumNetworkPolicy, PodDisruptionBudget, pod anti-affinity presets, topology spread constraints, and templated extra objects.
+Most installs can skip these options. Use them when you need retained output, in-cluster serving, observability resources, or stricter workload controls.
 
-See [values.yaml](https://github.com/sholdee/crd-schema-publisher/blob/main/charts/crd-schema-publisher/values.yaml) for all options.
+| Need | Chart values |
+| --- | --- |
+| Retain generated output across pod restarts | `persistence` |
+| Serve the active site from the pod | `serve` |
+| Expose the built-in server through Gateway API | `serve.httpRoute` |
+| Add sidecars, sync containers, custom mounts, or extra objects | `extraVolumes`, `extraVolumeMounts`, `extraContainers`, `extraObjects` |
+| Export Prometheus and Grafana resources | `metrics.podMonitor`, `metrics.prometheusRule`, `grafana.dashboard` |
+| Restrict network traffic | `networkPolicy`, `ciliumNetworkPolicy` |
+| Improve rollout availability | `podDisruptionBudget`, `affinity`, `podAntiAffinityPreset`, `topologySpreadConstraints` |
+
+See [Monitoring](../../operations/monitoring/) for metrics and dashboard setup, and [values.yaml](https://github.com/sholdee/crd-schema-publisher/blob/main/charts/crd-schema-publisher/values.yaml) for the full option reference.

@@ -8,6 +8,10 @@ disableKinds:
 params:
   description: "CRD docs and IDE validation, straight from the cluster."
   repositoryURL: "https://github.com/sholdee/crd-schema-publisher"
+  repositoryName: "sholdee/crd-schema-publisher"
+  repositoryLatestVersion: "2026.603.41610"
+  repositoryStars: "22"
+  repositoryForks: "2"
   demoURL: "https://kube-schemas.shold.io"
   installerURL: "https://crdsp.shold.io"
 

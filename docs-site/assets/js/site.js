@@ -9,6 +9,9 @@ document.addEventListener("DOMContentLoaded", () => {
     initSidebarPersistence(sidebar);
   }
 
+  initGitHubCard();
+  initShellCommandHighlighting();
+
   let copyButtonIndex = 0;
   document.querySelectorAll(".doc-content pre").forEach((block) => {
     copyButtonIndex += 1;
@@ -43,6 +46,254 @@ document.addEventListener("DOMContentLoaded", () => {
     heading.append(" ", link);
   });
 });
+
+const GITHUB_CARD_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
+function initGitHubCard() {
+  const card = document.querySelector(".github-card");
+  if (!card || !card.dataset.githubRepo || !card.dataset.githubRepositoryApi || !window.fetch) {
+    return;
+  }
+
+  const cacheKey = `crdsp.github-card.${card.dataset.githubRepo}`;
+  const cached = githubCardCachedData(cacheKey);
+  if (cached && Date.now() - cached.cachedAt < GITHUB_CARD_CACHE_TTL_MS) {
+    renderGitHubCard(card, cached);
+    return;
+  }
+
+  refreshGitHubCard(card, cacheKey);
+}
+
+async function refreshGitHubCard(card, cacheKey) {
+  try {
+    const repo = await fetchGitHubJSON(card.dataset.githubRepositoryApi);
+    let release = null;
+    if (card.dataset.githubReleaseApi) {
+      try {
+        release = await fetchGitHubJSON(card.dataset.githubReleaseApi);
+      } catch {
+        release = null;
+      }
+    }
+
+    const data = {
+      repo: repo.full_name || card.dataset.githubRepo,
+      stars: normalizeGitHubCount(repo.stargazers_count),
+      forks: normalizeGitHubCount(repo.forks_count),
+      version: normalizeGitHubVersion(release?.tag_name || githubFieldText(card, "version")),
+      cachedAt: Date.now(),
+    };
+    renderGitHubCard(card, data);
+    storageSet("localStorage", cacheKey, JSON.stringify(data));
+  } catch {
+    // The fallback card remains useful when GitHub is unavailable or rate-limited.
+  }
+}
+
+async function fetchGitHubJSON(url) {
+  const response = await fetch(url, {
+    headers: { Accept: "application/vnd.github+json" },
+  });
+  if (!response.ok) {
+    throw new Error(`GitHub API unavailable: ${response.status}`);
+  }
+  return response.json();
+}
+
+function githubCardCachedData(cacheKey) {
+  try {
+    const parsed = JSON.parse(storageGet("localStorage", cacheKey) || "null");
+    if (!parsed || typeof parsed !== "object" || !Number.isFinite(parsed.cachedAt)) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function renderGitHubCard(card, data) {
+  const repo = data.repo || card.dataset.githubRepo || githubFieldText(card, "repo");
+  const version = normalizeGitHubVersion(data.version || githubFieldText(card, "version"));
+  const stars = formatGitHubCount(data.stars ?? githubFieldText(card, "stars"));
+  const forks = formatGitHubCount(data.forks ?? githubFieldText(card, "forks"));
+
+  setGitHubFieldText(card, "repo", repo);
+  setGitHubFieldText(card, "version", version);
+  setGitHubFieldText(card, "stars", stars);
+  setGitHubFieldText(card, "forks", forks);
+  card.setAttribute("aria-label", `${repo} on GitHub, latest release ${version}, ${stars} stars, ${forks} forks`);
+}
+
+function setGitHubFieldText(card, field, value) {
+  const target = card.querySelector(`[data-github-field='${field}']`);
+  if (target) {
+    target.textContent = value;
+  }
+}
+
+function githubFieldText(card, field) {
+  return card.querySelector(`[data-github-field='${field}']`)?.textContent.trim() || "";
+}
+
+function normalizeGitHubVersion(value) {
+  return String(value || "").trim().replace(/^v(?=\d)/i, "");
+}
+
+function normalizeGitHubCount(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
+function formatGitHubCount(value) {
+  const number = Number(value);
+  if (Number.isFinite(number) && number >= 0) {
+    return number.toLocaleString("en-US");
+  }
+  return String(value || "0");
+}
+
+function initShellCommandHighlighting() {
+  document.querySelectorAll(".doc-content code.language-bash, .doc-content code.language-sh").forEach((block) => {
+    const lines = block.querySelectorAll(".cl");
+    const targets = lines.length > 0 ? lines : [block];
+    targets.forEach((line) => {
+      wrapTextRanges(line, shellCommandRanges(line.textContent || ""), "shell-command");
+    });
+  });
+}
+
+function shellCommandRanges(text) {
+  const ranges = [];
+  let index = 0;
+  let expectingCommand = true;
+
+  while (index < text.length) {
+    index = skipShellWhitespace(text, index);
+    if (index >= text.length || text[index] === "#") {
+      break;
+    }
+
+    if (expectingCommand) {
+      if (text[index] === "$" && /\s/.test(text[index + 1] || "")) {
+        index += 1;
+        continue;
+      }
+
+      const assignmentEnd = shellAssignmentEnd(text, index);
+      if (assignmentEnd > index) {
+        index = assignmentEnd;
+        continue;
+      }
+
+      const end = shellTokenEnd(text, index);
+      const token = text.slice(index, end);
+      if (isShellCommandToken(token)) {
+        ranges.push({ start: index, end });
+      }
+      expectingCommand = false;
+      index = end;
+      continue;
+    }
+
+    const separatorEnd = shellSeparatorEnd(text, index);
+    if (separatorEnd > index) {
+      expectingCommand = true;
+      index = separatorEnd;
+      continue;
+    }
+
+    index += 1;
+  }
+
+  return ranges;
+}
+
+function skipShellWhitespace(text, index) {
+  let next = index;
+  while (next < text.length && /\s/.test(text[next])) {
+    next += 1;
+  }
+  return next;
+}
+
+function shellAssignmentEnd(text, index) {
+  const match = text.slice(index).match(/^[A-Za-z_][A-Za-z0-9_]*=/);
+  if (!match) {
+    return index;
+  }
+  return shellTokenEnd(text, index + match[0].length);
+}
+
+function shellTokenEnd(text, index) {
+  let next = index;
+  while (next < text.length && !/\s/.test(text[next]) && !/[|;&]/.test(text[next])) {
+    next += 1;
+  }
+  return next;
+}
+
+function shellSeparatorEnd(text, index) {
+  const nextTwo = text.slice(index, index + 2);
+  if (nextTwo === "&&" || nextTwo === "||") {
+    return index + 2;
+  }
+  return /[|;]/.test(text[index] || "") ? index + 1 : index;
+}
+
+function isShellCommandToken(token) {
+  return /^[A-Za-z_./][A-Za-z0-9_./:-]*$/.test(token) && !token.startsWith("-");
+}
+
+function wrapTextRanges(container, ranges, className) {
+  if (ranges.length === 0) {
+    return;
+  }
+
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  let offset = 0;
+  let node = walker.nextNode();
+  while (node) {
+    const start = offset;
+    const end = start + node.nodeValue.length;
+    textNodes.push({ node, start, end });
+    offset = end;
+    node = walker.nextNode();
+  }
+
+  textNodes.forEach(({ node: textNode, start, end }) => {
+    const overlaps = ranges
+      .map((range) => ({
+        start: Math.max(range.start, start) - start,
+        end: Math.min(range.end, end) - start,
+      }))
+      .filter((range) => range.start < range.end);
+
+    if (overlaps.length === 0) {
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    const value = textNode.nodeValue;
+    let cursor = 0;
+    overlaps.forEach((range) => {
+      if (range.start > cursor) {
+        fragment.append(document.createTextNode(value.slice(cursor, range.start)));
+      }
+      const span = document.createElement("span");
+      span.className = className;
+      span.textContent = value.slice(range.start, range.end);
+      fragment.append(span);
+      cursor = range.end;
+    });
+    if (cursor < value.length) {
+      fragment.append(document.createTextNode(value.slice(cursor)));
+    }
+    textNode.replaceWith(fragment);
+  });
+}
 
 function initSidebarPersistence(sidebar) {
   const storageKey = "crdsp.sidebar.scrollTop";

@@ -11,6 +11,17 @@
   --border: rgba(255, 255, 255, 0.1);
   --border-active: #6bc1fe;
   --code-bg: #050507;
+  --syntax-text: #d4d4d4;
+  --syntax-comment: #6a9955;
+  --syntax-keyword: #569cd6;
+  --syntax-constant: #4fc1ff;
+  --syntax-function: #dcdcaa;
+  --syntax-string: #ce9178;
+  --syntax-number: #b5cea8;
+  --syntax-type: #4ec9b0;
+  --syntax-variable: #9cdcfe;
+  --syntax-operator: #d4d4d4;
+  --syntax-escape: #d7ba7d;
   --required-bg: rgba(251, 191, 36, 0.25);
   --required-fg: #f59e0b;
   --shadow: rgba(0, 0, 0, 0.35);
@@ -30,9 +41,12 @@ html {
 }
 
 body {
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
   min-width: 320px;
   margin: 0;
-  background: var(--bg);
+  background: transparent;
   color: var(--fg);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   line-height: 1.55;
@@ -52,8 +66,17 @@ body::before {
     radial-gradient(1px 1px at 157px 371px, rgba(255,255,255,0.6), transparent),
     radial-gradient(2px 2px at 19px 83px, rgba(255,255,255,0.96), transparent),
     radial-gradient(1px 1px at 301px 41px, rgba(255,255,255,0.6), transparent),
-    radial-gradient(1.5px 1.5px at 127px 409px, rgba(255,255,255,0.8), transparent);
-  background-size: 397px 397px, 397px 397px, 397px 397px, 397px 397px, 397px 397px, 509px 509px, 509px 509px, 509px 509px;
+    radial-gradient(1.5px 1.5px at 127px 409px, rgba(255,255,255,0.8), transparent),
+    radial-gradient(1px 1px at 443px 237px, rgba(255,255,255,0.5), transparent),
+    radial-gradient(1.5px 1.5px at 67px 491px, rgba(255,255,255,0.72), transparent),
+    radial-gradient(1px 1px at 11px 37px, rgba(255,255,255,0.72), transparent),
+    radial-gradient(1.5px 1.5px at 191px 213px, rgba(255,255,255,0.9), transparent),
+    radial-gradient(1px 1px at 53px 7px, rgba(255,255,255,0.5), transparent),
+    radial-gradient(1px 1px at 271px 103px, rgba(255,255,255,0.64), transparent);
+  background-size:
+    397px 397px, 397px 397px, 397px 397px, 397px 397px, 397px 397px,
+    509px 509px, 509px 509px, 509px 509px, 509px 509px, 509px 509px,
+    311px 311px, 311px 311px, 311px 311px, 311px 311px;
   mask-image: linear-gradient(to bottom, black 0%, rgba(0,0,0,0.35) 45%, transparent 80%);
   -webkit-mask-image: linear-gradient(to bottom, black 0%, rgba(0,0,0,0.35) 45%, transparent 80%);
 }
@@ -111,7 +134,7 @@ a:hover {
 
 .header-nav {
   display: grid;
-  grid-template-columns: minmax(210px, auto) minmax(0, 1fr) minmax(220px, 340px);
+  grid-template-columns: minmax(210px, auto) minmax(0, 1fr) minmax(220px, 340px) auto;
   gap: 1rem;
   align-items: center;
   width: min(100%, 1380px);
@@ -162,9 +185,80 @@ a:hover {
   color: var(--accent);
 }
 
-.github-link svg {
-  width: 1rem;
-  height: 1rem;
+.github-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 0.58rem;
+  row-gap: 0.12rem;
+  align-items: center;
+  justify-self: end;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--fg);
+  line-height: 1;
+  padding: 0.08rem 0;
+  text-decoration: none;
+}
+
+.github-card:hover {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.github-card:hover .github-card-repo {
+  color: var(--accent);
+}
+
+.github-card svg {
+  flex: 0 0 auto;
+  width: 0.84rem;
+  height: 0.84rem;
+  color: currentColor;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.35;
+}
+
+.github-card .github-card-mark {
+  grid-row: 1 / 3;
+  width: 1.55rem;
+  height: 1.55rem;
+  color: var(--fg);
+  stroke: none;
+}
+
+.github-card-repo {
+  grid-column: 2;
+  overflow: hidden;
+  max-width: 16rem;
+  color: var(--fg);
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.github-card-meta,
+.github-card-stat {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.github-card-meta {
+  grid-column: 2;
+  gap: 0.52rem;
+  color: var(--fg-muted);
+  font-size: 0.82rem;
+  font-weight: 560;
+  line-height: 1;
+}
+
+.github-card-stat {
+  gap: 0.22rem;
 }
 
 .site-search {
@@ -282,13 +376,21 @@ a:hover {
   font-size: 0.875rem;
 }
 
-.nav-heading,
 .toc-heading,
 .nav-section-heading {
   margin: 0 0 0.5rem;
   color: var(--fg-muted);
   font-size: 0.75rem;
   font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.nav-heading {
+  margin: 0 0 0.65rem;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 850;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -349,7 +451,7 @@ a:hover {
 .doc-content h1 {
   margin: 0;
   color: var(--fg);
-  font-size: clamp(2rem, 4vw, 3.2rem);
+  font-size: clamp(1.75rem, 3vw, 2.55rem);
   line-height: 1.05;
   letter-spacing: 0;
 }
@@ -431,8 +533,89 @@ a:hover {
 .doc-content pre code {
   border: 0;
   background: transparent;
+  color: var(--syntax-text);
   padding: 0;
   font-size: 0.86rem;
+}
+
+.chroma .c,
+.chroma .c1,
+.chroma .ch,
+.chroma .cm,
+.chroma .cp,
+.chroma .cpf,
+.chroma .cs {
+  color: var(--syntax-comment);
+  font-style: italic;
+}
+
+.chroma .k,
+.chroma .kd,
+.chroma .kn,
+.chroma .kp,
+.chroma .kr {
+  color: var(--syntax-keyword);
+}
+
+.chroma .kc,
+.chroma .nb {
+  color: var(--syntax-constant);
+}
+
+.chroma .kt,
+.chroma .nc,
+.chroma .ne {
+  color: var(--syntax-type);
+}
+
+.chroma .nf,
+.chroma .fm,
+.chroma .shell-command {
+  color: var(--syntax-function);
+  font-weight: 650;
+}
+
+.chroma .s,
+.chroma .s1,
+.chroma .s2,
+.chroma .sb,
+.chroma .sc,
+.chroma .sd,
+.chroma .sh,
+.chroma .sx,
+.chroma .dl {
+  color: var(--syntax-string);
+}
+
+.chroma .se,
+.chroma .si {
+  color: var(--syntax-escape);
+}
+
+.chroma .m,
+.chroma .mb,
+.chroma .mf,
+.chroma .mh,
+.chroma .mi,
+.chroma .il,
+.chroma .mo {
+  color: var(--syntax-number);
+}
+
+.chroma .na,
+.chroma .nt,
+.chroma .nv,
+.chroma .vc,
+.chroma .vg,
+.chroma .vi,
+.chroma .vm {
+  color: var(--syntax-variable);
+}
+
+.chroma .o,
+.chroma .ow,
+.chroma .p {
+  color: var(--syntax-operator);
 }
 
 .copy-button {
@@ -569,13 +752,19 @@ h3:hover .heading-permalink,
   padding: 1.5rem;
 }
 
-@media (max-width: 1120px) {
+@media (max-width: 1280px) {
   .header-nav {
-    grid-template-columns: minmax(210px, auto) minmax(220px, 1fr);
+    grid-template-columns: minmax(210px, auto) minmax(220px, 1fr) auto;
   }
 
   .header-links {
     display: none;
+  }
+}
+
+@media (max-width: 1120px) {
+  .header-nav {
+    grid-template-columns: minmax(210px, auto) minmax(220px, 1fr) auto;
   }
 
   .site-shell,
@@ -592,12 +781,46 @@ h3:hover .heading-permalink,
 }
 
 @media (max-width: 720px) {
+  html {
+    scroll-padding-top: 1rem;
+  }
+
+  .site-header {
+    position: static;
+  }
+
   .header-nav {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.7rem;
   }
 
   .brand-link span {
     font-size: 0.95rem;
+  }
+
+  .github-card {
+    display: inline-flex;
+    grid-column: 2;
+    grid-row: 1;
+    width: 2.35rem;
+    height: 2.35rem;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .github-card .github-card-mark {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+
+  .github-card-repo,
+  .github-card-meta {
+    display: none;
+  }
+
+  .site-search {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .site-shell {

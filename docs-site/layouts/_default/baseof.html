@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="{{ site.Language.Locale | default "en" }}">
+  <head>
+    {{ partial "head.html" . }}
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    {{ partial "header.html" . }}
+    {{- $hasToc := gt (len .Fragments.Headings) 0 -}}
+    <div class="site-shell{{ if not $hasToc }} no-toc{{ end }}">
+      <aside class="site-sidebar" aria-label="Documentation navigation">
+        {{ partial "sidebar.html" . }}
+      </aside>
+      <main id="main-content" class="site-main" tabindex="-1">
+        {{ block "main" . }}{{ end }}
+      </main>
+      {{ if $hasToc }}
+        <aside class="site-toc" aria-label="Page table of contents">
+          {{ partial "toc.html" . }}
+        </aside>
+      {{ end }}
+    </div>
+    <footer class="site-footer">
+      <span>crd-schema-publisher documentation</span>
+      <span>CRD docs and IDE validation, straight from the cluster.</span>
+    </footer>
+  </body>
+</html>

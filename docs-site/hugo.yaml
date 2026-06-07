@@ -1,0 +1,153 @@
+baseURL: "https://sholdee.github.io/crd-schema-publisher/"
+title: "crd-schema-publisher"
+locale: "en-US"
+disableKinds:
+  - taxonomy
+  - term
+
+params:
+  description: "CRD docs and IDE validation, straight from the cluster."
+  repositoryURL: "https://github.com/sholdee/crd-schema-publisher"
+  demoURL: "https://kube-schemas.shold.io"
+  installerURL: "https://crdsp.shold.io"
+
+outputs:
+  home:
+    - html
+    - search
+
+outputFormats:
+  search:
+    mediaType: application/json
+    baseName: index.search
+    isPlainText: true
+    notAlternative: true
+
+menus:
+  docs:
+    - name: Overview
+      url: ""
+      params:
+        group: Start
+      weight: 10
+    - name: Getting Started
+      url: getting-started/
+      params:
+        group: Start
+      weight: 20
+    - name: Installation
+      url: installation/
+      params:
+        group: Start
+      weight: 30
+    - name: Artifact Verification
+      url: installation/verification/
+      params:
+        group: Start
+      weight: 40
+    - name: Deploying
+      url: deploying/
+      params:
+        group: Deployment
+      weight: 50
+    - name: Helm Chart
+      url: deploying/helm/
+      params:
+        group: Deployment
+      weight: 60
+    - name: Raw Manifests
+      url: deploying/raw-manifests/
+      params:
+        group: Deployment
+      weight: 70
+    - name: Publishing Backends
+      url: publishing-backends/
+      params:
+        group: Backends
+      weight: 80
+    - name: Built-in Server
+      url: publishing-backends/built-in-server/
+      params:
+        group: Backends
+      weight: 90
+    - name: Caddy Sidecar
+      url: publishing-backends/caddy-sidecar/
+      params:
+        group: Backends
+      weight: 100
+    - name: S3-compatible Storage
+      url: publishing-backends/s3/
+      params:
+        group: Backends
+      weight: 110
+    - name: Git Push
+      url: publishing-backends/git-push/
+      params:
+        group: Backends
+      weight: 120
+    - name: GitHub Pages Subpaths
+      url: publishing-backends/github-pages/
+      params:
+        group: Backends
+      weight: 130
+    - name: Using Schemas
+      url: using-schemas/
+      params:
+        group: Usage
+      weight: 140
+    - name: Configuration
+      url: reference/configuration/
+      params:
+        group: Reference
+      weight: 150
+    - name: Commands
+      url: reference/commands/
+      params:
+        group: Reference
+      weight: 160
+    - name: Monitoring
+      url: operations/monitoring/
+      params:
+        group: Operations
+      weight: 170
+    - name: Output Structure
+      url: operations/output-structure/
+      params:
+        group: Operations
+      weight: 180
+    - name: How It Works
+      url: concepts/how-it-works/
+      params:
+        group: Concepts
+      weight: 190
+    - name: Development
+      url: development/
+      params:
+        group: Project
+      weight: 200
+
+markup:
+  goldmark:
+    renderer:
+      unsafe: true
+  tableOfContents:
+    startLevel: 2
+    endLevel: 3
+    ordered: false
+  highlight:
+    noClasses: false
+
+module:
+  mounts:
+    - source: content
+      target: content
+    - source: layouts
+      target: layouts
+    - source: assets
+      target: assets
+    - source: static
+      target: static
+    - source: ../docs/assets
+      target: static/assets
+    - source: ../docs/screenshots
+      target: static/screenshots

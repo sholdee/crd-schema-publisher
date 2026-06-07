@@ -1,0 +1,10 @@
+{{ define "main" }}
+  <article class="doc-content">
+    <header class="doc-header">
+      <p class="eyebrow">{{ .Section | humanize }}</p>
+      <h1>{{ partial "title.html" . }}</h1>
+      {{ with .Params.description }}<p class="lead">{{ . }}</p>{{ end }}
+    </header>
+    {{ .Content }}
+  </article>
+{{ end }}

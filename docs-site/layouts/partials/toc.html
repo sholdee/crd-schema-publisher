@@ -1,0 +1,4 @@
+{{ if gt (len .Fragments.Headings) 0 }}
+  <p class="toc-heading">On This Page</p>
+  {{ .TableOfContents }}
+{{ end }}

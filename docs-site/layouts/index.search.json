@@ -1,0 +1,15 @@
+{{- $pages := slice -}}
+{{- range where site.Pages "Kind" "in" (slice "page" "section") -}}
+  {{- $url := .RelPermalink -}}
+  {{- if and (not .IsHome) $url -}}
+    {{- $title := partial "title.html" . -}}
+    {{- $pages = $pages | append (dict
+      "title" ($title | plainify)
+      "url" $url
+      "section" (.Section | plainify)
+      "summary" (.Summary | plainify | htmlUnescape)
+      "content" (.Plain | plainify | htmlUnescape | truncate 4000)
+    ) -}}
+  {{- end -}}
+{{- end -}}
+{{- $pages | jsonify -}}

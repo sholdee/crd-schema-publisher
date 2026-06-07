@@ -1,0 +1,68 @@
+<header class="site-header">
+  <nav class="header-nav" aria-label="Primary">
+    <a class="brand-link" href="{{ site.Home.RelPermalink }}" aria-label="crd-schema-publisher documentation home">
+      <img src="{{ "assets/logo.svg" | relURL }}" alt="" width="32" height="32">
+      <span>crd-schema-publisher</span>
+    </a>
+    <div class="header-links">
+      <a href="{{ site.Home.RelPermalink }}">Overview</a>
+      <a href="{{ relURL "getting-started/" }}">Getting Started</a>
+      <a href="{{ relURL "deploying/helm/" }}">Helm</a>
+      <a href="{{ relURL "reference/configuration/" }}">Reference</a>
+      <a href="{{ site.Params.demoURL }}">Live Demo</a>
+    </div>
+    <form class="site-search" role="search" data-search-index="{{ "index.search.json" | relURL }}">
+      <label class="visually-hidden" for="site-search-input">Search documentation</label>
+      <input
+        id="site-search-input"
+        name="q"
+        type="search"
+        autocomplete="off"
+        placeholder="Search docs"
+        aria-controls="site-search-results"
+        aria-expanded="false"
+      >
+      <div class="search-panel" hidden>
+        <ul id="site-search-results" role="listbox" aria-label="Search results"></ul>
+      </div>
+    </form>
+    <a
+      class="github-card"
+      href="{{ site.Params.repositoryURL }}"
+      data-github-repo="{{ site.Params.repositoryName }}"
+      data-github-repository-api="https://api.github.com/repos/{{ site.Params.repositoryName }}"
+      data-github-release-api="https://api.github.com/repos/{{ site.Params.repositoryName }}/releases/latest"
+      aria-label="{{ site.Params.repositoryName }} on GitHub, latest release {{ site.Params.repositoryLatestVersion }}, {{ site.Params.repositoryStars }} stars, {{ site.Params.repositoryForks }} forks"
+    >
+      <svg class="github-card-mark" aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+        <path fill="currentColor" d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.69c-2.78.6-3.37-1.19-3.37-1.19-.45-1.15-1.11-1.46-1.11-1.46-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.22-.25-4.55-1.11-4.55-4.93 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02A9.56 9.56 0 0 1 12 6.03c.85 0 1.7.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.83-2.34 4.67-4.57 4.92.36.31.68.92.68 1.86v2.76c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/>
+      </svg>
+      <span class="github-card-repo" data-github-field="repo">{{ site.Params.repositoryName }}</span>
+      <span class="github-card-meta">
+        <span class="github-card-stat github-card-version">
+          <svg aria-hidden="true" viewBox="0 0 16 16" fill="none" focusable="false">
+            <path d="M2.25 2.25h4.1L13.75 9.65l-4.1 4.1-7.4-7.4v-4.1Z"/>
+            <path d="M4.9 5.15h.01"/>
+          </svg>
+          <span data-github-field="version">{{ site.Params.repositoryLatestVersion }}</span>
+        </span>
+        <span class="github-card-stat">
+          <svg aria-hidden="true" viewBox="0 0 16 16" fill="none" focusable="false">
+            <path d="m8 1.75 1.93 3.91 4.32.63-3.13 3.05.74 4.3L8 11.61l-3.86 2.03.74-4.3-3.13-3.05 4.32-.63L8 1.75Z"/>
+          </svg>
+          <span data-github-field="stars">{{ site.Params.repositoryStars }}</span>
+        </span>
+        <span class="github-card-stat">
+          <svg aria-hidden="true" viewBox="0 0 16 16" fill="none" focusable="false">
+            <circle cx="4" cy="3.5" r="1.5"/>
+            <circle cx="12" cy="3.5" r="1.5"/>
+            <circle cx="4" cy="12.5" r="1.5"/>
+            <path d="M4 5v6"/>
+            <path d="M12 5c-.25 2-1.7 3-4.35 3H6.5A2.5 2.5 0 0 0 4 10.5"/>
+          </svg>
+          <span data-github-field="forks">{{ site.Params.repositoryForks }}</span>
+        </span>
+      </span>
+    </a>
+  </nav>
+</header>

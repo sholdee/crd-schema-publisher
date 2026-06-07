@@ -11,6 +11,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  HUGO_VERSION: "0.162.1"
 
 jobs:
   detect:
@@ -21,6 +22,7 @@ jobs:
     outputs:
       app: ${{ steps.paths.outputs.app }}
       chart: ${{ steps.paths.outputs.chart }}
+      docs-site: ${{ steps.paths.outputs.docs-site }}
       renovate: ${{ steps.paths.outputs.renovate }}
     steps:
       - name: Checkout
@@ -39,6 +41,13 @@ jobs:
             chart:
               - 'charts/**'
               - '.github/workflows/helm-lint.yml'
+            docs-site:
+              - 'README.md'
+              - 'docs/assets/**'
+              - 'docs/screenshots/**'
+              - 'docs-site/**'
+              - '.github/workflows/pages.yml'
+              - '.github/workflows/ci.yaml'
             renovate:
               - '.github/renovate.json5'
               - '.github/workflows/ci.yaml'
@@ -109,10 +118,33 @@ jobs:
     if: needs.detect.outputs.chart == 'true'
     uses: ./.github/workflows/helm-lint.yml
 
+  docs-site:
+    needs: detect
+    if: github.event_name != 'pull_request' || needs.detect.outputs.docs-site == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Install Hugo
+        run: |
+          set -euo pipefail
+          curl -sL -o /tmp/hugo.tar.gz "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.tar.gz"
+          mkdir "${HOME}/hugo"
+          tar -C "${HOME}/hugo" -xf /tmp/hugo.tar.gz
+          echo "${HOME}/hugo" >> "${GITHUB_PATH}"
+
+      - name: Build documentation site
+        run: hugo --source docs-site --destination /tmp/crd-schema-publisher-docs-site --cleanDestinationDir --minify
+
   gate:
     runs-on: ubuntu-latest
     if: always()
-    needs: [detect, test, build, renovate, helm-lint]
+    needs: [detect, test, build, renovate, helm-lint, docs-site]
     permissions: {}
     steps:
       - name: Evaluate results
@@ -122,10 +154,11 @@ jobs:
           BUILD: ${{ needs.build.result }}
           RENOVATE: ${{ needs.renovate.result }}
           HELM_LINT: ${{ needs.helm-lint.result }}
+          DOCS_SITE: ${{ needs.docs-site.result }}
         run: |
-          echo "detect=${DETECT} test=${TEST} build=${BUILD} renovate=${RENOVATE} helm-lint=${HELM_LINT}"
+          echo "detect=${DETECT} test=${TEST} build=${BUILD} renovate=${RENOVATE} helm-lint=${HELM_LINT} docs-site=${DOCS_SITE}"
 
-          for result in "${DETECT}" "${TEST}" "${BUILD}" "${RENOVATE}" "${HELM_LINT}"; do
+          for result in "${DETECT}" "${TEST}" "${BUILD}" "${RENOVATE}" "${HELM_LINT}" "${DOCS_SITE}"; do
             if [[ "${result}" != "success" && "${result}" != "skipped" ]]; then
               echo "CI failed: job returned ${result}"
               exit 1

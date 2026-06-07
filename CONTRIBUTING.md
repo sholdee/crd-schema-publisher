@@ -13,6 +13,16 @@ go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 git config core.hooksPath .githooks
 ```
 
+## Documentation Site
+
+The public docs site lives under `docs-site/` and is built with Hugo.
+
+```bash
+${HUGO_BIN:-hugo} --source docs-site --destination /tmp/crd-schema-publisher-docs-site --cleanDestinationDir --minify
+```
+
+Run that command before opening a PR that changes `docs-site/`, `README.md`, or docs assets.
+
 ## Guidelines
 
 - Follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages

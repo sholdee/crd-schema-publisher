@@ -1,0 +1,22 @@
+<nav class="docs-nav">
+  <p class="nav-heading">Docs</p>
+  {{ $groups := slice "Start" "Deployment" "Backends" "Usage" "Reference" "Operations" "Concepts" "Project" }}
+  {{ range $group := $groups }}
+    <div class="nav-section">
+      <p class="nav-section-heading">{{ $group }}</p>
+      <ul>
+        {{ range site.Menus.docs }}
+          {{ if eq (.Params.group | default "Reference") $group }}
+            {{- $entryURL := relURL .URL -}}
+            {{- $active := eq $entryURL $.RelPermalink -}}
+            <li>
+              <a href="{{ $entryURL }}"{{ if $active }} class="is-active" aria-current="page"{{ end }}>
+                {{ .Name }}
+              </a>
+            </li>
+          {{ end }}
+        {{ end }}
+      </ul>
+    </div>
+  {{ end }}
+</nav>

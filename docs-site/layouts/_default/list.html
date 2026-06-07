@@ -1,0 +1,20 @@
+{{ define "main" }}
+  <article class="doc-content">
+    <header class="doc-header">
+      <p class="eyebrow">{{ .Section | humanize }}</p>
+      <h1>{{ partial "title.html" . }}</h1>
+      {{ with .Params.description }}<p class="lead">{{ . }}</p>{{ end }}
+    </header>
+    {{ .Content }}
+    {{ if .Pages }}
+      <div class="page-list">
+        {{ range .Pages.ByWeight }}
+          <a class="page-list-item" href="{{ .RelPermalink }}">
+            <span>{{ .Title }}</span>
+            {{ with .Params.description }}<small>{{ . }}</small>{{ end }}
+          </a>
+        {{ end }}
+      </div>
+    {{ end }}
+  </article>
+{{ end }}

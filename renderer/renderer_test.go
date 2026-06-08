@@ -694,7 +694,7 @@ func TestRenderSchema_BasicOutput(t *testing.T) {
 		{"background: var(--surface-accent-background);", "schema match surfaces hide starfield"},
 		{".prop > summary {\n    padding: 0.5rem 0.75rem; cursor: pointer;\n    font-size: 0.85rem; background: var(--surface-background); border-radius: 6px;\n    list-style: none; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;", "schema property summaries wrap on narrow screens"},
 		{"overflow-wrap: anywhere; white-space: normal;", "schema property names can wrap"},
-		{"flex: 1 1 24rem; min-width: min(100%, 24rem);", "leaf descriptions keep a readable width before wrapping"},
+		{"flex: 1 1 12rem; min-width: min(100%, 12rem);", "leaf descriptions wrap only under tighter width constraints"},
 		{"@media (max-width: 640px) {\n    .leaf-desc,\n    .leaf-constraints {\n      flex: 0 0 100%;", "leaf descriptions use full width on mobile"},
 		{".prop-content {\n      padding-left: 0.75rem;\n    }", "nested property content reduces indentation on mobile"},
 		{".search-clear {", "schema search clear button style"},

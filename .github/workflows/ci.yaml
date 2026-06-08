@@ -130,6 +130,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Test docs site CSS
+        run: node --test docs-site/assets/css/*.test.js
+
       - name: Install Hugo
         run: |
           set -euo pipefail

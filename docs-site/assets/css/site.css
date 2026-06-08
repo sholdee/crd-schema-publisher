@@ -25,6 +25,8 @@
   --required-bg: rgba(251, 191, 36, 0.25);
   --required-fg: #f59e0b;
   --shadow: rgba(0, 0, 0, 0.35);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.18);
+  --scrollbar-thumb-active: rgba(255, 255, 255, 0.36);
   --content-width: 920px;
   --sidebar-width: 245px;
   --toc-width: 210px;
@@ -37,7 +39,32 @@
 html {
   background: var(--bg);
   color: var(--fg);
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+  scrollbar-width: thin;
   scroll-padding-top: 5rem;
+}
+
+html::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+html::-webkit-scrollbar-track,
+html::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+html::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 20px;
+  background: var(--scrollbar-thumb);
+  background-clip: content-box;
+}
+
+html::-webkit-scrollbar-thumb:hover,
+html::-webkit-scrollbar-thumb:active {
+  background: var(--scrollbar-thumb-active);
+  background-clip: content-box;
 }
 
 body {
@@ -282,6 +309,77 @@ a:hover {
   color: var(--fg-muted);
 }
 
+.site-sidebar,
+.site-toc,
+.doc-content pre,
+.doc-content table,
+.search-panel ul {
+  scrollbar-color: transparent transparent;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.site-sidebar:hover,
+.site-toc:hover,
+.doc-content pre:hover,
+.doc-content table:hover,
+.search-panel ul:hover {
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.site-sidebar::-webkit-scrollbar,
+.site-toc::-webkit-scrollbar,
+.doc-content pre::-webkit-scrollbar,
+.doc-content table::-webkit-scrollbar,
+.search-panel ul::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.site-sidebar::-webkit-scrollbar-track,
+.site-sidebar::-webkit-scrollbar-corner,
+.site-toc::-webkit-scrollbar-track,
+.site-toc::-webkit-scrollbar-corner,
+.doc-content pre::-webkit-scrollbar-track,
+.doc-content pre::-webkit-scrollbar-corner,
+.doc-content table::-webkit-scrollbar-track,
+.doc-content table::-webkit-scrollbar-corner,
+.search-panel ul::-webkit-scrollbar-track,
+.search-panel ul::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.site-sidebar::-webkit-scrollbar-thumb,
+.site-toc::-webkit-scrollbar-thumb,
+.doc-content pre::-webkit-scrollbar-thumb,
+.doc-content table::-webkit-scrollbar-thumb,
+.search-panel ul::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 20px;
+  background: transparent;
+  background-clip: content-box;
+}
+
+.site-sidebar:hover::-webkit-scrollbar-thumb,
+.site-toc:hover::-webkit-scrollbar-thumb,
+.doc-content pre:hover::-webkit-scrollbar-thumb,
+.doc-content table:hover::-webkit-scrollbar-thumb,
+.search-panel ul:hover::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  background: var(--scrollbar-thumb);
+  background-clip: content-box;
+}
+
+.site-sidebar::-webkit-scrollbar-thumb:active,
+.site-toc::-webkit-scrollbar-thumb:active,
+.doc-content pre::-webkit-scrollbar-thumb:active,
+.doc-content table::-webkit-scrollbar-thumb:active,
+.search-panel ul::-webkit-scrollbar-thumb:active {
+  border: 3px solid transparent;
+  background: var(--scrollbar-thumb-active);
+  background-clip: content-box;
+}
+
 .search-panel {
   position: absolute;
   top: calc(100% + 0.45rem);
@@ -296,6 +394,8 @@ a:hover {
 }
 
 .search-panel ul {
+  max-height: min(70vh, 28rem);
+  overflow-y: auto;
   margin: 0;
   padding: 0.35rem;
   list-style: none;
@@ -368,6 +468,8 @@ a:hover {
   top: 5rem;
   align-self: start;
   max-height: calc(100vh - 6rem);
+  padding-inline-end: 0.35rem;
+  scrollbar-gutter: stable;
   overflow: auto;
 }
 
@@ -414,6 +516,7 @@ a:hover {
 .docs-nav a,
 .site-toc a {
   display: block;
+  margin-inline-end: 0.65rem;
   border-radius: 6px;
   color: var(--fg-muted);
   padding: 0.25rem 0.45rem;

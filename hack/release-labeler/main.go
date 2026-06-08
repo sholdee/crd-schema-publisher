@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 
 	"github.com/sholdee/crd-schema-publisher/hack/releaselabels"
@@ -14,13 +14,15 @@ import (
 
 type eventPayload struct {
 	PullRequest *struct {
-		Number int    `json:"number"`
-		Title  string `json:"title"`
-		Body   string `json:"body"`
-		User   struct {
-			Login string `json:"login"`
-		} `json:"user"`
+		Number int `json:"number"`
 	} `json:"pull_request"`
+}
+
+type pullRequest struct {
+	Number int
+	Title  string
+	Body   string
+	Author string
 }
 
 func main() {
@@ -48,14 +50,19 @@ func run() error {
 		return errors.New("release-labeler requires a pull_request event payload")
 	}
 
+	client := ghClient{}
+	pr, err := currentPullRequest(client, repository, event.PullRequest.Number)
+	if err != nil {
+		return err
+	}
+
 	result := releaselabels.ForPullRequest(releaselabels.PullRequest{
-		Title:  event.PullRequest.Title,
-		Body:   event.PullRequest.Body,
-		Author: event.PullRequest.User.Login,
+		Title:  pr.Title,
+		Body:   pr.Body,
+		Author: pr.Author,
 	})
 
-	client := ghClient{}
-	if err := syncPullRequestLabels(client, repository, event.PullRequest.Number, result.Labels); err != nil {
+	if err := syncPullRequestLabels(client, repository, pr.Number, result.Labels); err != nil {
 		return err
 	}
 	if !result.Recognized {
@@ -82,9 +89,39 @@ func readEvent(path string) (eventPayload, error) {
 	return event, nil
 }
 
+type ghRunner interface {
+	run(args ...string) (string, error)
+}
+
 type ghClient struct{}
 
-func syncPullRequestLabels(client ghClient, repository string, number int, desiredLabels []string) error {
+func currentPullRequest(client ghRunner, repository string, number int) (pullRequest, error) {
+	output, err := client.run("api", fmt.Sprintf("repos/%s/pulls/%d", repository, number))
+	if err != nil {
+		return pullRequest{}, fmt.Errorf("fetching current pull request: %w", err)
+	}
+
+	var response struct {
+		Number int    `json:"number"`
+		Title  string `json:"title"`
+		Body   string `json:"body"`
+		User   struct {
+			Login string `json:"login"`
+		} `json:"user"`
+	}
+	if err := json.Unmarshal([]byte(output), &response); err != nil {
+		return pullRequest{}, fmt.Errorf("parsing current pull request: %w", err)
+	}
+
+	return pullRequest{
+		Number: response.Number,
+		Title:  response.Title,
+		Body:   response.Body,
+		Author: response.User.Login,
+	}, nil
+}
+
+func syncPullRequestLabels(client ghRunner, repository string, number int, desiredLabels []string) error {
 	if err := ensureRepositoryLabels(client, repository); err != nil {
 		return err
 	}
@@ -112,13 +149,17 @@ func syncPullRequestLabels(client ghClient, repository string, number int, desir
 		return nil
 	}
 
-	if _, err := client.run("issue", "edit", strconv.Itoa(number), "--repo", repository, "--add-label", strings.Join(desiredLabels, ",")); err != nil {
+	args := []string{"api", "-X", "POST", fmt.Sprintf("repos/%s/issues/%d/labels", repository, number)}
+	for _, label := range desiredLabels {
+		args = append(args, "-f", fmt.Sprintf("labels[]=%s", label))
+	}
+	if _, err := client.run(args...); err != nil {
 		return fmt.Errorf("applying labels: %w", err)
 	}
 	return nil
 }
 
-func ensureRepositoryLabels(client ghClient, repository string) error {
+func ensureRepositoryLabels(client ghRunner, repository string) error {
 	for _, label := range releaselabels.LabelSpecs() {
 		if err := ensureRepositoryLabel(client, repository, label); err != nil {
 			return err
@@ -127,7 +168,7 @@ func ensureRepositoryLabels(client ghClient, repository string) error {
 	return nil
 }
 
-func ensureRepositoryLabel(client ghClient, repository string, label releaselabels.LabelSpec) error {
+func ensureRepositoryLabel(client ghRunner, repository string, label releaselabels.LabelSpec) error {
 	if _, err := client.run(
 		"label",
 		"create",
@@ -145,8 +186,8 @@ func ensureRepositoryLabel(client ghClient, repository string, label releaselabe
 	return nil
 }
 
-func currentIssueLabels(client ghClient, repository string, number int) ([]string, error) {
-	output, err := client.run("api", fmt.Sprintf("repos/%s/issues/%d/labels", repository, number), "--jq", ".[].name")
+func currentIssueLabels(client ghRunner, repository string, number int) ([]string, error) {
+	output, err := client.run("api", "--paginate", fmt.Sprintf("repos/%s/issues/%d/labels?per_page=100", repository, number), "--jq", ".[].name")
 	if err != nil {
 		return nil, fmt.Errorf("listing current labels: %w", err)
 	}
@@ -161,8 +202,11 @@ func currentIssueLabels(client ghClient, repository string, number int) ([]strin
 	return labels, nil
 }
 
-func deleteIssueLabel(client ghClient, repository string, number int, label string) error {
-	if _, err := client.run("issue", "edit", strconv.Itoa(number), "--repo", repository, "--remove-label", label); err != nil {
+func deleteIssueLabel(client ghRunner, repository string, number int, label string) error {
+	if _, err := client.run("api", "-X", "DELETE", fmt.Sprintf("repos/%s/issues/%d/labels/%s", repository, number, url.PathEscape(label))); err != nil {
+		if strings.Contains(err.Error(), "Not Found") {
+			return nil
+		}
 		return fmt.Errorf("deleting stale label %q: %w", label, err)
 	}
 	return nil

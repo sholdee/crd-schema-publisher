@@ -961,7 +961,7 @@ var schemaTemplate = `<!DOCTYPE html>
     font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
   }
   .prop-children { margin-top: 0.5rem; }
-  .leaf-desc { color: var(--fg-muted); font-size: 0.9rem; flex: 1 1 24rem; min-width: min(100%, 24rem); overflow-wrap: anywhere; }
+  .leaf-desc { color: var(--fg-muted); font-size: 0.9rem; flex: 1 1 12rem; min-width: min(100%, 12rem); overflow-wrap: anywhere; }
   .leaf-constraints {
     color: var(--fg-muted); font-size: 0.875rem; margin-top: 0.15rem;
     font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;

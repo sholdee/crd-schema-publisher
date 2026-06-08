@@ -961,7 +961,7 @@ var schemaTemplate = `<!DOCTYPE html>
     font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
   }
   .prop-children { margin-top: 0.5rem; }
-  .leaf-desc { color: var(--fg-muted); font-size: 0.9rem; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .leaf-desc { color: var(--fg-muted); font-size: 0.9rem; flex: 1 1 24rem; min-width: min(100%, 24rem); overflow-wrap: anywhere; }
   .leaf-constraints {
     color: var(--fg-muted); font-size: 0.875rem; margin-top: 0.15rem;
     font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
@@ -980,6 +980,15 @@ var schemaTemplate = `<!DOCTYPE html>
   .schema-constraint-long[open] .schema-constraint-preview { display: none; }
   .schema-constraint-full {
     display: block; margin-top: 0.25rem; padding-left: 0.75rem;
+  }
+  @media (max-width: 640px) {
+    .leaf-desc,
+    .leaf-constraints {
+      flex: 0 0 100%;
+    }
+    .prop-content {
+      padding-left: 0.75rem;
+    }
   }
 </style>
 ` + theme.HeadScript + `

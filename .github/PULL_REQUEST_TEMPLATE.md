@@ -4,6 +4,7 @@
 
 ## Checklist
 
+- [ ] PR title starts with a release-note type (`feat`, `fix`, `docs`, `deps`, `refactor`, `perf`, `revert`, `ci`, `build`, `test`, or `chore`)
 - [ ] Tests pass (`go test ./...`)
 - [ ] Linter passes (`golangci-lint run`)
 - [ ] Pre-commit hook enabled (`git config core.hooksPath .githooks`)

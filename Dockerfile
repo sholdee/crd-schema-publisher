@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.26.4@sha256:478231bfd9677835606c249208483a3c43b31e941c1040c48747b111c7ab871c AS build
+FROM --platform=$BUILDPLATFORM golang:1.26.4@sha256:8f4cb3b8d3fd8c3e6eccfde0fcf54e8cea74fbb04cea961a92ee1a913d22cb17 AS build
 ARG TARGETOS TARGETARCH
 WORKDIR /src
 COPY go.mod go.sum ./

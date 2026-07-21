@@ -38,6 +38,7 @@ var commandSpecs = []commandSpec{
 	{name: "run", description: "Extract schemas and upload when credentials are configured (default)"},
 	{name: "extract", description: "Extract schemas from a Kubernetes cluster"},
 	{name: "convert", description: "Convert CRD YAML files to JSON Schema"},
+	{name: "render", description: "Render HTML documentation pages for an existing schema directory"},
 	{name: "upload", description: "Upload schemas to Cloudflare Pages"},
 	{name: "watch", description: "Watch for CRD changes and upload when credentials are configured"},
 	{name: "preview", description: "Serve a local preview of the documentation site"},

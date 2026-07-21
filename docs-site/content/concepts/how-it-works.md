@@ -43,6 +43,18 @@ The `convert` command skips Kubernetes access. It reads CRD YAML from `--file`/`
 
 `convert` applies the same schema transforms as cluster-backed commands. It writes flat output directly to `--output-dir`/`-o`; with `--render`, it also renders schema HTML pages and an index.
 
+## Standalone Rendering
+
+The `render` command renders schema HTML pages and an index for an existing output directory. This decouples rendering from extraction and conversion, so schemas can be inspected or modified in between:
+
+```sh
+crd-schema-publisher extract -o ./schemas --skip-render
+# modify schemas under ./schemas/current/ as needed
+crd-schema-publisher render -o ./schemas
+```
+
+When `OUTPUT_DIR/current` exists (runtime layout), `render` renders the active generation in place; otherwise it renders the flat directory produced by `convert`. When a convert manifest is present, rendered files are recorded in it so a later `convert` run cleans them.
+
 ## Kubernetes Built-ins from OpenAPI
 
 Use `--openapi <swagger.json>` to convert Kubernetes built-in, non-CRD types from an OpenAPI v2 document.

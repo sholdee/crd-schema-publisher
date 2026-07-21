@@ -10,8 +10,6 @@ import (
 	"strings"
 
 	"github.com/sholdee/crd-schema-publisher/extractor"
-	"github.com/sholdee/crd-schema-publisher/index"
-	"github.com/sholdee/crd-schema-publisher/renderer"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
 
@@ -207,17 +205,6 @@ func writeConvertInputs(
 	return count, nil
 }
 
-func renderConvertOutput(outputDir, basePath string) error {
-	normalizedBasePath := normalizeBasePath(basePath)
-	if err := renderer.RenderAll(outputDir, normalizedBasePath); err != nil {
-		return fmt.Errorf("rendering schemas: %w", err)
-	}
-	if err := index.Generate(outputDir, normalizedBasePath); err != nil {
-		return fmt.Errorf("generating index: %w", err)
-	}
-	return nil
-}
-
 func validateConvertInputs(fileFlag, dirFlag, openapiPath string, kustomize bool) error {
 	if fileFlag == "" && dirFlag == "" && openapiPath == "" && !kustomize {
 		return fmt.Errorf("one of --file, --dir, --openapi, or --kustomize is required")
@@ -298,7 +285,7 @@ func runConvert(args []string) error {
 	}
 
 	if *render {
-		if err := renderConvertOutput(outputDir, *basePath); err != nil {
+		if err := renderOutput(outputDir, *basePath); err != nil {
 			return err
 		}
 	}

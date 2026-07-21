@@ -1482,6 +1482,109 @@ func TestRunConvert_KustomizeExplicitOptInIgnoresFilters(t *testing.T) {
 	}
 }
 
+func TestRunRender_RendersConvertOutput(t *testing.T) {
+	dir := t.TempDir()
+	outputDir := filepath.Join(dir, "output")
+	inputFile := writeCertificateCRDFixture(t, dir)
+
+	if err := runConvert([]string{"--file", inputFile, "--output-dir", outputDir}); err != nil {
+		t.Fatalf("runConvert error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "index.html")); !os.IsNotExist(err) {
+		t.Fatal("expected no index.html before render")
+	}
+
+	if err := runRender([]string{"--output-dir", outputDir}); err != nil {
+		t.Fatalf("runRender error: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(outputDir, "cert-manager.io", "certificate_v1.html")); err != nil {
+		t.Fatal("expected rendered HTML schema page")
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "index.html")); err != nil {
+		t.Fatal("expected generated index.html")
+	}
+}
+
+func TestRunRender_RecordsArtifactsInConvertManifest(t *testing.T) {
+	dir := t.TempDir()
+	outputDir := filepath.Join(dir, "output")
+	inputFile := writeCertificateCRDFixture(t, dir)
+
+	if err := runConvert([]string{"--file", inputFile, "--output-dir", outputDir}); err != nil {
+		t.Fatalf("runConvert error: %v", err)
+	}
+	// User file added between convert and render must stay out of the manifest
+	userFile := filepath.Join(outputDir, "notes.txt")
+	if err := os.WriteFile(userFile, []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runRender([]string{"--output-dir", outputDir}); err != nil {
+		t.Fatalf("runRender error: %v", err)
+	}
+
+	// A later convert run should clean the standalone render's artifacts
+	if err := runConvert([]string{"--file", inputFile, "--output-dir", outputDir}); err != nil {
+		t.Fatalf("second runConvert error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "index.html")); !os.IsNotExist(err) {
+		t.Fatal("expected index.html from standalone render to be cleaned")
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "cert-manager.io", "certificate_v1.html")); !os.IsNotExist(err) {
+		t.Fatal("expected rendered HTML page from standalone render to be cleaned")
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "cert-manager.io", "certificate_v1.json")); err != nil {
+		t.Fatal("expected schema to exist after second run")
+	}
+	data, err := os.ReadFile(userFile)
+	if err != nil {
+		t.Fatal("expected user file to survive render manifest update and cleanup")
+	}
+	if string(data) != "keep me" {
+		t.Fatalf("user file content changed: %q", data)
+	}
+}
+
+func TestRunRender_UsesActiveGenerationForRuntimeLayout(t *testing.T) {
+	outputDir := t.TempDir()
+	generationName := "20240101T000000.000000000Z-test"
+	generationDir := filepath.Join(outputDir, ".generations", generationName)
+	if err := os.MkdirAll(filepath.Join(generationDir, "cert-manager.io"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	schemaPath := filepath.Join(generationDir, "cert-manager.io", "certificate_v1.json")
+	if err := os.WriteFile(schemaPath, []byte(`{"type":"object"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(".generations", generationName), filepath.Join(outputDir, "current")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runRender([]string{"--output-dir", outputDir}); err != nil {
+		t.Fatalf("runRender error: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(generationDir, "cert-manager.io", "certificate_v1.html")); err != nil {
+		t.Fatal("expected rendered HTML page inside the active generation")
+	}
+	if _, err := os.Stat(filepath.Join(generationDir, "index.html")); err != nil {
+		t.Fatal("expected generated index.html inside the active generation")
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "index.html")); !os.IsNotExist(err) {
+		t.Fatal("expected output root to stay untouched when current symlink exists")
+	}
+}
+
+func TestRunRender_RequiresExistingOutputDir(t *testing.T) {
+	err := runRender([]string{"--output-dir", filepath.Join(t.TempDir(), "missing")})
+	if err == nil {
+		t.Fatal("expected error for missing output directory")
+	}
+	if !strings.Contains(err.Error(), "does not exist") {
+		t.Errorf("expected error about missing directory, got: %v", err)
+	}
+}
+
 func TestRunConvert_ValidatesOutputDir(t *testing.T) {
 	dir := t.TempDir()
 	inputFile := filepath.Join(dir, "crd.yaml")

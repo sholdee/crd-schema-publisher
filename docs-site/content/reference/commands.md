@@ -13,6 +13,7 @@ Commands:
   run       Extract schemas and upload to Cloudflare Pages when credentials are configured (default)
   extract   Extract schemas from a Kubernetes cluster
   convert   Convert CRD YAML files and Kubernetes OpenAPI built-ins to JSON Schema
+  render    Render HTML documentation pages for an existing schema directory
   upload    Upload the active site from OUTPUT_DIR/current to Cloudflare Pages
   watch     Watch for CRD changes and upload when credentials are configured
   preview   Serve a local preview of the documentation site
@@ -22,6 +23,7 @@ Commands:
 | ------------------------ | ------------------------------------------------------------------------------------------------------------ |
 | `extract`                | Requires explicit `--output-dir`/`-o` or `OUTPUT_DIR`; does not fall back to `/output`.                      |
 | `convert`                | Requires `--output-dir`/`-o`; does not read `OUTPUT_DIR`.                                                    |
+| `render`                 | Requires explicit `--output-dir`/`-o` or `OUTPUT_DIR`; renders the active `current` generation when present. |
 | `run`, `watch`, `upload` | Accept `--output-dir`/`-o`; output root must already exist.                                                  |
 | `preview`                | Uses sample data by default; reads real extracted output only when `--output-dir`/`-o` is passed explicitly. |
 
@@ -35,3 +37,4 @@ Commands:
 | `convert`                 | Supports `--file`/`-f`, non-recursive `--dir`/`-d` YAML loading, optional `--render`, and `--base-path` for rendered links.                                                                          |
 | `convert`                 | `--openapi` converts a Kubernetes OpenAPI v2 (swagger) document of built-in types into self-contained per-kind schemas, combinable with `--file`/`--dir` to render CRDs and built-ins into one site. |
 | `convert`                 | `--kustomize` explicitly publishes kustomize's `Kustomization` and `Component` schemas, reflected from the pinned `sigs.k8s.io/kustomize/api` types. It is not filtered.                             |
+| `render`                  | Supports `--base-path` for rendered links. Renders schema HTML pages and an index for existing output, e.g. after `extract --skip-render` or `convert` without `--render`.                           |

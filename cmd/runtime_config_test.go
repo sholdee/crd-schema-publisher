@@ -137,6 +137,28 @@ func TestExtractConfig_IncludeEnvDefaults(t *testing.T) {
 	}
 }
 
+func TestRenderConfig_UsesEnvDefaultsAndFlagOverrides(t *testing.T) {
+	env := mapEnv(map[string]string{
+		"OUTPUT_DIR": "/env-output",
+		"BASE_PATH":  "/env-base",
+	})
+	cfg, err := parseRenderConfig(nil, env)
+	if err != nil {
+		t.Fatalf("parseRenderConfig: %v", err)
+	}
+	if cfg.OutputDir != "/env-output" || cfg.BasePath != "/env-base" {
+		t.Fatalf("unexpected render config from env: %#v", cfg)
+	}
+
+	cfg, err = parseRenderConfig([]string{"-o", "/flag-output", "--base-path", "/flag-base"}, env)
+	if err != nil {
+		t.Fatalf("parseRenderConfig: %v", err)
+	}
+	if cfg.OutputDir != "/flag-output" || cfg.BasePath != "/flag-base" {
+		t.Fatalf("expected flags to override env: %#v", cfg)
+	}
+}
+
 func TestUploadConfig_FlagOutputDirOverridesEnv(t *testing.T) {
 	cfg, err := parseUploadCommandConfig([]string{"--output-dir", "/flag-output"}, mapEnv(map[string]string{"OUTPUT_DIR": "/env-output"}))
 	if err != nil {
@@ -168,6 +190,7 @@ func TestCommandConfig_RejectsUnexpectedArgs(t *testing.T) {
 			return err
 		}, want: "unexpected arguments for run: unexpected"},
 		{name: "extract", run: func() error { _, err := parseExtractConfig([]string{"unexpected"}, mapEnv(nil)); return err }, want: "unexpected arguments for extract: unexpected"},
+		{name: "render", run: func() error { _, err := parseRenderConfig([]string{"unexpected"}, mapEnv(nil)); return err }, want: "unexpected arguments for render: unexpected"},
 		{name: "upload", run: func() error { _, err := parseUploadCommandConfig([]string{"unexpected"}, mapEnv(nil)); return err }, want: "unexpected arguments for upload: unexpected"},
 		{name: "preview", run: func() error { _, err := parsePreviewConfig([]string{"unexpected"}); return err }, want: "unexpected arguments for preview: unexpected"},
 	}

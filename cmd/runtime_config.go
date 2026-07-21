@@ -28,6 +28,11 @@ type extractConfig struct {
 	IncludeKustomize bool
 }
 
+type renderCommandConfig struct {
+	OutputDir string
+	BasePath  string
+}
+
 type uploadCommandConfig struct {
 	OutputDir         string
 	ExplicitOutputDir bool
@@ -97,6 +102,23 @@ func parseExtractConfig(args []string, env envGetter) (extractConfig, error) {
 		Filter:           extractor.ParseFilter(*kind, *group, *version),
 		IncludeBuiltins:  *includeBuiltins,
 		IncludeKustomize: *includeKustomize,
+	}, nil
+}
+
+func parseRenderConfig(args []string, env envGetter) (renderCommandConfig, error) {
+	fs := newCommandFlagSet("render")
+	var outputDir string
+	stringFlagWithAlias(fs, &outputDir, "output-dir", "o", envDefault(env, "OUTPUT_DIR", ""), "output directory containing JSON schemas")
+	basePath := fs.String("base-path", envDefault(env, "BASE_PATH", ""), "URL path prefix for subpath deployments")
+	if err := fs.Parse(args); err != nil {
+		return renderCommandConfig{}, err
+	}
+	if extras := fs.Args(); len(extras) > 0 {
+		return renderCommandConfig{}, fmt.Errorf("unexpected arguments for render: %s", strings.Join(extras, " "))
+	}
+	return renderCommandConfig{
+		OutputDir: outputDir,
+		BasePath:  *basePath,
 	}, nil
 }
 

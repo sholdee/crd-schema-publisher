@@ -60,7 +60,7 @@ func initLogger(cmd string) {
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprint(w, `crd-schema-publisher — CRD JSON Schema extraction and documentation
+	_, _ = fmt.Fprint(w, `crd-schema-publisher — CRD JSON Schema extraction and documentation
 
 Usage:
   crd-schema-publisher <command> [flags]
@@ -68,9 +68,9 @@ Usage:
 Commands:
 `)
 	for _, cmd := range commandSpecs {
-		fmt.Fprintf(w, "  %-8s  %s\n", cmd.name, cmd.description)
+		_, _ = fmt.Fprintf(w, "  %-8s  %s\n", cmd.name, cmd.description)
 	}
-	fmt.Fprint(w, `
+	_, _ = fmt.Fprint(w, `
 Use "crd-schema-publisher <command> --help" for more information.
 `)
 }
@@ -130,7 +130,7 @@ func stringFlagWithAlias(fs *flag.FlagSet, target *string, name, alias, value, u
 
 func printFlagDefaults(fs *flag.FlagSet) {
 	output := fs.Output()
-	fmt.Fprintf(output, "Usage of %s:\n", fs.Name())
+	_, _ = fmt.Fprintf(output, "Usage of %s:\n", fs.Name())
 
 	aliases := map[string]string{}
 	aliasNames := map[string]bool{}
@@ -153,13 +153,13 @@ func printFlagDefaults(fs *flag.FlagSet) {
 			displayName += " " + name
 		}
 
-		fmt.Fprintf(output, "  %s\n", displayName)
+		_, _ = fmt.Fprintf(output, "  %s\n", displayName)
 		if usage != "" {
-			fmt.Fprintf(output, "\t%s", usage)
+			_, _ = fmt.Fprintf(output, "\t%s", usage)
 			if f.DefValue != "" && f.DefValue != "false" {
-				fmt.Fprintf(output, " (default %q)", f.DefValue)
+				_, _ = fmt.Fprintf(output, " (default %q)", f.DefValue)
 			}
-			fmt.Fprintln(output)
+			_, _ = fmt.Fprintln(output)
 		}
 	})
 }

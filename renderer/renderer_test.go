@@ -1543,6 +1543,23 @@ func TestRenderSchema_BooleanSchemaInProperties(t *testing.T) {
 	}
 }
 
+// renderSchemaHTMLForTest writes the schema JSON under a temp dir, renders it,
+// and returns the resulting HTML.
+func renderSchemaHTMLForTest(t *testing.T, schema, fileName string) string {
+	t.Helper()
+	tmpDir := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(tmpDir, "test.io"), 0o755)
+	_ = os.WriteFile(filepath.Join(tmpDir, "test.io", fileName+".json"), []byte(schema), 0o644)
+
+	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "test.io", fileName+".json"), "test.io", fileName+".json", "")
+	if err != nil {
+		t.Fatalf("renderSchemaFile error: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(tmpDir, "test.io", fileName+".html"))
+	return string(data)
+}
+
 func TestRenderSchema_CompositionWithBooleanSchemas(t *testing.T) {
 	// JSON Schema allows boolean schemas (true/false) inside composition keywords
 	// (oneOf, anyOf, allOf). The renderer should handle these gracefully.
@@ -1561,17 +1578,7 @@ func TestRenderSchema_CompositionWithBooleanSchemas(t *testing.T) {
 		}
 	}`
 
-	tmpDir := t.TempDir()
-	_ = os.MkdirAll(filepath.Join(tmpDir, "test.io"), 0o755)
-	_ = os.WriteFile(filepath.Join(tmpDir, "test.io", "thing_v1.json"), []byte(schema), 0o644)
-
-	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "test.io", "thing_v1.json"), "test.io", "thing_v1.json", "")
-	if err != nil {
-		t.Fatalf("renderSchemaFile should handle boolean schemas in composition keywords: %v", err)
-	}
-
-	data, _ := os.ReadFile(filepath.Join(tmpDir, "test.io", "thing_v1.html"))
-	html := string(data)
+	html := renderSchemaHTMLForTest(t, schema, "thing_v1")
 
 	if !strings.Contains(html, "flexible") {
 		t.Error("should render the oneOf property with boolean schema")
@@ -1611,17 +1618,7 @@ func TestRenderSchema_DeepNesting(t *testing.T) {
 		}
 	}`
 
-	tmpDir := t.TempDir()
-	_ = os.MkdirAll(filepath.Join(tmpDir, "test.io"), 0o755)
-	_ = os.WriteFile(filepath.Join(tmpDir, "test.io", "deep_v1.json"), []byte(schema), 0o644)
-
-	err := renderSchemaFile(testTemplate(t), filepath.Join(tmpDir, "test.io", "deep_v1.json"), "test.io", "deep_v1.json", "")
-	if err != nil {
-		t.Fatalf("renderSchemaFile error: %v", err)
-	}
-
-	data, _ := os.ReadFile(filepath.Join(tmpDir, "test.io", "deep_v1.html"))
-	html := string(data)
+	html := renderSchemaHTMLForTest(t, schema, "deep_v1")
 
 	if !strings.Contains(html, "level1") {
 		t.Error("should show level1")

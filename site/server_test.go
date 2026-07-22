@@ -126,7 +126,7 @@ func TestStartServerReturnsListenError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	server, err := StartServer(listener.Addr().String(), http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	if err == nil {

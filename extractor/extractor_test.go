@@ -454,9 +454,12 @@ func goldenCRD() apiextensionsv1.CustomResourceDefinition {
 
 const goldenFixturePath = "testdata/golden_certificate_v1.json"
 
-func TestWriteSchemas_GoldenE2E(t *testing.T) {
+// runGoldenSchemaTest writes the CRD's schema to a temp dir and compares it
+// against the golden fixture, generating the fixture on first run.
+func runGoldenSchemaTest(t *testing.T, crd apiextensionsv1.CustomResourceDefinition, fixturePath, schemaRelPath, standaloneName string) {
+	t.Helper()
 	tmpDir := t.TempDir()
-	crds := []apiextensionsv1.CustomResourceDefinition{goldenCRD()}
+	crds := []apiextensionsv1.CustomResourceDefinition{crd}
 
 	count, err := WriteSchemas(crds, tmpDir)
 	if err != nil {
@@ -467,7 +470,7 @@ func TestWriteSchemas_GoldenE2E(t *testing.T) {
 	}
 
 	// Read actual output
-	actualPath := filepath.Join(tmpDir, "cert-manager.io", "certificate_v1.json")
+	actualPath := filepath.Join(tmpDir, schemaRelPath)
 	actual, err := os.ReadFile(actualPath)
 	if err != nil {
 		t.Fatalf("reading output schema: %v", err)
@@ -481,14 +484,14 @@ func TestWriteSchemas_GoldenE2E(t *testing.T) {
 	actualNorm, _ := json.MarshalIndent(actualObj, "", "  ")
 
 	// Read or generate golden fixture
-	golden, err := os.ReadFile(goldenFixturePath)
+	golden, err := os.ReadFile(fixturePath)
 	if err != nil {
 		// First run: generate the fixture
-		t.Logf("Golden fixture not found, generating: %s", goldenFixturePath)
-		if err := os.WriteFile(goldenFixturePath, append(actualNorm, '\n'), 0o644); err != nil {
+		t.Logf("Golden fixture not found, generating: %s", fixturePath)
+		if err := os.WriteFile(fixturePath, append(actualNorm, '\n'), 0o644); err != nil {
 			t.Fatalf("writing golden fixture: %v", err)
 		}
-		t.Fatalf("Golden fixture generated at %s — verify it manually, then re-run", goldenFixturePath)
+		t.Fatalf("Golden fixture generated at %s — verify it manually, then re-run", fixturePath)
 	}
 
 	// Normalize golden too
@@ -500,11 +503,11 @@ func TestWriteSchemas_GoldenE2E(t *testing.T) {
 
 	if string(actualNorm) != string(goldenNorm) {
 		t.Errorf("schema output does not match golden fixture %s\n\nTo update after an intentional change, delete the fixture and re-run.\n\ngot:\n%s\n\nwant:\n%s",
-			goldenFixturePath, string(actualNorm), string(goldenNorm))
+			fixturePath, string(actualNorm), string(goldenNorm))
 	}
 
 	// Also verify master-standalone output exists and matches
-	standalonePath := filepath.Join(tmpDir, "master-standalone", "cert-manager.io-certificate-stable-v1.json")
+	standalonePath := filepath.Join(tmpDir, "master-standalone", standaloneName)
 	standalone, err := os.ReadFile(standalonePath)
 	if err != nil {
 		t.Fatalf("master-standalone file not found: %v", err)
@@ -512,6 +515,12 @@ func TestWriteSchemas_GoldenE2E(t *testing.T) {
 	if string(actual) != string(standalone) {
 		t.Error("master-standalone output differs from primary output — both should be identical")
 	}
+}
+
+func TestWriteSchemas_GoldenE2E(t *testing.T) {
+	runGoldenSchemaTest(t, goldenCRD(), goldenFixturePath,
+		filepath.Join("cert-manager.io", "certificate_v1.json"),
+		"cert-manager.io-certificate-stable-v1.json")
 }
 
 func boolPtr(b bool) *bool { return &b }
@@ -597,63 +606,9 @@ func edgeCaseCRD() apiextensionsv1.CustomResourceDefinition {
 const goldenEdgeCaseFixturePath = "testdata/golden_edgecase_v1.json"
 
 func TestWriteSchemas_GoldenEdgeCases(t *testing.T) {
-	tmpDir := t.TempDir()
-	crds := []apiextensionsv1.CustomResourceDefinition{edgeCaseCRD()}
-
-	count, err := WriteSchemas(crds, tmpDir)
-	if err != nil {
-		t.Fatalf("WriteSchemas error: %v", err)
-	}
-	if count != 1 {
-		t.Fatalf("expected 1 schema, got %d", count)
-	}
-
-	// Read actual output
-	actualPath := filepath.Join(tmpDir, "testing.example.io", "virtualservice_v1.json")
-	actual, err := os.ReadFile(actualPath)
-	if err != nil {
-		t.Fatalf("reading output schema: %v", err)
-	}
-
-	// Normalize: re-marshal to consistent formatting
-	var actualObj interface{}
-	if err := json.Unmarshal(actual, &actualObj); err != nil {
-		t.Fatalf("unmarshaling actual: %v", err)
-	}
-	actualNorm, _ := json.MarshalIndent(actualObj, "", "  ")
-
-	// Read or generate golden fixture
-	golden, err := os.ReadFile(goldenEdgeCaseFixturePath)
-	if err != nil {
-		// First run: generate the fixture
-		t.Logf("Golden fixture not found, generating: %s", goldenEdgeCaseFixturePath)
-		if err := os.WriteFile(goldenEdgeCaseFixturePath, append(actualNorm, '\n'), 0o644); err != nil {
-			t.Fatalf("writing golden fixture: %v", err)
-		}
-		t.Fatalf("Golden fixture generated at %s — verify it manually, then re-run", goldenEdgeCaseFixturePath)
-	}
-
-	// Normalize golden too
-	var goldenObj interface{}
-	if err := json.Unmarshal(golden, &goldenObj); err != nil {
-		t.Fatalf("unmarshaling golden fixture: %v", err)
-	}
-	goldenNorm, _ := json.MarshalIndent(goldenObj, "", "  ")
-
-	if string(actualNorm) != string(goldenNorm) {
-		t.Errorf("schema output does not match golden fixture %s\n\nTo update after an intentional change, delete the fixture and re-run.\n\ngot:\n%s\n\nwant:\n%s",
-			goldenEdgeCaseFixturePath, string(actualNorm), string(goldenNorm))
-	}
-
-	// Also verify master-standalone output exists and matches
-	standalonePath := filepath.Join(tmpDir, "master-standalone", "testing.example.io-virtualservice-stable-v1.json")
-	standalone, err := os.ReadFile(standalonePath)
-	if err != nil {
-		t.Fatalf("master-standalone file not found: %v", err)
-	}
-	if string(actual) != string(standalone) {
-		t.Error("master-standalone output differs from primary output — both should be identical")
-	}
+	runGoldenSchemaTest(t, edgeCaseCRD(), goldenEdgeCaseFixturePath,
+		filepath.Join("testing.example.io", "virtualservice_v1.json"),
+		"testing.example.io-virtualservice-stable-v1.json")
 }
 
 func TestWriteSchemas_NullableOptionalFields(t *testing.T) {

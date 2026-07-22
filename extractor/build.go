@@ -216,7 +216,7 @@ func ValidateOutputDir(outputDir string) error {
 		if isFilesystemRoot(resolved) {
 			return fmt.Errorf("OUTPUT_DIR %q resolves to filesystem root", outputDir)
 		}
-		if err == nil && cwd != "" {
+		if cwd != "" {
 			if resolvedCWD, cwdErr := resolvePath(cwd); cwdErr == nil && samePath(resolved, resolvedCWD) {
 				return fmt.Errorf("OUTPUT_DIR %q resolves to the current working directory", outputDir)
 			}

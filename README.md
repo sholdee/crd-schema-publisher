@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://goreportcard.com/report/github.com/sholdee/crd-schema-publisher"><img src="https://goreportcard.com/badge/github.com/sholdee/crd-schema-publisher" alt="Go Report Card"></a>
+  <a href="https://www.codefactor.io/repository/github/sholdee/crd-schema-publisher"><img src="https://www.codefactor.io/repository/github/sholdee/crd-schema-publisher/badge" alt="CodeFactor"></a>
   <a href="https://github.com/sholdee/crd-schema-publisher/actions/workflows/ci.yaml"><img src="https://github.com/sholdee/crd-schema-publisher/actions/workflows/ci.yaml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
   <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/sholdee/crd-schema-publisher" alt="Go Version"></a>

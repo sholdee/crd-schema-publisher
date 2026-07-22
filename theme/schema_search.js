@@ -55,28 +55,23 @@
     return pathState.segments[lastIndex].toLowerCase().indexOf(queryState.segments[lastIndex].toLowerCase()) === 0;
   }
 
-  function completionForSuggestion(rawQuery, suggestion) {
+  function parseCompletionQuery(rawQuery) {
     var query = (rawQuery || '').trim();
-    suggestion = (suggestion || '').trim();
-    if (!query || !suggestion) {
-      return '';
+    if (!query) {
+      return null;
     }
-
     var leadingDot = query.indexOf('.') === 0;
     var normalized = leadingDot ? query.slice(1) : query;
-    if (!leadingDot && normalized.indexOf('.') === -1) {
-      return '';
+    if (!normalized || (!leadingDot && normalized.indexOf('.') === -1)) {
+      return null;
     }
-    if (!normalized) {
-      return '';
-    }
+    return { leadingDot: leadingDot, parts: normalized.split('.') };
+  }
 
-    var queryParts = normalized.split('.');
-    var suggestionParts = suggestion.split('.');
+  function completeQueryAgainstSuggestion(queryParts, suggestionParts) {
     if (suggestionParts.length < queryParts.length) {
       return '';
     }
-
     for (var i = 0; i < queryParts.length - 1; i++) {
       if (queryParts[i].toLowerCase() !== suggestionParts[i].toLowerCase()) {
         return '';
@@ -89,8 +84,7 @@
     if (lastQuery.toLowerCase() === lastSuggestion.toLowerCase() && suggestionParts.length > queryParts.length) {
       var boundaryParts = queryParts.slice();
       boundaryParts[lastIndex] = lastSuggestion;
-      var boundaryResult = boundaryParts.join('.') + '.';
-      return leadingDot ? '.' + boundaryResult : boundaryResult;
+      return boundaryParts.join('.') + '.';
     }
     if (lastSuggestion.toLowerCase().indexOf(lastQuery.toLowerCase()) !== 0) {
       return '';
@@ -104,9 +98,20 @@
     } else {
       return '';
     }
+    return completed.join('.');
+  }
 
-    var result = completed.join('.');
-    return leadingDot ? '.' + result : result;
+  function completionForSuggestion(rawQuery, suggestion) {
+    suggestion = (suggestion || '').trim();
+    var parsed = parseCompletionQuery(rawQuery);
+    if (!parsed || !suggestion) {
+      return '';
+    }
+    var result = completeQueryAgainstSuggestion(parsed.parts, suggestion.split('.'));
+    if (!result) {
+      return '';
+    }
+    return parsed.leadingDot ? '.' + result : result;
   }
 
   function completionCandidatesForPaths(rawQuery, suggestions) {

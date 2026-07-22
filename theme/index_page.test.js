@@ -276,7 +276,6 @@ function loadIndexPageScript({
     __calls: calls,
   };
   context.window.document = context.document;
-  context.window.scrollTo = context.window.scrollTo;
   context.window.SchemaSearch = {};
 
   vm.runInNewContext(script, context, { filename: 'index_page.js' });

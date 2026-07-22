@@ -53,7 +53,7 @@ func newCRDController(ctx context.Context, cfg Config, trigger chan struct{}) ca
 
 	notify := cache.ResourceEventHandlerFuncs{
 		AddFunc:    func(obj interface{}) { signalTrigger(trigger) },
-		UpdateFunc: func(old, new interface{}) { signalTrigger(trigger) },
+		UpdateFunc: func(_, _ interface{}) { signalTrigger(trigger) },
 		DeleteFunc: func(obj interface{}) { signalTrigger(trigger) },
 	}
 

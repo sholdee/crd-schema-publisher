@@ -267,84 +267,100 @@
     applySearch('');
     input.focus();
   });
+  function caretAtInputEnd(){
+    return input.selectionStart === input.value.length && input.selectionEnd === input.value.length;
+  }
+  function cycleCompletionKey(e, delta){
+    if (document.activeElement !== input) {
+      return;
+    }
+    if (completionCandidates.length) {
+      e.preventDefault();
+      if (completionIndex < 0) {
+        completionIndex = delta > 0 ? 0 : completionCandidates.length - 1;
+      } else {
+        completionIndex = (completionIndex + delta + completionCandidates.length) % completionCandidates.length;
+      }
+      updateGhostSuggestion(input.value);
+    }
+  }
+  function acceptCompletionKey(e){
+    if (document.activeElement !== input || !caretAtInputEnd()) {
+      return;
+    }
+    var completion = selectedCompletion() || bestCompletionForQuery(input.value);
+    if (completion) {
+      e.preventDefault();
+      input.value = completion;
+      applySearch(completion);
+    }
+  }
+  function dotAdvanceKey(e){
+    if (document.activeElement !== input || e.ctrlKey || e.metaKey || e.altKey) {
+      return;
+    }
+    if (!isPathLikeQuery(input.value, currentSuggestions())) {
+      return;
+    }
+    if (caretAtInputEnd()) {
+      e.preventDefault();
+      var dotAdvance = dotAdvanceForPathSearch(input.value, currentSuggestions());
+      if (dotAdvance) {
+        input.value = dotAdvance;
+        applySearch(dotAdvance);
+      }
+    }
+  }
+  function focusSearchKey(e){
+    if (e.ctrlKey || e.metaKey || document.activeElement === input) {
+      return;
+    }
+    e.preventDefault();
+    input.focus();
+  }
+  function escapeKey(e){
+    e.preventDefault();
+    if (input.value) {
+      var trimmed = trimPathSearch(input.value);
+      if (trimmed !== input.value) {
+        input.value = trimmed;
+        applySearch(trimmed);
+      } else {
+        input.value = '';
+        applySearch('');
+        input.blur();
+      }
+      return;
+    }
+    var hadOpen = false;
+    visibleRows().forEach(function(row){
+      if (row.tagName === 'DETAILS' && row.hasAttribute('open')) {
+        hadOpen = true;
+        row.removeAttribute('open');
+      }
+    });
+    if (hadOpen) {
+      return;
+    }
+    if (document.activeElement && document.activeElement !== document.body) {
+      document.activeElement.blur();
+      return;
+    }
+    location.href = document.body.dataset.basePath + '/';
+  }
+  var searchKeyHandlers = {
+    ArrowDown: function(e){ cycleCompletionKey(e, 1); },
+    ArrowUp: function(e){ cycleCompletionKey(e, -1); },
+    Tab: acceptCompletionKey,
+    ArrowRight: acceptCompletionKey,
+    '.': dotAdvanceKey,
+    '/': focusSearchKey,
+    Escape: escapeKey,
+  };
   document.addEventListener('keydown', function(e){
-    if (e.key === 'ArrowDown' && document.activeElement === input) {
-      if (completionCandidates.length) {
-        e.preventDefault();
-        completionIndex = completionIndex < 0 ? 0 : (completionIndex + 1) % completionCandidates.length;
-        updateGhostSuggestion(input.value);
-      }
-      return;
-    }
-    if (e.key === 'ArrowUp' && document.activeElement === input) {
-      if (completionCandidates.length) {
-        e.preventDefault();
-        completionIndex = completionIndex < 0 ? completionCandidates.length - 1 : (completionIndex - 1 + completionCandidates.length) % completionCandidates.length;
-        updateGhostSuggestion(input.value);
-      }
-      return;
-    }
-    if ((e.key === 'Tab' || e.key === 'ArrowRight') && document.activeElement === input) {
-      var caretAtEnd = input.selectionStart === input.value.length && input.selectionEnd === input.value.length;
-      if (!caretAtEnd) {
-        return;
-      }
-      var completion = selectedCompletion() || bestCompletionForQuery(input.value);
-      if (completion) {
-        e.preventDefault();
-        input.value = completion;
-        applySearch(completion);
-      }
-      return;
-    }
-    if (e.key === '.' && document.activeElement === input && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      var pathLikeQuery = isPathLikeQuery(input.value, currentSuggestions());
-      if (pathLikeQuery) {
-        if (input.selectionStart === input.value.length && input.selectionEnd === input.value.length) {
-          e.preventDefault();
-          var dotAdvance = dotAdvanceForPathSearch(input.value, currentSuggestions());
-          if (dotAdvance) {
-            input.value = dotAdvance;
-            applySearch(dotAdvance);
-          }
-        }
-        return;
-      }
-    }
-    if (e.key === '/' && !e.ctrlKey && !e.metaKey && document.activeElement !== input) {
-      e.preventDefault();
-      input.focus();
-      return;
-    }
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      if (input.value) {
-        var trimmed = trimPathSearch(input.value);
-        if (trimmed !== input.value) {
-          input.value = trimmed;
-          applySearch(trimmed);
-        } else {
-          input.value = '';
-          applySearch('');
-          input.blur();
-        }
-        return;
-      }
-      var hadOpen = false;
-      visibleRows().forEach(function(row){
-        if (row.tagName === 'DETAILS' && row.hasAttribute('open')) {
-          hadOpen = true;
-          row.removeAttribute('open');
-        }
-      });
-      if (hadOpen) {
-        return;
-      }
-      if (document.activeElement && document.activeElement !== document.body) {
-        document.activeElement.blur();
-        return;
-      }
-      location.href = document.body.dataset.basePath + '/';
+    var handler = Object.prototype.hasOwnProperty.call(searchKeyHandlers, e.key) ? searchKeyHandlers[e.key] : null;
+    if (handler) {
+      handler(e);
     }
   });
   (function(){

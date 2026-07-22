@@ -565,8 +565,8 @@ func TestBuildRenderPropertiesResolvesArrayItemRefsWithoutRecursingForever(t *te
 func TestConstraints(t *testing.T) {
 	minLen := int64(1)
 	maxLen := int64(255)
-	min := 0.0
-	max := 100.0
+	minVal := 0.0
+	maxVal := 100.0
 
 	tests := []struct {
 		name     string
@@ -577,7 +577,7 @@ func TestConstraints(t *testing.T) {
 		{"pattern", &SchemaNode{Pattern: "^[a-z]+$"}, []string{"pattern: ^[a-z]+$"}},
 		{"format", &SchemaNode{Format: "date-time"}, []string{"format: date-time"}},
 		{"min/max length", &SchemaNode{MinLength: &minLen, MaxLength: &maxLen}, []string{"minLength: 1", "maxLength: 255"}},
-		{"min/max value", &SchemaNode{Minimum: &min, Maximum: &max}, []string{"minimum: 0", "maximum: 100"}},
+		{"min/max value", &SchemaNode{Minimum: &minVal, Maximum: &maxVal}, []string{"minimum: 0", "maximum: 100"}},
 		{"no constraints", &SchemaNode{Type: "string"}, nil},
 	}
 	for _, tt := range tests {
@@ -596,12 +596,12 @@ func TestConstraints(t *testing.T) {
 }
 
 func TestConstraints_OneOfBranchConstraints(t *testing.T) {
-	min := 1.0
-	max := 65535.0
+	minVal := 1.0
+	maxVal := 65535.0
 	node := &SchemaNode{
 		OneOf: []*SchemaNode{
 			{Type: "string", Pattern: "^[a-z]+$"},
-			{Type: "integer", Minimum: &min, Maximum: &max},
+			{Type: "integer", Minimum: &minVal, Maximum: &maxVal},
 			{Type: "null"},
 		},
 	}
@@ -756,9 +756,9 @@ func TestRenderSchema_BasicOutput(t *testing.T) {
 		{"bestCompletionForQuery(query)", "autocomplete suggestion lookup"},
 		{"return bestCompletionForPaths(query, currentSuggestions());", "default autocomplete uses shared path suggestions"},
 		{"ghostSuffixForCompletion(input.value, completion)", "inline ghost suffix calculation"},
-		{"if (e.key === '.' && document.activeElement === input", "dot key interception in search input"},
+		{"'.': dotAdvanceKey,", "dot key interception in search input"},
 		{"var dotAdvance = dotAdvanceForPathSearch(input.value, currentSuggestions());", "dot key uses shared path advance"},
-		{"var pathLikeQuery = isPathLikeQuery(input.value, currentSuggestions());", "dot interception is limited to actual path-like queries"},
+		{"if (!isPathLikeQuery(input.value, currentSuggestions())) {", "dot interception is limited to actual path-like queries"},
 		{"var learnedPathSearchStorageKey = 'crd-schema-publisher:path-search-learned';", "path search learning is persisted in local storage"},
 		{"function hasLearnedPathSearch()", "path search learned-state helper exists"},
 		{"function markPathSearchLearned(rawQuery)", "path search learned-state writer exists"},
@@ -766,16 +766,17 @@ func TestRenderSchema_BasicOutput(t *testing.T) {
 		{"if (queryState.segments.length < 2) {", "learned-state requires at least two path segments"},
 		{"localStorage.setItem(learnedPathSearchStorageKey, '1');", "learned path search is persisted per browser"},
 		{"setSearchStatus(hasLearnedPathSearch() ? '' : (searchStatus.dataset.emptyMessage || ''), false);", "empty hint is suppressed after learning"},
-		{"if (pathLikeQuery) {", "invalid dot positions are only blocked in path mode"},
-		{"if (input.selectionStart === input.value.length && input.selectionEnd === input.value.length) {", "dot interception only applies at the end of the query"},
+		{"function dotAdvanceKey(e){", "invalid dot positions are only blocked in path mode"},
+		{"if (caretAtInputEnd()) {", "dot interception only applies at the end of the query"},
 		{"clearSearchState();", "initial empty state is applied on page load"},
 		{"trimPathSearch(input.value)", "path-aware escape trimming"},
-		{"if ((e.key === 'Tab' || e.key === 'ArrowRight') && document.activeElement === input)", "tab and right arrow share autocomplete acceptance"},
-		{"var caretAtEnd = input.selectionStart === input.value.length && input.selectionEnd === input.value.length;", "autocomplete acceptance computes caret-at-end once"},
-		{"if (!caretAtEnd) {", "tab and right arrow only accept completion at end of input"},
-		{"e.key === 'ArrowDown' && document.activeElement === input", "arrow down completion browsing"},
-		{"e.key === 'ArrowUp' && document.activeElement === input", "arrow up completion browsing"},
-		{"e.key === '/'", "slash keyboard shortcut"},
+		{"Tab: acceptCompletionKey,", "tab shares autocomplete acceptance"},
+		{"ArrowRight: acceptCompletionKey,", "right arrow shares autocomplete acceptance"},
+		{"return input.selectionStart === input.value.length && input.selectionEnd === input.value.length;", "caret-at-end helper is computed in one place"},
+		{"if (document.activeElement !== input || !caretAtInputEnd()) {", "tab and right arrow only accept completion at end of input"},
+		{"ArrowDown: function(e){ cycleCompletionKey(e, 1); },", "arrow down completion browsing"},
+		{"ArrowUp: function(e){ cycleCompletionKey(e, -1); },", "arrow up completion browsing"},
+		{"'/': focusSearchKey,", "slash keyboard shortcut"},
 		{"toggleTheme", "theme toggle function"},
 		{`aria-pressed="false"`, "theme toggle exposes pressed state"},
 		{"favicon.svg", "favicon link"},

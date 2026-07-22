@@ -277,22 +277,22 @@ func appendAllOfSchema(dst map[string]interface{}, schema interface{}) {
 }
 
 func copySchemaExcept(schema map[string]interface{}, omit string) map[string]interface{} {
-	copy := make(map[string]interface{}, len(schema))
+	out := make(map[string]interface{}, len(schema))
 	for k, v := range schema {
 		if k == omit {
 			continue
 		}
-		copy[k] = v
+		out[k] = v
 	}
-	return copy
+	return out
 }
 
 func copySchema(schema map[string]interface{}) map[string]interface{} {
-	copy := make(map[string]interface{}, len(schema))
+	out := make(map[string]interface{}, len(schema))
 	for k, v := range schema {
-		copy[k] = v
+		out[k] = v
 	}
-	return copy
+	return out
 }
 
 func replaceSchema(dst, src map[string]interface{}) {

@@ -31,7 +31,7 @@ jobs:
         run: shellcheck scripts/install-crd-schema-publisher.sh
 
       - name: Lint markdown
-        run: npx --yes markdownlint-cli2@0.23.1 '**/*.md' '#node_modules'
+        run: npx --yes markdownlint-cli2@0.23.2 '**/*.md' '#node_modules'
 
       - name: Lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0

@@ -37,16 +37,16 @@ func newSiteReadyChecker(outputDir string) func() bool {
 
 func runLeader(ctx context.Context, cfg Config) {
 	trigger := make(chan struct{}, 1)
-	controller := newCRDController(ctx, cfg, trigger)
+	controller := newCRDController(cfg, trigger)
 	runLeaderWithController(ctx, cfg, trigger, controller)
 }
 
-func newCRDController(ctx context.Context, cfg Config, trigger chan struct{}) cache.Controller {
+func newCRDController(cfg Config, trigger chan struct{}) cache.Controller {
 	lw := &cache.ListWatch{
-		ListFunc: func(opts metav1.ListOptions) (k8sruntime.Object, error) {
+		ListWithContextFunc: func(ctx context.Context, opts metav1.ListOptions) (k8sruntime.Object, error) {
 			return cfg.Client.ApiextensionsV1().CustomResourceDefinitions().List(ctx, opts)
 		},
-		WatchFunc: func(opts metav1.ListOptions) (watch.Interface, error) {
+		WatchFuncWithContext: func(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
 			return cfg.Client.ApiextensionsV1().CustomResourceDefinitions().Watch(ctx, opts)
 		},
 	}

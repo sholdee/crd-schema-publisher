@@ -78,6 +78,7 @@
         'rhysd/actionlint',
         'markdownlint-cli2',
         'golang/vuln',
+        'golangci/golangci-lint',
         'yannh/kubeconform',
         'helm/helm',
         'kubernetes/kubernetes',
@@ -114,7 +115,8 @@
         'go install golang\\.org/x/vuln/cmd/govulncheck@v(?<currentValue>[\\d.]+)',
       ],
       depNameTemplate: 'golang/vuln',
-      datasourceTemplate: 'github-releases',
+      datasourceTemplate: 'github-tags',
+      extractVersionTemplate: '^v(?<version>.+)$',
       versioningTemplate: 'semver',
     },
     {
@@ -126,6 +128,17 @@
       ],
       datasourceTemplate: 'npm',
       versioningTemplate: 'npm',
+    },
+    {
+      customType: 'regex',
+      description: ['Process golangci-lint versions in CI workflows'],
+      managerFilePatterns: ['/\\.github/workflows/.*\\.ya?ml$/'],
+      matchStrings: [
+        'uses: golangci/golangci-lint-action@[^\\n]+\\n\\s+with:\\n\\s+version: v(?<currentValue>[\\d.]+)',
+      ],
+      depNameTemplate: 'golangci/golangci-lint',
+      datasourceTemplate: 'github-releases',
+      versioningTemplate: 'semver',
     },
     {
       customType: 'regex',

@@ -115,7 +115,8 @@
         'go install golang\\.org/x/vuln/cmd/govulncheck@v(?<currentValue>[\\d.]+)',
       ],
       depNameTemplate: 'golang/vuln',
-      datasourceTemplate: 'github-releases',
+      datasourceTemplate: 'github-tags',
+      extractVersionTemplate: '^v(?<version>.+)$',
       versioningTemplate: 'semver',
     },
     {

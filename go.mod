@@ -1,6 +1,6 @@
 module github.com/sholdee/crd-schema-publisher
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/invopop/jsonschema v0.14.0

@@ -112,7 +112,10 @@ func assertOpenAPIQuantityUnion(t *testing.T, schema map[string]interface{}) {
 
 	// The referencing map value stays a direct $ref so the union is shared via
 	// the bundled definition rather than duplicated per field.
-	props := schema["properties"].(map[string]interface{})
+	props, ok := schema["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected schema properties, got %T", schema["properties"])
+	}
 	limits, ok := props["limits"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("expected limits property, got %T", props["limits"])
@@ -197,9 +200,13 @@ func TestApplyQuantityUnion(t *testing.T) {
 		}
 		defs := map[string]map[string]interface{}{quantityDefinition: original}
 		applyQuantityUnion(defs)
-		oneOf := defs[quantityDefinition]["oneOf"].([]interface{})
-		if len(oneOf) != 2 || oneOf[1].(map[string]interface{})["type"] != "integer" {
+		oneOf, ok := defs[quantityDefinition]["oneOf"].([]interface{})
+		if !ok || len(oneOf) != 2 {
 			t.Fatalf("expected existing union to be preserved, got %v", defs[quantityDefinition])
+		}
+		second, ok := oneOf[1].(map[string]interface{})
+		if !ok || second["type"] != "integer" {
+			t.Fatalf("expected existing integer branch to be preserved, got %v", oneOf[1])
 		}
 	})
 }

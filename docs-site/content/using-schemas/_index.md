@@ -29,6 +29,23 @@ Or configure schemas globally in VS Code:
 }
 ```
 
+## One Schema for Every Manifest (`all.json`)
+
+The output root also carries `all.json`, a catalog-wide schema with one branch per published kind. Each branch pins `apiVersion` and `kind` exactly, then validates the document against that kind's schema. Associate it with every manifest once instead of adding a modeline per file:
+
+```jsonc
+// .vscode/settings.json
+{
+  "yaml.schemas": {
+    "https://kube-schemas.example.com/all.json": ["**/*.yaml"],
+  },
+}
+```
+
+Editors then validate and complete CRDs, built-ins, and Kustomize files alike, and `kind:` completion offers the catalog kinds for the `apiVersion` already typed. A document whose `apiVersion` and `kind` pair is not published fails to match any branch, which surfaces typos in those two fields as well as unpublished kinds. Because every branch is discriminated, structurally identical kinds such as `Role` and `ClusterRole` never produce "matches multiple schemas" errors.
+
+`all.json` references the per-kind files by relative path, so it works under a `BASE_PATH` prefix and from a local directory. It is omitted when a catalog is empty.
+
 ## CI Validation (kubeconform)
 
 If your registry includes built-ins from runtime `--include-builtins` or offline `convert --openapi`, point kubeconform at both the `core` path and the grouped path:

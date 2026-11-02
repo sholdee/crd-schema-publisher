@@ -23,6 +23,8 @@ weight: 190
 
 The `run`, `extract`, and `watch` commands read from a Kubernetes cluster. `watch` adds informers, leader election, and debounced refresh cycles so CRD updates eventually produce a new active snapshot.
 
+Every generation and every `convert` output root also carries `all.json`: a catalog-wide schema whose `oneOf` branches each pin one `apiVersion` and `kind` with single-value enums, then `$ref` that kind's file by relative path. It is derived from the kinds manifest after all schema writers have run, so it covers CRDs, built-ins, and Kustomize alike, and it is omitted when the catalog is empty.
+
 Runtime generations are written below `OUTPUT_DIR/.generations/<generation>`. After a generation completes, `OUTPUT_DIR/current` is switched atomically. Sidecars and local servers should read `OUTPUT_DIR/current` so they never serve a half-written site.
 
 Cloudflare publishing happens after activation. Uploads use direct Cloudflare Pages deployment APIs with BLAKE3 content hashing, batched uploads, and retry behavior.

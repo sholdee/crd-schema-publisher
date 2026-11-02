@@ -3,6 +3,7 @@ package extractor
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -32,11 +33,23 @@ const (
 func TestCorpusValidation(t *testing.T) {
 	outputDir := t.TempDir()
 	buildCorpusSchemas(t, outputDir)
+	load := newCorpusSchemaLoader(outputDir)
 
+	t.Run("valid", func(t *testing.T) { runValidCorpus(t, load) })
+	t.Run("invalid", func(t *testing.T) { runInvalidCorpus(t, load) })
+	t.Run("aggregate", func(t *testing.T) { runAggregateCorpus(t, load) })
+}
+
+type corpusSchemaLoader func(t *testing.T, rel string) *jsonschema.Schema
+
+// newCorpusSchemaLoader compiles generated schemas on demand with draft-04 as
+// the default dialect, matching the built-in files' declared $schema and
+// kubeconform's default, and caches them across subtests.
+func newCorpusSchemaLoader(outputDir string) corpusSchemaLoader {
 	compiler := jsonschema.NewCompiler()
 	compiler.DefaultDraft(jsonschema.Draft4)
 	schemas := make(map[string]*jsonschema.Schema)
-	loadSchema := func(t *testing.T, rel string) *jsonschema.Schema {
+	return func(t *testing.T, rel string) *jsonschema.Schema {
 		t.Helper()
 		if schema, ok := schemas[rel]; ok {
 			return schema
@@ -52,38 +65,87 @@ func TestCorpusValidation(t *testing.T) {
 		schemas[rel] = schema
 		return schema
 	}
+}
 
-	t.Run("valid", func(t *testing.T) {
-		for _, file := range corpusFiles(t, "valid") {
-			t.Run(filepath.Base(file), func(t *testing.T) {
-				for i, doc := range corpusDocuments(t, file) {
-					schema := loadSchema(t, doc.schemaPath)
-					if err := schema.Validate(doc.instance); err != nil {
-						t.Errorf("document %d (%s) should validate against %s:\n%v", i, doc.id, doc.schemaPath, err)
-					}
+func runValidCorpus(t *testing.T, load corpusSchemaLoader) {
+	for _, file := range corpusFiles(t, "valid") {
+		t.Run(filepath.Base(file), func(t *testing.T) {
+			for i, doc := range corpusDocuments(t, file) {
+				if err := load(t, doc.schemaPath).Validate(doc.instance); err != nil {
+					t.Errorf("document %d (%s) should validate against %s:\n%v", i, doc.id, doc.schemaPath, err)
 				}
-			})
-		}
-	})
+			}
+		})
+	}
+}
 
-	t.Run("invalid", func(t *testing.T) {
-		for _, file := range corpusFiles(t, "invalid") {
-			t.Run(filepath.Base(file), func(t *testing.T) {
-				expect := corpusExpectation(t, file)
-				for i, doc := range corpusDocuments(t, file) {
-					schema := loadSchema(t, doc.schemaPath)
-					err := schema.Validate(doc.instance)
-					if err == nil {
-						t.Errorf("document %d (%s) should fail validation against %s", i, doc.id, doc.schemaPath)
-						continue
-					}
-					if expect != "" && !strings.Contains(err.Error(), expect) {
-						t.Errorf("document %d (%s) failed for a different reason\nwant substring: %q\ngot:\n%v", i, doc.id, expect, err)
-					}
+func runInvalidCorpus(t *testing.T, load corpusSchemaLoader) {
+	for _, file := range corpusFiles(t, "invalid") {
+		t.Run(filepath.Base(file), func(t *testing.T) {
+			expect := corpusExpectation(t, file)
+			for i, doc := range corpusDocuments(t, file) {
+				err := load(t, doc.schemaPath).Validate(doc.instance)
+				if err == nil {
+					t.Errorf("document %d (%s) should fail validation against %s", i, doc.id, doc.schemaPath)
+					continue
 				}
-			})
+				if expect != "" && !strings.Contains(err.Error(), expect) {
+					t.Errorf("document %d (%s) failed for a different reason\nwant substring: %q\ngot:\n%v", i, doc.id, expect, err)
+				}
+			}
+		})
+	}
+}
+
+// runAggregateCorpus checks that all.json accepts exactly what the per-kind
+// schemas accept, rejects what they reject, and rejects documents whose
+// apiVersion or kind is not in the catalog even when the body is valid.
+func runAggregateCorpus(t *testing.T, load corpusSchemaLoader) {
+	aggregate := load(t, AggregateSchemaName)
+	for _, file := range corpusFiles(t, "valid") {
+		for i, doc := range corpusDocuments(t, file) {
+			if err := aggregate.Validate(doc.instance); err != nil {
+				t.Errorf("%s document %d (%s) should validate against %s:\n%v", filepath.Base(file), i, doc.id, AggregateSchemaName, err)
+			}
 		}
-	})
+	}
+	for _, file := range corpusFiles(t, "invalid") {
+		for i, doc := range corpusDocuments(t, file) {
+			if err := aggregate.Validate(doc.instance); err == nil {
+				t.Errorf("%s document %d (%s) should fail validation against %s", filepath.Base(file), i, doc.id, AggregateSchemaName)
+			}
+		}
+	}
+
+	base := corpusDocuments(t, filepath.Join(corpusDir, "valid", "service.yaml"))[0]
+	for name, mutate := range map[string]func(map[string]interface{}){
+		"wrong apiVersion for kind": func(m map[string]interface{}) { m["apiVersion"] = "apps/v1" },
+		"unknown kind":              func(m map[string]interface{}) { m["kind"] = "Servce" },
+		"missing kind":              func(m map[string]interface{}) { delete(m, "kind") },
+	} {
+		instance := cloneInstance(t, base.instance)
+		mutate(instance)
+		if err := aggregate.Validate(instance); err == nil {
+			t.Errorf("%s: expected validation failure against %s", name, AggregateSchemaName)
+		}
+	}
+}
+
+func cloneInstance(t *testing.T, instance interface{}) map[string]interface{} {
+	t.Helper()
+	data, err := json.Marshal(instance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cloned, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	obj, ok := cloned.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected object instance, got %T", cloned)
+	}
+	return obj
 }
 
 // buildCorpusSchemas writes CRD and built-in schemas into outputDir the same
@@ -112,6 +174,14 @@ func buildCorpusSchemas(t *testing.T, outputDir string) {
 	}
 	if count == 0 {
 		t.Fatal("corpus openapi document produced no schemas")
+	}
+
+	entries, err := WriteAggregateSchema(outputDir)
+	if err != nil {
+		t.Fatalf("writing aggregate schema: %v", err)
+	}
+	if entries == 0 {
+		t.Fatal("aggregate schema has no entries")
 	}
 }
 

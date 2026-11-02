@@ -90,6 +90,8 @@ metadata:
   name: example
 ```
 
+To cover every manifest with one association, point `yaml.schemas` at `all.json` at the site root. It matches each document to its kind's schema by `apiVersion` and `kind`.
+
 ## Documentation
 
 - [Getting Started](https://sholdee.github.io/crd-schema-publisher/getting-started/)

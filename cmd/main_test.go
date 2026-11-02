@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -549,6 +550,55 @@ spec:
 
 	if _, err := os.Stat(filepath.Join(outputDir, ".generations")); !os.IsNotExist(err) {
 		t.Fatal("convert should not create .generations directory")
+	}
+}
+
+func TestRunConvert_WritesAggregateSchema(t *testing.T) {
+	dir := t.TempDir()
+	outputDir := filepath.Join(dir, "output")
+	crdPath := filepath.Join(dir, "crd.yaml")
+	crdYAML := `apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: certificates.cert-manager.io
+spec:
+  group: cert-manager.io
+  names:
+    kind: Certificate
+    plural: certificates
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+`
+	if err := os.WriteFile(crdPath, []byte(crdYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runConvert([]string{"--file", crdPath, "--output-dir", outputDir}); err != nil {
+		t.Fatalf("runConvert error: %v", err)
+	}
+
+	// Written without --render: it is a schema artifact, not documentation.
+	data, err := os.ReadFile(filepath.Join(outputDir, "all.json"))
+	if err != nil {
+		t.Fatalf("expected all.json in convert output: %v", err)
+	}
+	if !strings.Contains(string(data), `"cert-manager.io/certificate_v1.json"`) {
+		t.Fatalf("expected all.json to reference the certificate schema, got:\n%s", data)
+	}
+
+	// Recorded in the convert manifest so a later run cleans it.
+	manifest, err := readConvertManifest(outputDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(manifest, "all.json") {
+		t.Fatalf("expected convert manifest to record all.json, got %v", manifest)
 	}
 }
 

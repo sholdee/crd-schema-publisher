@@ -227,6 +227,7 @@ validate_site_at() {
   assert_url_reachable "${base}/kustomize.config.k8s.io/kustomization_v1beta1.html" || return 1
   assert_url_reachable "${base}/kustomize.config.k8s.io/component_v1alpha1.json" || return 1
   assert_url_reachable "${base}/kustomize.config.k8s.io/component_v1alpha1.html" || return 1
+  assert_url_contains "${base}/all.json" "${MARKER_GROUP}/releasesmoke_v1.json" || return 1
   assert_url_reachable "${base}/schema-search.js" || return 1
   assert_url_reachable "${base}/favicon.svg" || return 1
 }

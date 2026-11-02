@@ -284,6 +284,10 @@ func runConvert(args []string) error {
 		count += n
 	}
 
+	if _, err := extractor.WriteAggregateSchema(outputDir); err != nil {
+		return err
+	}
+
 	if *render {
 		if err := renderOutput(outputDir, *basePath); err != nil {
 			return err

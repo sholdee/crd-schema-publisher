@@ -68,6 +68,8 @@ Each authorable type that declares a group, version, and kind becomes a self-con
 
 Referenced definitions are bundled into each schema so validation and rendered child fields work without external references. When combined with CRD inputs, matching OpenAPI CRD definitions and their List types are skipped.
 
+The API server describes `io.k8s.apimachinery.pkg.api.resource.Quantity` as a plain string, but it accepts numeric JSON for quantities, so `cpu: 1` and `memory: 1e9` are valid manifests. The bundled Quantity definition is rewritten as a `oneOf` string-or-number union so validators such as kubeconform accept both forms. This matches the schemas published by yannh/kubernetes-json-schema.
+
 Combine `--openapi` with `--file` or `--dir` when you want one local site containing both built-ins and CRDs.
 
 ## Kustomize Schemas

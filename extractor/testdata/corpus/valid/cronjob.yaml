@@ -1,0 +1,24 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: backup}
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 3600
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: b
+              image: alpine
+              command: ["sh", "-c", "echo hi"]
+              env:
+                - name: A
+                  value: "1"
+                - name: B
+                  valueFrom:
+                    secretKeyRef: {name: s, key: password}

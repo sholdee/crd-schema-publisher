@@ -1,0 +1,11 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}
+        - ipBlock: {cidr: 10.0.0.0/8, except: [10.1.0.0/16]}
+      ports: [{protocol: TCP, port: 8080}, {protocol: TCP, port: named-port}, {port: 1000, endPort: 2000}]

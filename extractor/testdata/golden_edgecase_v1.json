@@ -3,6 +3,22 @@
     "spec": {
       "additionalProperties": false,
       "properties": {
+        "extensions": {
+          "description": "Known settings plus arbitrary vendor extensions",
+          "properties": {
+            "enabled": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "type": [
+            "object",
+            "null"
+          ],
+          "x-kubernetes-preserve-unknown-fields": true
+        },
         "match": {
           "additionalProperties": false,
           "properties": {

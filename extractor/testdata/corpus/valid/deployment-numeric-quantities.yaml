@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test
+spec:
+  selector:
+    matchLabels:
+      app: test
+  template:
+    metadata:
+      labels:
+        app: test
+    spec:
+      containers:
+        - name: test
+          image: nginx
+          resources:
+            limits:
+              cpu: 1
+              memory: 1e9
+              gpu.intel.com/i915: 1
+            requests:
+              cpu: 0.5
+              memory: "512Mi"

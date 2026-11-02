@@ -1,0 +1,9 @@
+# expect: got boolean, want number
+apiVersion: v1
+kind: Pod
+metadata: {name: bad}
+spec:
+  containers:
+    - name: c
+      image: alpine
+      resources: {limits: {cpu: true}}

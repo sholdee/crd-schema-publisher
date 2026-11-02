@@ -593,6 +593,17 @@ func edgeCaseCRD() apiextensionsv1.CustomResourceDefinition {
 										},
 										AdditionalProperties: &apiextensionsv1.JSONSchemaPropsOrBool{Allows: true},
 									},
+									"extensions": {
+										// Declared properties plus preserve-unknown-fields: the API
+										// server keeps undeclared keys here, so the converter must
+										// not close the object with additionalProperties: false.
+										Type:                   "object",
+										Description:            "Known settings plus arbitrary vendor extensions",
+										XPreserveUnknownFields: boolPtr(true),
+										Properties: map[string]apiextensionsv1.JSONSchemaProps{
+											"enabled": {Type: "boolean"},
+										},
+									},
 								},
 							},
 						},

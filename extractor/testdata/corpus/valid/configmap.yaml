@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cfg
+  labels: {a: b}
+  annotations: {x: "1"}
+data:
+  key: value
+binaryData:
+  blob: aGVsbG8=
+immutable: true

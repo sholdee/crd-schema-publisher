@@ -57,6 +57,10 @@ spec:
             {{- include "crd-schema-publisher.commonEnvVars" . | nindent 12 }}
             - name: DEBOUNCE_SECONDS
               value: {{ .Values.config.debounceSeconds | quote }}
+            {{- if and .Values.config.includeBuiltins .Values.config.builtinsRefreshInterval }}
+            - name: BUILTINS_REFRESH_INTERVAL
+              value: {{ .Values.config.builtinsRefreshInterval | quote }}
+            {{- end }}
             - name: HEALTH_PORT
               value: {{ .Values.config.healthPort | quote }}
             {{- if .Values.serve.enabled }}

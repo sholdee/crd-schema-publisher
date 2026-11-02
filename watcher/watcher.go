@@ -45,7 +45,11 @@ type Config struct {
 	IncludeBuiltins  bool
 	IncludeKustomize bool
 	OpenAPISource    extractor.OpenAPISource
-	Profiler         diagnostics.Snapshotter
+	// BuiltinsRefreshInterval is how often the leader checks whether the API
+	// server's OpenAPI document changed when built-ins are enabled. Zero
+	// disables the check.
+	BuiltinsRefreshInterval time.Duration
+	Profiler                diagnostics.Snapshotter
 }
 
 // Run starts the watcher with leader election and health server.
@@ -57,6 +61,8 @@ func Run(ctx context.Context, cfg Config) error {
 		"debounce", cfg.Debounce,
 		"health_port", cfg.HealthPort,
 		"publisher_configured", cfg.Publisher != nil,
+		"include_builtins", cfg.IncludeBuiltins,
+		"builtins_refresh_interval", cfg.BuiltinsRefreshInterval,
 	)
 	// Start health server before leader election
 	healthReady := &atomic.Bool{}

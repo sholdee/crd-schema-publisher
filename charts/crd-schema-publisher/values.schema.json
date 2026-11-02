@@ -122,6 +122,11 @@
           "type": "boolean",
           "description": "Include Kubernetes built-in schemas from the API server OpenAPI v2 document"
         },
+        "builtinsRefreshInterval": {
+          "type": "string",
+          "pattern": "^(0|([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+)$",
+          "description": "How often the controller checks the API server OpenAPI document for changes when includeBuiltins is true, as a Go duration such as 15m. \"0\" disables the check. (controller only)"
+        },
         "includeKustomize": {
           "type": "boolean",
           "description": "Include kustomize's client-side config schemas"

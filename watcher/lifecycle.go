@@ -74,6 +74,7 @@ func runLeaderWithController(ctx context.Context, cfg Config, trigger chan struc
 	slog.Info("CRD informer synced, watching for changes")
 	// Publish once after sync so zero-CRD clusters can still emit optional schemas.
 	signalTrigger(trigger)
+	startBuiltinsRefresh(ctx, cfg, trigger)
 
 	debounceLoop(trigger, cfg.Debounce, func() error {
 		cycleCfg := cfg

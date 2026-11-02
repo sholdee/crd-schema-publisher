@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func mapEnv(values map[string]string) envGetter {
@@ -202,5 +203,34 @@ func TestCommandConfig_RejectsUnexpectedArgs(t *testing.T) {
 				t.Fatalf("expected %q, got %v", tt.want, err)
 			}
 		})
+	}
+}
+
+func TestParseBuiltinsRefreshInterval(t *testing.T) {
+	cases := []struct {
+		value   string
+		want    time.Duration
+		wantErr bool
+	}{
+		{"", defaultBuiltinsRefreshInterval, false},
+		{"15m", 15 * time.Minute, false},
+		{"1h30m", 90 * time.Minute, false},
+		{"0", 0, false},
+		{"0s", 0, false},
+		{"-5m", 0, true},
+		{"fifteen", 0, true},
+		{"15", 0, true},
+	}
+	for _, tc := range cases {
+		got, err := parseBuiltinsRefreshInterval(tc.value)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("parseBuiltinsRefreshInterval(%q): expected error, got %v", tc.value, got)
+			}
+			continue
+		}
+		if err != nil || got != tc.want {
+			t.Errorf("parseBuiltinsRefreshInterval(%q) = (%v, %v), want (%v, nil)", tc.value, got, err, tc.want)
+		}
 	}
 }

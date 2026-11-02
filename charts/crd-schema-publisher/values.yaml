@@ -48,6 +48,8 @@ config:
   basePath: ""
   # -- Include Kubernetes built-in schemas from the API server OpenAPI v2 document
   includeBuiltins: false
+  # -- How often the controller checks the API server OpenAPI document for changes when includeBuiltins is true, as a Go duration. "0" disables the check. (controller only)
+  builtinsRefreshInterval: "15m"
   # -- Include kustomize's client-side config schemas
   includeKustomize: false
   # -- Optional schema filters. Values are comma-separated and case-insensitive.

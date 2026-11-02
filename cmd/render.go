@@ -39,6 +39,12 @@ func runRender(args []string) error {
 	}
 
 	slog.Info("rendering schema pages", "dir", renderDir)
+	// Refresh the aggregate schema too: render is the documented way to
+	// republish after editing schemas in place, and all.json must track the
+	// kinds manifest those edits may have changed.
+	if _, err := extractor.WriteAggregateSchema(renderDir); err != nil {
+		return err
+	}
 	if err := renderOutput(renderDir, cfg.BasePath); err != nil {
 		return err
 	}

@@ -377,6 +377,26 @@ func TestBuildSite_MergesCRDsBuiltinsAndKustomizeKindsManifest(t *testing.T) {
 			t.Fatalf("expected kinds[%q]=%q, got %q in %v", path, kind, kinds[path], kinds)
 		}
 	}
+
+	// The aggregate schema is written into the same generation and covers
+	// every source.
+	entries := readAggregateEntries(t, filepath.Join(outputDir, "current"))
+	refs := make(map[string]aggregateEntry, len(entries))
+	for _, entry := range entries {
+		refs[entry.ref] = entry
+	}
+	for path, kind := range kinds {
+		entry, ok := refs[path]
+		if !ok {
+			t.Fatalf("expected aggregate entry for %s, got %v", path, refs)
+		}
+		if entry.kind != kind {
+			t.Fatalf("expected aggregate kind %q for %s, got %q", kind, path, entry.kind)
+		}
+	}
+	if refs["core/pod_v1.json"].apiVersion != "v1" || refs["apps/deployment_v1.json"].apiVersion != "apps/v1" {
+		t.Fatalf("unexpected aggregate apiVersions: %v", refs)
+	}
 }
 
 func TestBuildSite_IncludeBuiltinsSkipsOpenAPICRDDefinitions(t *testing.T) {

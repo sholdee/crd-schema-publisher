@@ -196,7 +196,7 @@ func openAPICRDExclusions(crds []apiextensionsv1.CustomResourceDefinition) map[g
 
 func normalizedOpenAPIGVK(gvk groupVersionKind) groupVersionKind {
 	if gvk.Group == "" {
-		gvk.Group = "core"
+		gvk.Group = coreGroupDirName
 	}
 	return gvk
 }

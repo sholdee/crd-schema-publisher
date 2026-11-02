@@ -18,6 +18,7 @@ var (
 	writeSchemasFunc       = WriteSchemas
 	renderAllFunc          = renderer.RenderAll
 	generateIndexFunc      = index.Generate
+	writeAggregateFunc     = WriteAggregateSchema
 	activateGenerationFunc = activateGeneration
 	cleanLegacyRootFunc    = cleanLegacyRoot
 	pruneGenerationsFunc   = pruneGenerations
@@ -98,6 +99,12 @@ func BuildSite(opts SiteBuildOptions) (SiteBuildResult, error) {
 		return SiteBuildResult{}, err
 	}
 	count += extraCount
+
+	aggregateCount, err := writeAggregateFunc(generationDir)
+	if err != nil {
+		return SiteBuildResult{}, fmt.Errorf("writing aggregate schema: %w", err)
+	}
+	snapshot(opts.Profiler, "build.after-aggregate", "entry_count", aggregateCount, "generation", generationName)
 
 	if opts.Render {
 		if err := renderAllFunc(generationDir, opts.BasePath); err != nil {

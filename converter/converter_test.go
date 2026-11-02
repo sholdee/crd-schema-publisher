@@ -299,6 +299,54 @@ func TestAdditionalProperties_RecursesIntoNestedObjects(t *testing.T) {
 	}
 }
 
+func TestAdditionalProperties_HonorsPreserveUnknownFields(t *testing.T) {
+	// x-kubernetes-preserve-unknown-fields: true tells the API server to keep
+	// keys that are not declared under properties, so the object must stay
+	// open. Nested objects without the marker are still closed.
+	schema := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"config": map[string]interface{}{
+				"type":                                 "object",
+				"x-kubernetes-preserve-unknown-fields": true,
+				"properties": map[string]interface{}{
+					"known": map[string]interface{}{"type": "string"},
+					"inner": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"leaf": map[string]interface{}{"type": "string"},
+						},
+					},
+				},
+			},
+			"marked_false": map[string]interface{}{
+				"type":                                 "object",
+				"x-kubernetes-preserve-unknown-fields": false,
+				"properties": map[string]interface{}{
+					"known": map[string]interface{}{"type": "string"},
+				},
+			},
+		},
+	}
+	result := AdditionalProperties(schema, false)
+
+	config := propField(t, result, "config")
+	if _, ok := config["additionalProperties"]; ok {
+		t.Fatalf("preserve-unknown-fields object must stay open, got %v", config["additionalProperties"])
+	}
+	if config["x-kubernetes-preserve-unknown-fields"] != true {
+		t.Fatal("preserve-unknown-fields marker should be kept")
+	}
+	inner := propField(t, config, "inner")
+	if inner["additionalProperties"] != false {
+		t.Fatalf("nested object without the marker should still be closed, got %v", inner["additionalProperties"])
+	}
+	markedFalse := propField(t, result, "marked_false")
+	if markedFalse["additionalProperties"] != false {
+		t.Fatalf("explicit false marker should not keep the object open, got %v", markedFalse["additionalProperties"])
+	}
+}
+
 func TestAdditionalProperties_SkipsRootWhenFlagged(t *testing.T) {
 	schema := map[string]interface{}{
 		"type": "object",

@@ -1,0 +1,6 @@
+# expect: missing property 'port'
+apiVersion: v1
+kind: Service
+metadata: {name: bad}
+spec:
+  ports: [{name: http, targetPort: 8080}]

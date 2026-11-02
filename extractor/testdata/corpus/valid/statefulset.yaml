@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: db}
+spec:
+  serviceName: db
+  replicas: 1
+  selector: {matchLabels: {app: db}}
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate: {partition: 0}
+  template:
+    metadata: {labels: {app: db}}
+    spec:
+      terminationGracePeriodSeconds: 30
+      nodeSelector: {kubernetes.io/arch: amd64}
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+          tolerationSeconds: 300
+      securityContext: {runAsUser: 1000, fsGroup: 1000, runAsNonRoot: true}
+      containers:
+        - name: db
+          image: postgres:16
+          ports: [{containerPort: 5432, name: pg}]
+          livenessProbe:
+            exec: {command: [pg_isready]}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: {path: /, port: pg}
+          startupProbe:
+            tcpSocket: {port: 5432}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: 1, memory: 1Gi}
+          volumeMounts: [{name: data, mountPath: /var/lib/postgresql}]
+          securityContext:
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: data}
+        - name: tmp
+          emptyDir: {sizeLimit: 1Gi}
+        - name: cfg
+          configMap: {name: cfg, defaultMode: 0644}

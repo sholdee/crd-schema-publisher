@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: web}
+spec:
+  replicas: 3
+  revisionHistoryLimit: 2
+  selector: {matchLabels: {app: web}}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxSurge: 25%, maxUnavailable: 0}
+  template:
+    metadata: {labels: {app: web}}
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector: {matchLabels: {app: web}}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: {matchLabels: {app: web}}
+      containers:
+        - name: web
+          image: nginx
+          imagePullPolicy: IfNotPresent
+          args: ["--port=8080"]
+          resources: {}

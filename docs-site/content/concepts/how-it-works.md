@@ -31,11 +31,11 @@ Cloudflare publishing happens after activation. Uploads use direct Cloudflare Pa
 
 | Transform | Why It Exists |
 | --- | --- |
-| Structural object tightening | Adds `additionalProperties: false` to child objects with `properties`, recursing only through schema-valued locations. This preserves validation overlays and literal `default` or `enum` data while avoiding keyword-collision bugs. |
+| Structural object tightening | Adds `additionalProperties: false` to child objects with `properties`, recursing only through schema-valued locations. Objects marked `x-kubernetes-preserve-unknown-fields: true` stay open, matching the API server. This preserves validation overlays and literal `default` or `enum` data while avoiding keyword-collision bugs. |
 | Kubernetes int-or-string support | Replaces Kubernetes int-or-string markers with a non-conflicting `oneOf` union. Metadata is preserved, and type-specific assertions move into the matching string or integer branch. |
 | Optional null support | Allows null for optional fields with per-field precision, including optional `$ref` fields as ref-or-null `anyOf` wrappers. |
 
-These transforms handle nullable fields, int-or-string types, root objects, and CRD fields named like JSON Schema keywords. A frozen golden test locks converter output to prevent regressions.
+These transforms handle nullable fields, int-or-string types, root objects, and CRD fields named like JSON Schema keywords. A frozen golden test locks converter output to prevent regressions, and a validation corpus checks real manifests against the generated schemas with the same validator kubeconform uses.
 
 ## Offline Conversion
 

@@ -26,7 +26,7 @@ var integerValidationKeywords = map[string]struct{}{
 // to any object that has "properties" but lacks "additionalProperties".
 // When skip is true, the root object is not modified (only its children are).
 func AdditionalProperties(data map[string]interface{}, skip bool) map[string]interface{} {
-	if _, hasProps := data["properties"]; hasProps && !skip {
+	if _, hasProps := data["properties"]; hasProps && !skip && !preservesUnknownFields(data) {
 		if _, hasAP := data["additionalProperties"]; !hasAP {
 			data["additionalProperties"] = false
 		}
@@ -50,6 +50,15 @@ func AdditionalProperties(data map[string]interface{}, skip bool) map[string]int
 		})
 	}
 	return data
+}
+
+// preservesUnknownFields reports whether a schema carries
+// x-kubernetes-preserve-unknown-fields: true. The API server keeps unknown keys
+// on such objects even when they also declare properties, so closing them with
+// additionalProperties: false would reject manifests Kubernetes accepts.
+func preservesUnknownFields(data map[string]interface{}) bool {
+	preserve, ok := data["x-kubernetes-preserve-unknown-fields"].(bool)
+	return ok && preserve
 }
 
 // ReplaceIntOrString finds Kubernetes int-or-string schemas and rewrites them

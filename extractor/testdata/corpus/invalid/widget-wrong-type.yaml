@@ -1,0 +1,6 @@
+# expect: got number, want null or string
+apiVersion: example.com/v1
+kind: Widget
+metadata: {name: bad}
+spec:
+  name: 42

@@ -1,0 +1,10 @@
+# expect: additional properties 'imagee' not allowed
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: bad}
+spec:
+  selector: {matchLabels: {app: web}}
+  template:
+    metadata: {labels: {app: web}}
+    spec:
+      containers: [{name: web, imagee: nginx}]

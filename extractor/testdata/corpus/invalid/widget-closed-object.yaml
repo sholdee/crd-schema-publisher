@@ -1,0 +1,7 @@
+# expect: additional properties 'extra' not allowed
+apiVersion: example.com/v1
+kind: Widget
+metadata: {name: bad}
+spec:
+  name: a
+  extra: 1

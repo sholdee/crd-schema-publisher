@@ -1,0 +1,16 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata: {name: web, annotations: {nginx.ingress.kubernetes.io/rewrite-target: /}}
+spec:
+  ingressClassName: nginx
+  tls: [{hosts: [a.example.com], secretName: tls}]
+  rules:
+    - host: a.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: {service: {name: web, port: {number: 80}}}
+          - path: /x
+            pathType: Prefix
+            backend: {service: {name: web, port: {name: http}}}

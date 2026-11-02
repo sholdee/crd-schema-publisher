@@ -19,8 +19,16 @@ const sampleOpenAPI = `{
       "properties": {
         "apiVersion": {"type": "string"},
         "kind": {"type": "string"},
-        "metadata": {"$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"}
+        "metadata": {"$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"},
+        "limits": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/definitions/io.k8s.apimachinery.pkg.api.resource.Quantity"}
+        }
       }
+    },
+    "io.k8s.apimachinery.pkg.api.resource.Quantity": {
+      "description": "Quantity is a fixed-point representation of a number.",
+      "type": "string"
     },
     "io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta": {
       "type": "object",
@@ -76,8 +84,131 @@ func TestWriteOpenAPISchemas(t *testing.T) {
 	}
 
 	assertOpenAPISchemaBundlesNullableRefs(t, schema)
+	assertOpenAPIQuantityUnion(t, schema)
 	assertOpenAPIWatchEventSkipped(t, out)
 	assertOpenAPIKindsManifest(t, out)
+}
+
+// Regression test for sholdee/crd-schema-publisher#334: the API server serves
+// Quantity as a plain string, but accepts numeric JSON, so built-in schemas
+// must allow cpu: 1 or memory: 1e9 rather than only quoted strings.
+func assertOpenAPIQuantityUnion(t *testing.T, schema map[string]interface{}) {
+	t.Helper()
+	defs, ok := schema["definitions"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected definitions map, got %T", schema["definitions"])
+	}
+	quantity, ok := defs[quantityDefinition].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected Quantity definition to be bundled, got %T", defs[quantityDefinition])
+	}
+	if _, hasType := quantity["type"]; hasType {
+		t.Fatalf("Quantity must not keep a conflicting sibling type, got %v", quantity)
+	}
+	if quantity["description"] != "Quantity is a fixed-point representation of a number." {
+		t.Fatalf("expected Quantity description to be preserved, got %v", quantity["description"])
+	}
+	assertStringOrNumberOneOf(t, quantity)
+
+	// The referencing map value stays a direct $ref so the union is shared via
+	// the bundled definition rather than duplicated per field.
+	props, ok := schema["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected schema properties, got %T", schema["properties"])
+	}
+	limits, ok := props["limits"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected limits property, got %T", props["limits"])
+	}
+	additional, ok := limits["additionalProperties"].(map[string]interface{})
+	if !ok || additional["$ref"] != "#/definitions/"+quantityDefinition {
+		t.Fatalf("expected limits values to reference Quantity, got %v", limits["additionalProperties"])
+	}
+}
+
+func assertStringOrNumberOneOf(t *testing.T, schema map[string]interface{}) {
+	t.Helper()
+	oneOf, ok := schema["oneOf"].([]interface{})
+	if !ok || len(oneOf) != 2 {
+		t.Fatalf("expected oneOf with two branches, got %v", schema["oneOf"])
+	}
+	got := make([]string, 0, len(oneOf))
+	for _, item := range oneOf {
+		branch, ok := item.(map[string]interface{})
+		if !ok || len(branch) != 1 {
+			t.Fatalf("expected bare typed oneOf branch, got %v", item)
+		}
+		typ, _ := branch["type"].(string)
+		got = append(got, typ)
+	}
+	if got[0] != "string" || got[1] != "number" {
+		t.Fatalf("expected oneOf [string, number], got %v", got)
+	}
+}
+
+func TestApplyQuantityUnion(t *testing.T) {
+	t.Run("rewrites string-typed Quantity and keeps metadata", func(t *testing.T) {
+		defs := map[string]map[string]interface{}{
+			quantityDefinition: {
+				"description": "Quantity",
+				"type":        "string",
+				"format":      "quantity",
+			},
+			"io.k8s.apimachinery.pkg.apis.meta.v1.Time": {
+				"type":   "string",
+				"format": "date-time",
+			},
+		}
+		applyQuantityUnion(defs)
+
+		quantity := defs[quantityDefinition]
+		if _, ok := quantity["type"]; ok {
+			t.Fatalf("expected type to be removed, got %v", quantity)
+		}
+		if _, ok := quantity["format"]; ok {
+			t.Fatalf("expected format to be removed, got %v", quantity)
+		}
+		if quantity["description"] != "Quantity" {
+			t.Fatalf("expected description to be kept, got %v", quantity["description"])
+		}
+		assertStringOrNumberOneOf(t, quantity)
+
+		// Other string definitions are untouched.
+		timeDef := defs["io.k8s.apimachinery.pkg.apis.meta.v1.Time"]
+		if timeDef["type"] != "string" || timeDef["format"] != "date-time" {
+			t.Fatalf("expected unrelated definition to be untouched, got %v", timeDef)
+		}
+	})
+
+	t.Run("missing Quantity is a no-op", func(t *testing.T) {
+		defs := map[string]map[string]interface{}{
+			"io.k8s.apimachinery.pkg.types.UID": {"type": "string"},
+		}
+		applyQuantityUnion(defs)
+		if _, ok := defs[quantityDefinition]; ok {
+			t.Fatalf("expected no Quantity definition to be added, got %v", defs[quantityDefinition])
+		}
+	})
+
+	t.Run("non-string Quantity is left alone", func(t *testing.T) {
+		original := map[string]interface{}{
+			"description": "already a union",
+			"oneOf": []interface{}{
+				map[string]interface{}{"type": "string"},
+				map[string]interface{}{"type": "integer"},
+			},
+		}
+		defs := map[string]map[string]interface{}{quantityDefinition: original}
+		applyQuantityUnion(defs)
+		oneOf, ok := defs[quantityDefinition]["oneOf"].([]interface{})
+		if !ok || len(oneOf) != 2 {
+			t.Fatalf("expected existing union to be preserved, got %v", defs[quantityDefinition])
+		}
+		second, ok := oneOf[1].(map[string]interface{})
+		if !ok || second["type"] != "integer" {
+			t.Fatalf("expected existing integer branch to be preserved, got %v", oneOf[1])
+		}
+	})
 }
 
 func TestWriteOpenAPISchemasFromBytesMatchesFilePath(t *testing.T) {

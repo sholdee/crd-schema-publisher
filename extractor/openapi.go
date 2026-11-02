@@ -74,7 +74,31 @@ func parseOpenAPIDefinitions(raw []byte) (map[string]map[string]interface{}, err
 		}
 		defs[name] = def
 	}
+	applyQuantityUnion(defs)
 	return defs, nil
+}
+
+// quantityDefinition is the OpenAPI definition name of resource.Quantity.
+const quantityDefinition = "io.k8s.apimachinery.pkg.api.resource.Quantity"
+
+// applyQuantityUnion rewrites the string-typed Quantity definition as a
+// string-or-number oneOf. The API server serves Quantity as a bare string but
+// accepts numeric JSON for it, so manifests like cpu: 1 or memory: 1e9 are
+// valid and a string-only schema rejects them. Quantity carries no
+// int-or-string marker, so ReplaceIntOrString cannot catch it, and number
+// rather than integer is required for cpu: 0.5. This matches the union
+// yannh/kubernetes-json-schema publishes. Metadata such as description is kept.
+func applyQuantityUnion(defs map[string]map[string]interface{}) {
+	def, ok := defs[quantityDefinition]
+	if !ok || def["type"] != "string" {
+		return
+	}
+	delete(def, "type")
+	delete(def, "format")
+	def["oneOf"] = []interface{}{
+		map[string]interface{}{"type": "string"},
+		map[string]interface{}{"type": "number"},
+	}
 }
 
 func writeOpenAPIDefinitions(defs map[string]map[string]interface{}, outputDir string, filter SchemaFilter, exclusions map[groupVersionKind]struct{}) (int, error) {

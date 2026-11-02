@@ -22,6 +22,7 @@ required_tools=(
   kind
   kubectl
   sed
+  tr
 )
 
 fail() {
@@ -186,6 +187,31 @@ assert_url_reachable() {
   fetch "${url}" >/dev/null
 }
 
+# assert_url_matches_compact strips all whitespace from the fetched body and
+# matches it against an extended regex, so pretty-printed JSON can be checked
+# structurally without depending on jq.
+assert_url_matches_compact() {
+  local url="$1"
+  local pattern="$2"
+  local body
+  body="$(fetch "${url}")" || return 1
+  if ! tr -d '[:space:]' <<<"${body}" | grep -Eq "${pattern}"; then
+    echo "Expected $(redact_output_value "${url}") to match ${pattern}" >&2
+    return 1
+  fi
+}
+
+# Quantity must be published as a string-or-number union so manifests with
+# numeric resources (cpu: 1, memory: 1e9) validate against built-in schemas.
+# Keys are sorted on output, so description precedes oneOf; the description
+# may contain escaped quotes.
+QUANTITY_UNION_PATTERN='"io\.k8s\.apimachinery\.pkg\.api\.resource\.Quantity":\{"description":"(\\.|[^"\\])*","oneOf":\[\{"type":"string"\},\{"type":"number"\}\]\}'
+
+assert_url_quantity_union() {
+  local url="$1"
+  assert_url_matches_compact "${url}" "${QUANTITY_UNION_PATTERN}"
+}
+
 validate_site_at() {
   local raw_base="$1"
   local base="${raw_base%/}"
@@ -194,7 +220,8 @@ validate_site_at() {
   assert_url_contains "${base}/${MARKER_GROUP}/releasesmoke_v1.json" "${RUN_MARKER}" || return 1
   assert_url_contains "${base}/${MARKER_GROUP}/releasesmoke_v1.html" "${RUN_MARKER}" || return 1
   assert_url_contains "${base}/master-standalone/${MARKER_GROUP}-releasesmoke-stable-v1.json" "${RUN_MARKER}" || return 1
-  assert_url_reachable "${base}/core/pod_v1.json" || return 1
+  assert_url_quantity_union "${base}/core/pod_v1.json" || return 1
+  assert_url_quantity_union "${base}/apps/deployment_v1.json" || return 1
   assert_url_reachable "${base}/core/pod_v1.html" || return 1
   assert_url_reachable "${base}/kustomize.config.k8s.io/kustomization_v1beta1.json" || return 1
   assert_url_reachable "${base}/kustomize.config.k8s.io/kustomization_v1beta1.html" || return 1

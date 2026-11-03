@@ -93,6 +93,45 @@ func parseRuntimeCommandArgs(cmd string, args []string, fallbackOutputDir string
 	return parseRuntimeConfig(cmd, args, fallbackOutputDir, os.Getenv)
 }
 
+// parseWatchTimings reads the watch-mode debounce and built-in refresh
+// settings from the environment.
+func parseWatchTimings(getenv func(string) string) (debounce, builtinsRefresh time.Duration, err error) {
+	debounceSeconds := 15
+	if v := getenv("DEBOUNCE_SECONDS"); v != "" {
+		parsed, err := strconv.Atoi(v)
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid DEBOUNCE_SECONDS: %w", err)
+		}
+		debounceSeconds = parsed
+	}
+	builtinsRefresh, err = parseBuiltinsRefreshInterval(getenv("BUILTINS_REFRESH_INTERVAL"))
+	if err != nil {
+		return 0, 0, err
+	}
+	return time.Duration(debounceSeconds) * time.Second, builtinsRefresh, nil
+}
+
+// defaultBuiltinsRefreshInterval is how often watch mode checks the API
+// server's OpenAPI document for changes when built-ins are enabled. Each
+// check is a conditional request that returns 304 when nothing changed.
+const defaultBuiltinsRefreshInterval = 15 * time.Minute
+
+// parseBuiltinsRefreshInterval reads BUILTINS_REFRESH_INTERVAL as a Go
+// duration. Empty uses the default and "0" disables the check.
+func parseBuiltinsRefreshInterval(value string) (time.Duration, error) {
+	if value == "" {
+		return defaultBuiltinsRefreshInterval, nil
+	}
+	interval, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("invalid BUILTINS_REFRESH_INTERVAL %q: %w", value, err)
+	}
+	if interval < 0 {
+		return 0, fmt.Errorf("invalid BUILTINS_REFRESH_INTERVAL %q: must not be negative", value)
+	}
+	return interval, nil
+}
+
 func parseSiteServingConfig(healthPort string) (bool, string, bool, error) {
 	if os.Getenv("SERVE_SITE") != "true" {
 		return false, "", false, nil
@@ -226,13 +265,9 @@ func runWatch(args []string) error {
 		return err
 	}
 
-	debounceSeconds := 15
-	if v := os.Getenv("DEBOUNCE_SECONDS"); v != "" {
-		parsed, err := strconv.Atoi(v)
-		if err != nil {
-			return fmt.Errorf("invalid DEBOUNCE_SECONDS: %w", err)
-		}
-		debounceSeconds = parsed
+	debounce, builtinsRefresh, err := parseWatchTimings(os.Getenv)
+	if err != nil {
+		return err
 	}
 
 	leaseName := getEnv("LEASE_NAME", "crd-schema-publisher")
@@ -282,23 +317,24 @@ func runWatch(args []string) error {
 	defer cancel()
 
 	return runWatcherFunc(ctx, watcher.Config{
-		Client:           client,
-		KubeConfig:       cfg,
-		OutputDir:        opts.OutputDir,
-		BasePath:         basePath,
-		Publisher:        pub,
-		Debounce:         time.Duration(debounceSeconds) * time.Second,
-		Namespace:        podNamespace,
-		LeaseName:        leaseName,
-		PodName:          podName,
-		HealthPort:       healthPort,
-		SitePort:         sitePort,
-		SiteAccessLog:    serveAccessLog,
-		Filter:           opts.Filter,
-		IncludeBuiltins:  opts.IncludeBuiltins,
-		IncludeKustomize: opts.IncludeKustomize,
-		OpenAPISource:    openAPI.Source,
-		Profiler:         profiler,
+		Client:                  client,
+		KubeConfig:              cfg,
+		OutputDir:               opts.OutputDir,
+		BasePath:                basePath,
+		Publisher:               pub,
+		Debounce:                debounce,
+		Namespace:               podNamespace,
+		LeaseName:               leaseName,
+		PodName:                 podName,
+		HealthPort:              healthPort,
+		SitePort:                sitePort,
+		SiteAccessLog:           serveAccessLog,
+		Filter:                  opts.Filter,
+		IncludeBuiltins:         opts.IncludeBuiltins,
+		IncludeKustomize:        opts.IncludeKustomize,
+		OpenAPISource:           openAPI.Source,
+		BuiltinsRefreshInterval: builtinsRefresh,
+		Profiler:                profiler,
 	})
 }
 

@@ -76,7 +76,15 @@ func main() {
 			assertions: []assertion{
 				{name: "SCHEMA_INCLUDE_BUILTINS=true", check: assertDeploymentEnv("SCHEMA_INCLUDE_BUILTINS", "true")},
 				{name: "SCHEMA_INCLUDE_KUSTOMIZE=true", check: assertDeploymentEnv("SCHEMA_INCLUDE_KUSTOMIZE", "true")},
+				{name: "BUILTINS_REFRESH_INTERVAL default", check: assertDeploymentEnv("BUILTINS_REFRESH_INTERVAL", "15m")},
 				{name: "OpenAPI RBAC", check: assertClusterRoleContainsNonResourceURL("/openapi/v2")},
+			},
+		},
+		{
+			name: "controller built-in refresh disabled",
+			args: []string{"--set", "config.includeBuiltins=true", "--set-string", "config.builtinsRefreshInterval=0"},
+			assertions: []assertion{
+				{name: "BUILTINS_REFRESH_INTERVAL=0", check: assertDeploymentEnv("BUILTINS_REFRESH_INTERVAL", "0")},
 			},
 		},
 		{
@@ -85,6 +93,7 @@ func main() {
 			assertions: []assertion{
 				{name: "SCHEMA_INCLUDE_BUILTINS=true", check: assertCronJobEnv("SCHEMA_INCLUDE_BUILTINS", "true")},
 				{name: "SCHEMA_INCLUDE_KUSTOMIZE=true", check: assertCronJobEnv("SCHEMA_INCLUDE_KUSTOMIZE", "true")},
+				{name: "omits refresh interval", check: assertOutputOmits("BUILTINS_REFRESH_INTERVAL")},
 				{name: "OpenAPI RBAC", check: assertClusterRoleContainsNonResourceURL("/openapi/v2")},
 			},
 		},

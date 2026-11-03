@@ -67,6 +67,8 @@ helm upgrade --install crd-schema-publisher oci://ghcr.io/sholdee/charts/crd-sch
 
 `config.includeBuiltins=true` reads `/openapi/v2` from the API server. With chart RBAC enabled, it also adds the required ClusterRole permission; with `rbac.create=false`, provide that permission yourself.
 
+In controller mode the leader also re-checks that document every `config.builtinsRefreshInterval` (default `15m`) with a conditional request, so a control-plane upgrade republishes built-in schemas even when no CRD changes. Set it to `"0"` to disable the check; the value is a string, so use `--set-string config.builtinsRefreshInterval=0` on the command line.
+
 `config.includeKustomize=true` does not require extra Kubernetes permissions. Filters apply to CRDs and built-ins; Kustomize is an explicit unfiltered opt-in.
 
 ## Optional Features

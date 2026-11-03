@@ -97,7 +97,7 @@ Kustomize is different: `--kustomize` is a single explicit opt-in and always emi
 
 Runtime modes can include optional schemas in generated snapshots:
 
-- `--include-builtins` fetches `/openapi/v2` from the API server and writes built-ins into the same generation as CRDs.
+- `--include-builtins` fetches `/openapi/v2` from the API server and writes built-ins into the same generation as CRDs. In watch mode the leader also polls that document on `BUILTINS_REFRESH_INTERVAL` using `If-None-Match`, so an unchanged document is a cheap 304 and a changed one schedules a publish through the normal debounce.
 - `--include-kustomize` adds kustomize's client-side config schemas.
 
 When more than one schema source is present, the generated index separates CRDs, built-ins, and Kustomize schemas. CRD-only output keeps the original API-group-only index.

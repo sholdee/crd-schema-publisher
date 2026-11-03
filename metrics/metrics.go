@@ -21,6 +21,10 @@ type Metrics struct {
 	lastSuccessTime     atomic.Int64 // Unix epoch seconds
 	watchdogTime        atomic.Int64 // Unix epoch seconds, updated every debounce tick
 	leader              atomic.Int64 // 0 or 1
+
+	builtinsRefreshUnchanged atomic.Int64
+	builtinsRefreshChanged   atomic.Int64
+	builtinsRefreshError     atomic.Int64
 }
 
 // New creates a zeroed Metrics instance.
@@ -68,6 +72,22 @@ func (m *Metrics) Heartbeat() {
 	m.watchdogTime.Store(time.Now().Unix())
 }
 
+// RecordBuiltinsRefresh records the outcome of one built-in schema refresh
+// check against the API server's OpenAPI document.
+func (m *Metrics) RecordBuiltinsRefresh(changed bool, err error) {
+	if m == nil {
+		return
+	}
+	switch {
+	case err != nil:
+		m.builtinsRefreshError.Add(1)
+	case changed:
+		m.builtinsRefreshChanged.Add(1)
+	default:
+		m.builtinsRefreshUnchanged.Add(1)
+	}
+}
+
 // SetLeader sets the leader gauge to 1 (true) or 0 (false).
 func (m *Metrics) SetLeader(isLeader bool) {
 	if m == nil {
@@ -94,6 +114,9 @@ func (m *Metrics) Handler() http.Handler {
 		lastSuccess := m.lastSuccessTime.Load()
 		watchdog := m.watchdogTime.Load()
 		leader := m.leader.Load()
+		refreshUnchanged := m.builtinsRefreshUnchanged.Load()
+		refreshChanged := m.builtinsRefreshChanged.Load()
+		refreshError := m.builtinsRefreshError.Load()
 
 		_, _ = fmt.Fprintf(w, "# HELP crdpublisher_publish_cycle_duration_seconds Duration of the most recent publish cycle.\n")
 		_, _ = fmt.Fprintf(w, "# TYPE crdpublisher_publish_cycle_duration_seconds gauge\n")
@@ -127,5 +150,11 @@ func (m *Metrics) Handler() http.Handler {
 		_, _ = fmt.Fprintf(w, "# HELP crdpublisher_leader Whether this pod is the current leader.\n")
 		_, _ = fmt.Fprintf(w, "# TYPE crdpublisher_leader gauge\n")
 		_, _ = fmt.Fprintf(w, "crdpublisher_leader %d\n", leader)
+
+		_, _ = fmt.Fprintf(w, "# HELP crdpublisher_builtins_refresh_total Total built-in schema refresh checks against the API server OpenAPI document, by outcome.\n")
+		_, _ = fmt.Fprintf(w, "# TYPE crdpublisher_builtins_refresh_total counter\n")
+		_, _ = fmt.Fprintf(w, "crdpublisher_builtins_refresh_total{result=\"unchanged\"} %d\n", refreshUnchanged)
+		_, _ = fmt.Fprintf(w, "crdpublisher_builtins_refresh_total{result=\"changed\"} %d\n", refreshChanged)
+		_, _ = fmt.Fprintf(w, "crdpublisher_builtins_refresh_total{result=\"error\"} %d\n", refreshError)
 	})
 }

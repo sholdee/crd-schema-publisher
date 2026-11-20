@@ -3,7 +3,8 @@
 name: PR Release Labels
 
 on:
-  pull_request_target:
+  # Safe only while this job runs base-branch code. Never check out the PR head here.
+  pull_request_target: # zizmor: ignore[dangerous-triggers] base checkout only, no PR code runs
     types: [opened, edited, reopened, synchronize, ready_for_review]
 
 concurrency:
@@ -23,11 +24,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.base.ref }}
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
+          cache: false # stay out of the Go cache that release builds restore
 
       - name: Sync release labels
         env:
